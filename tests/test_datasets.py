@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import pytest
+import base64
 
 from mlcbakery.main import app
 from mlcbakery.models import Base, Dataset, Collection
@@ -236,3 +237,68 @@ def test_invalid_pagination(test_db):
 
     response = client.get("/api/v1/datasets/?limit=101")
     assert response.status_code == 422  # FastAPI validation error
+
+
+def test_update_dataset_preview(test_db):
+    """Test updating a dataset's preview."""
+    # First, get the list to get an ID
+    response = client.get("/api/v1/datasets/")
+    dataset_id = response.json()[0]["id"]
+
+    # Create a sample preview (a small PNG image as base64)
+    sample_preview = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+
+    # Update the dataset with a preview
+    files = {
+        "preview": ("test.png", sample_preview, "image/png"),
+    }
+    response = client.put(f"/api/v1/datasets/{dataset_id}/preview", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["preview_type"] == "image/png"
+    assert "preview" not in data  # Preview binary data should not be in JSON response
+
+    # Get the dataset and verify preview type
+    response = client.get(f"/api/v1/datasets/{dataset_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["preview_type"] == "image/png"
+
+    # Get the preview directly
+    response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == sample_preview
+
+
+def test_update_nonexistent_dataset_preview(test_db):
+    """Test updating a preview for a dataset that doesn't exist."""
+    sample_preview = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    files = {
+        "preview": ("test.png", sample_preview, "image/png"),
+    }
+    response = client.put("/api/v1/datasets/999/preview", files=files)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
+
+
+def test_get_nonexistent_dataset_preview(test_db):
+    """Test getting a preview for a dataset that doesn't exist."""
+    response = client.get("/api/v1/datasets/999/preview")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
+
+
+def test_get_missing_preview(test_db):
+    """Test getting a preview for a dataset that has no preview."""
+    # First, get the list to get an ID
+    response = client.get("/api/v1/datasets/")
+    dataset_id = response.json()[0]["id"]
+
+    response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset has no preview"

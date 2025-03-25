@@ -1,4 +1,14 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON, Text
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    Table,
+    JSON,
+    Text,
+    LargeBinary,
+)
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -55,6 +65,8 @@ class Dataset(Base):
         generated_by_id: ID of the process that generated this dataset.
         metadata_version: Version of the metadata schema used.
         dataset_metadata: JSON metadata associated with the dataset.
+        preview: Binary data representing a preview of the dataset.
+        preview_type: Type of the preview (e.g., 'image/png', 'text/csv').
         collection: Relationship to the parent collection.
     """
 
@@ -66,6 +78,8 @@ class Dataset(Base):
     generated_by_id = Column(Integer)
     metadata_version = Column(String)
     dataset_metadata = Column(JSON, nullable=True)
+    preview = Column(LargeBinary, nullable=True)
+    preview_type = Column(String, nullable=True)
 
     # Relationships
     collection = relationship("Collection", back_populates="datasets")

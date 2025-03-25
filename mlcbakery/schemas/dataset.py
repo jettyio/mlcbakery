@@ -9,6 +9,7 @@ class DatasetBase(BaseModel):
     generated_by_id: Optional[int] = None
     metadata_version: Optional[str] = None
     dataset_metadata: Optional[Dict[str, Any]] = None
+    preview_type: Optional[str] = None
 
 
 class DatasetCreate(DatasetBase):
@@ -25,3 +26,11 @@ class DatasetResponse(DatasetBase):
 
     class Config:
         from_attributes = True  # This enables ORM model parsing
+
+
+class DatasetPreviewResponse(BaseModel):
+    id: int
+    preview_type: str
+
+    class Config:
+        from_attributes = True

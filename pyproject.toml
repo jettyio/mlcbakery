@@ -33,6 +33,7 @@ psycopg2-binary = "^2.9.9"
 pydantic = "^2.6.1"
 python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
+python-multipart = "^0.0.20"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
