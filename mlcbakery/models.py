@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -20,17 +20,55 @@ was_associated_with = Table(
 )
 
 
+class Collection(Base):
+    """Represents a collection in the system.
+
+    A collection is a logical grouping of datasets that can be tracked together.
+
+    Attributes:
+        id: The primary key for the collection.
+        name: The name of the collection.
+        description: A description of what the collection contains.
+        datasets: Relationship to associated datasets.
+    """
+
+    __tablename__ = "collections"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+
+    # Relationships
+    datasets = relationship("Dataset", back_populates="collection")
+
+
 class Dataset(Base):
-    """Represents a dataset in the system."""
+    """Represents a dataset in the system.
+
+    A dataset is a collection of data that can be associated with entities
+    and tracked through its generation process.
+
+    Attributes:
+        id: The primary key for the dataset.
+        collection_id: Foreign key reference to the associated collection.
+        name: The name of the dataset.
+        generated_by_id: ID of the process that generated this dataset.
+        metadata_version: Version of the metadata schema used.
+        dataset_metadata: JSON metadata associated with the dataset.
+        collection: Relationship to the parent collection.
+    """
 
     __tablename__ = "datasets"
 
     id = Column(Integer, primary_key=True)
-    collection_id = Column(Integer, ForeignKey("entities.id"))
+    collection_id = Column(Integer, ForeignKey("collections.id"))
     name = Column(String)
     generated_by_id = Column(Integer)
     metadata_version = Column(String)
     dataset_metadata = Column(JSON, nullable=True)
+
+    # Relationships
+    collection = relationship("Collection", back_populates="datasets")
 
 
 class Entity(Base):

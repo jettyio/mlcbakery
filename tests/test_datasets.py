@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 from mlcbakery.main import app
-from mlcbakery.models import Base, Dataset
+from mlcbakery.models import Base, Dataset, Collection
 from mlcbakery.database import get_db
 
 # Create test database
@@ -30,11 +30,30 @@ client = TestClient(app)
 
 @pytest.fixture(scope="function")
 def test_db():
+    # Drop all tables first to ensure clean state
+    Base.metadata.drop_all(bind=engine)
+
     # Create tables
     Base.metadata.create_all(bind=engine)
 
     # Add test data
     db = TestingSessionLocal()
+
+    # Create test collections first
+    test_collections = [
+        Collection(id=1, name="Test Collection 1", description="First test collection"),
+        Collection(
+            id=2, name="Test Collection 2", description="Second test collection"
+        ),
+        Collection(id=3, name="Test Collection 3", description="Third test collection"),
+        Collection(
+            id=4, name="Test Collection 4", description="Fourth test collection"
+        ),
+    ]
+    db.add_all(test_collections)
+    db.commit()
+
+    # Then create test datasets
     test_datasets = [
         Dataset(
             name="Test Dataset 1",
@@ -54,7 +73,7 @@ def test_db():
     db.add_all(test_datasets)
     db.commit()
 
-    yield  # Run the tests
+    yield db  # Run the tests
 
     # Cleanup
     db.close()
