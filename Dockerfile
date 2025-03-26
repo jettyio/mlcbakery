@@ -11,18 +11,28 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 RUN pip install uv
 
-# Install poetry using uv
-RUN uv pip install poetry
+# Create and activate virtual environment
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# Install poetry in the virtual environment
+RUN /app/venv/bin/pip install poetry
 
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies using uv
-RUN poetry config installer.max-workers 10 && \
-    poetry install --no-interaction --no-ansi
+# Install dependencies using poetry
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi --no-root
 
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-# Run the application
-CMD ["poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
+# Install the application in development mode
+RUN pip install -e .
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Command to run the application
+CMD ["uvicorn", "mlcbakery.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
