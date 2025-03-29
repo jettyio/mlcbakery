@@ -29,6 +29,66 @@ was_associated_with = Table(
     Column("agent_id", Integer, ForeignKey("agents.id"), primary_key=True),
 )
 
+activity_datasets = Table(
+    "activity_datasets",
+    Base.metadata,
+    Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
+    Column("dataset_id", Integer, ForeignKey("datasets.id"), primary_key=True),
+)
+
+
+class Entity(Base):
+    """Base class for all entities in the system."""
+
+    __tablename__ = "entities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    entity_type = Column(String, nullable=False)  # Discriminator column
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __mapper_args__ = {"polymorphic_on": entity_type, "polymorphic_identity": "entity"}
+
+
+class Dataset(Entity):
+    """Represents a dataset in the system."""
+
+    __tablename__ = "datasets"
+
+    id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
+    data_path = Column(String, nullable=False)
+    format = Column(String, nullable=False)
+    collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
+    metadata_version = Column(String, nullable=True)
+    dataset_metadata = Column(JSON, nullable=True)
+    preview = Column(LargeBinary, nullable=True)
+    preview_type = Column(String, nullable=True)
+
+    # Relationships
+    collection = relationship("Collection", back_populates="datasets")
+    activities = relationship(
+        "Activity", secondary=activity_datasets, back_populates="input_datasets"
+    )
+
+    __mapper_args__ = {"polymorphic_identity": "dataset"}
+
+
+class TrainedModel(Entity):
+    """Represents a trained model in the system."""
+
+    __tablename__ = "trained_models"
+
+    id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
+    model_path = Column(String, nullable=False)
+    framework = Column(String, nullable=False)
+
+    # Relationships
+    training_activity = relationship(
+        "Activity", back_populates="output_model", uselist=False
+    )
+
+    __mapper_args__ = {"polymorphic_identity": "trained_model"}
+
 
 class Collection(Base):
     """Represents a collection in the system.
@@ -52,59 +112,6 @@ class Collection(Base):
     datasets = relationship("Dataset", back_populates="collection")
 
 
-class Dataset(Base):
-    """Represents a dataset in the system.
-
-    A dataset is a collection of data that can be associated with entities
-    and tracked through its generation process.
-
-    Attributes:
-        id: The primary key for the dataset.
-        collection_id: Foreign key reference to the associated collection.
-        name: The name of the dataset.
-        generated_by_id: ID of the process that generated this dataset.
-        metadata_version: Version of the metadata schema used.
-        dataset_metadata: JSON metadata associated with the dataset.
-        preview: Binary data representing a preview of the dataset.
-        preview_type: Type of the preview (e.g., 'image/png', 'text/csv').
-        collection: Relationship to the parent collection.
-    """
-
-    __tablename__ = "datasets"
-
-    id = Column(Integer, primary_key=True)
-    collection_id = Column(Integer, ForeignKey("collections.id"))
-    name = Column(String)
-    generated_by_id = Column(Integer)
-    metadata_version = Column(String)
-    dataset_metadata = Column(JSON, nullable=True)
-    preview = Column(LargeBinary, nullable=True)
-    preview_type = Column(String, nullable=True)
-
-    # Relationships
-    collection = relationship("Collection", back_populates="datasets")
-
-
-class Entity(Base):
-    """Represents an entity in the provenance system."""
-
-    __tablename__ = "entities"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    type = Column(String, nullable=True)
-    entity_id = Column(Integer, ForeignKey("entities.id"), nullable=True)
-    generated_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    activities = relationship(
-        "Activity",
-        secondary=was_generated_by,
-        back_populates="entities",
-    )
-
-
 class Activity(Base):
     """Represents an activity in the provenance system."""
 
@@ -112,15 +119,15 @@ class Activity(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    start_time = Column(DateTime)
-    end_time = Column(DateTime)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    output_model_id = Column(Integer, ForeignKey("trained_models.id"), nullable=True)
 
     # Relationships
-    entities = relationship(
-        "Entity",
-        secondary=was_generated_by,
-        back_populates="activities",
+    input_datasets = relationship(
+        "Dataset", secondary=activity_datasets, back_populates="activities"
     )
+    output_model = relationship("TrainedModel", back_populates="training_activity")
+
     agents = relationship(
         "Agent",
         secondary=was_associated_with,

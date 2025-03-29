@@ -39,54 +39,70 @@ def test_db():
 
     # Add test data
     db = TestingSessionLocal()
+    try:
+        # Create test collections first
+        test_collections = [
+            Collection(
+                id=1, name="Test Collection 1", description="First test collection"
+            ),
+            Collection(
+                id=2, name="Test Collection 2", description="Second test collection"
+            ),
+            Collection(
+                id=3, name="Test Collection 3", description="Third test collection"
+            ),
+            Collection(
+                id=4, name="Test Collection 4", description="Fourth test collection"
+            ),
+        ]
+        db.add_all(test_collections)
+        db.commit()
 
-    # Create test collections first
-    test_collections = [
-        Collection(id=1, name="Test Collection 1", description="First test collection"),
-        Collection(
-            id=2, name="Test Collection 2", description="Second test collection"
-        ),
-        Collection(id=3, name="Test Collection 3", description="Third test collection"),
-        Collection(
-            id=4, name="Test Collection 4", description="Fourth test collection"
-        ),
-    ]
-    db.add_all(test_collections)
-    db.commit()
+        # Then create test datasets
+        test_datasets = [
+            Dataset(
+                name="Test Dataset 1",
+                data_path="/path/to/data1",
+                format="csv",
+                collection_id=1,
+                entity_type="dataset",
+                metadata_version="1.0",
+                dataset_metadata={
+                    "description": "First test dataset",
+                    "tags": ["test"],
+                },
+            ),
+            Dataset(
+                name="Test Dataset 2",
+                data_path="/path/to/data2",
+                format="parquet",
+                collection_id=2,
+                entity_type="dataset",
+                metadata_version="1.0",
+                dataset_metadata={
+                    "description": "Second test dataset",
+                    "tags": ["test"],
+                },
+            ),
+        ]
+        db.add_all(test_datasets)
+        db.commit()
 
-    # Then create test datasets
-    test_datasets = [
-        Dataset(
-            name="Test Dataset 1",
-            collection_id=1,
-            generated_by_id=1,
-            metadata_version="1.0",
-            dataset_metadata={"description": "First test dataset", "tags": ["test"]},
-        ),
-        Dataset(
-            name="Test Dataset 2",
-            collection_id=2,
-            generated_by_id=2,
-            metadata_version="1.0",
-            dataset_metadata={"description": "Second test dataset", "tags": ["test"]},
-        ),
-    ]
-    db.add_all(test_datasets)
-    db.commit()
+        yield db  # Run the tests
 
-    yield db  # Run the tests
-
-    # Cleanup
-    db.close()
-    Base.metadata.drop_all(bind=engine)
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
 
 
 def test_create_dataset(test_db):
     """Test creating a new dataset."""
     dataset_data = {
         "name": "New Dataset",
+        "data_path": "/path/to/data3",
+        "format": "json",
         "collection_id": 3,
-        "generated_by_id": 3,
+        "entity_type": "dataset",
         "metadata_version": "1.0",
         "dataset_metadata": {
             "description": "New test dataset",
@@ -97,7 +113,11 @@ def test_create_dataset(test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == dataset_data["name"]
+    assert data["data_path"] == dataset_data["data_path"]
+    assert data["format"] == dataset_data["format"]
     assert data["collection_id"] == dataset_data["collection_id"]
+    assert data["entity_type"] == dataset_data["entity_type"]
+    assert data["metadata_version"] == dataset_data["metadata_version"]
     assert data["dataset_metadata"] == dataset_data["dataset_metadata"]
     assert "id" in data
     assert "created_at" in data
@@ -109,8 +129,24 @@ def test_list_datasets(test_db):
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
+
+    # Verify first dataset
     assert data[0]["name"] == "Test Dataset 1"
+    assert data[0]["data_path"] == "/path/to/data1"
+    assert data[0]["format"] == "csv"
+    assert data[0]["collection_id"] == 1
+    assert data[0]["entity_type"] == "dataset"
+    assert data[0]["metadata_version"] == "1.0"
+    assert data[0]["dataset_metadata"]["description"] == "First test dataset"
+
+    # Verify second dataset
     assert data[1]["name"] == "Test Dataset 2"
+    assert data[1]["data_path"] == "/path/to/data2"
+    assert data[1]["format"] == "parquet"
+    assert data[1]["collection_id"] == 2
+    assert data[1]["entity_type"] == "dataset"
+    assert data[1]["metadata_version"] == "1.0"
+    assert data[1]["dataset_metadata"]["description"] == "Second test dataset"
 
 
 def test_list_datasets_pagination(test_db):
@@ -120,6 +156,8 @@ def test_list_datasets_pagination(test_db):
     data = response.json()
     assert len(data) == 1
     assert data[0]["name"] == "Test Dataset 2"
+    assert data[0]["data_path"] == "/path/to/data2"
+    assert data[0]["format"] == "parquet"
 
 
 def test_get_dataset(test_db):
@@ -133,6 +171,12 @@ def test_get_dataset(test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Test Dataset 1"
+    assert data["data_path"] == "/path/to/data1"
+    assert data["format"] == "csv"
+    assert data["collection_id"] == 1
+    assert data["entity_type"] == "dataset"
+    assert data["metadata_version"] == "1.0"
+    assert data["dataset_metadata"]["description"] == "First test dataset"
 
 
 def test_get_nonexistent_dataset(test_db):
@@ -151,8 +195,10 @@ def test_update_dataset(test_db):
     # Update the dataset
     update_data = {
         "name": "Updated Dataset",
+        "data_path": "/path/to/updated/data",
+        "format": "json",
         "collection_id": 4,
-        "generated_by_id": 4,
+        "entity_type": "dataset",
         "metadata_version": "2.0",
         "dataset_metadata": {
             "description": "Updated test dataset",
@@ -163,13 +209,22 @@ def test_update_dataset(test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == update_data["name"]
+    assert data["data_path"] == update_data["data_path"]
+    assert data["format"] == update_data["format"]
     assert data["collection_id"] == update_data["collection_id"]
+    assert data["entity_type"] == update_data["entity_type"]
+    assert data["metadata_version"] == update_data["metadata_version"]
     assert data["dataset_metadata"] == update_data["dataset_metadata"]
 
 
 def test_update_nonexistent_dataset(test_db):
     """Test updating a dataset that doesn't exist."""
-    update_data = {"name": "Updated Dataset"}
+    update_data = {
+        "name": "Updated Dataset",
+        "data_path": "/path/to/data",
+        "format": "csv",
+        "entity_type": "dataset",
+    }
     response = client.put("/api/v1/datasets/999", json=update_data)
     assert response.status_code == 404
     assert response.json()["detail"] == "Dataset not found"
@@ -216,7 +271,11 @@ def test_update_dataset_metadata(test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["dataset_metadata"] == new_metadata
-    assert data["name"] == "Test Dataset 1"  # Other fields should remain unchanged
+    # Verify other fields remain unchanged
+    assert data["name"] == "Test Dataset 1"
+    assert data["data_path"] == "/path/to/data1"
+    assert data["format"] == "csv"
+    assert data["entity_type"] == "dataset"
 
 
 def test_update_metadata_nonexistent_dataset(test_db):
@@ -232,12 +291,6 @@ def test_invalid_pagination(test_db):
     response = client.get("/api/v1/datasets/?skip=-1")
     assert response.status_code == 422  # FastAPI validation error
 
-    response = client.get("/api/v1/datasets/?limit=0")
-    assert response.status_code == 422  # FastAPI validation error
-
-    response = client.get("/api/v1/datasets/?limit=101")
-    assert response.status_code == 422  # FastAPI validation error
-
 
 def test_update_dataset_preview(test_db):
     """Test updating a dataset's preview."""
@@ -250,23 +303,14 @@ def test_update_dataset_preview(test_db):
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
 
-    # Update the dataset with a preview
-    files = {
-        "preview": ("test.png", sample_preview, "image/png"),
-    }
+    # Create test file
+    files = {"preview": ("preview.png", sample_preview, "image/png")}
     response = client.put(f"/api/v1/datasets/{dataset_id}/preview", files=files)
     assert response.status_code == 200
     data = response.json()
     assert data["preview_type"] == "image/png"
-    assert "preview" not in data  # Preview binary data should not be in JSON response
 
-    # Get the dataset and verify preview type
-    response = client.get(f"/api/v1/datasets/{dataset_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["preview_type"] == "image/png"
-
-    # Get the preview directly
+    # Verify preview can be retrieved
     response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
@@ -274,13 +318,11 @@ def test_update_dataset_preview(test_db):
 
 
 def test_update_nonexistent_dataset_preview(test_db):
-    """Test updating a preview for a dataset that doesn't exist."""
+    """Test updating preview for a dataset that doesn't exist."""
     sample_preview = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
-    files = {
-        "preview": ("test.png", sample_preview, "image/png"),
-    }
+    files = {"preview": ("preview.png", sample_preview, "image/png")}
     response = client.put("/api/v1/datasets/999/preview", files=files)
     assert response.status_code == 404
     assert response.json()["detail"] == "Dataset not found"

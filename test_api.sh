@@ -23,8 +23,10 @@ DATASET_RESPONSE=$(curl -s -X POST "${BASE_URL}/datasets/" \
   -H "Content-Type: application/json" \
   -d "{
     \"name\": \"Titanic Dataset from Kaggle\",
+    \"entity_type\": \"dataset\",
+    \"data_path\": \"/data/titanic.csv\",
+    \"format\": \"csv\",
     \"collection_id\": $COLLECTION_ID,
-    \"generated_by_id\": 1,
     \"metadata_version\": \"1.0\",
     \"dataset_metadata\": {
       \"description\": \"A test dataset\",

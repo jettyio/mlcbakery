@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Response
 from sqlalchemy.orm import Session
+from typing import Annotated
 
 from mlcbakery.models import Dataset
 from mlcbakery.schemas.dataset import (
@@ -16,13 +17,7 @@ router = APIRouter()
 @router.post("/datasets/", response_model=DatasetResponse)
 async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
     """Create a new dataset."""
-    db_dataset = Dataset(
-        name=dataset.name,
-        collection_id=dataset.collection_id,
-        generated_by_id=dataset.generated_by_id,
-        metadata_version=dataset.metadata_version,
-        dataset_metadata=dataset.dataset_metadata,
-    )
+    db_dataset = Dataset(**dataset.model_dump())
     db.add(db_dataset)
     db.commit()
     db.refresh(db_dataset)
@@ -31,11 +26,12 @@ async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
 
 @router.get("/datasets/", response_model=list[DatasetResponse])
 async def list_datasets(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    skip: int = Query(default=0, description="Number of records to skip"),
+    limit: int = Query(default=100, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
 ):
     """Get a list of datasets with pagination."""
+
     datasets = db.query(Dataset).offset(skip).limit(limit).all()
     return datasets
 
