@@ -10,7 +10,7 @@ from mlcbakery.database import Base
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Create test database URL for PostgreSQL
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:postgres@localhost:5433/mlcbakery_test"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/mlcbakery_test"
 
 # Create test engine
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

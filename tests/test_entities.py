@@ -15,7 +15,7 @@ from mlcbakery.models import (
 from mlcbakery.database import get_db
 
 # Create test database
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
+SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/test_db"
 # Alternatively, you could use SQLite for testing:
 # SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
 
@@ -43,7 +43,7 @@ def test_db():
     # Create tables
     Base.metadata.create_all(bind=engine)
 
-    # Add test data
+    # Create a new session
     db = TestingSessionLocal()
     try:
         # Create test datasets
@@ -78,8 +78,7 @@ def test_db():
         db.add_all([dataset1, dataset2, model])
         db.commit()
 
-        yield
-
+        yield db
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
@@ -90,7 +89,7 @@ def test_list_entities(test_db):
     response = client.get("/api/v1/entities/")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 3
+    assert len(data) == 3  # 2 datasets + 1 model
     # Verify we get all entity types
     entity_types = {entity["entity_type"] for entity in data}
     assert entity_types == {"dataset", "trained_model"}
@@ -251,3 +250,43 @@ def test_large_pagination(test_db):
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 0
+
+
+def test_dataset_entity_polymorphic_relationship(test_db):
+    try:
+        # Get initial count of entities
+        initial_entity_count = test_db.query(Entity).count()
+
+        # Create a test dataset
+        dataset = Dataset(
+            name="test_dataset",
+            entity_type="dataset",
+            data_path="/path/to/data",
+            format="csv",
+        )
+        test_db.add(dataset)
+        test_db.commit()
+        test_db.refresh(dataset)
+
+        # Verify the dataset is also accessible as an entity
+        entity = test_db.query(Entity).filter_by(id=dataset.id).first()
+        assert entity is not None
+        assert entity.name == "test_dataset"
+        assert entity.entity_type == "dataset"
+
+        # Verify we can access dataset-specific fields through the entity
+        assert isinstance(entity, Dataset)
+        assert entity.data_path == "/path/to/data"
+        assert entity.format == "csv"
+
+        # Verify we can query all entities and get the new dataset
+        all_entities = test_db.query(Entity).all()
+        assert len(all_entities) == initial_entity_count + 1
+        assert any(isinstance(e, Dataset) and e.id == dataset.id for e in all_entities)
+
+        # Verify we can query all datasets and get the same entity
+        all_datasets = test_db.query(Dataset).filter_by(id=dataset.id).all()
+        assert len(all_datasets) == 1
+        assert all_datasets[0].id == entity.id
+    finally:
+        test_db.close()
