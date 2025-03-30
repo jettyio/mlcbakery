@@ -72,4 +72,40 @@ echo "Created model with ID: $MODEL_ID"
 
 # Get the model
 echo "Retrieving the model..."
-curl -s -X GET "${BASE_URL}/trained_models/${MODEL_ID}" | jq '.' 
+curl -s -X GET "${BASE_URL}/trained_models/${MODEL_ID}" | jq '.'
+
+# Create an agent
+echo "Creating an agent..."
+AGENT_RESPONSE=$(curl -s -X POST "${BASE_URL}/agents/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Data Scientist",
+    "type": "human"
+  }')
+
+# Extract agent ID from response
+AGENT_ID=$(echo $AGENT_RESPONSE | jq -r '.id')
+echo "Created agent with ID: $AGENT_ID"
+
+# Get the agent
+echo "Retrieving the agent..."
+curl -s -X GET "${BASE_URL}/agents/${AGENT_ID}" | jq '.'
+
+# Create an activity linking the dataset, model, and agent
+echo "Creating an activity..."
+ACTIVITY_RESPONSE=$(curl -s -X POST "${BASE_URL}/activities/" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"Titanic Model Training\",
+    \"input_dataset_ids\": [$DATASET_ID],
+    \"output_model_id\": $MODEL_ID,
+    \"agent_ids\": [$AGENT_ID]
+  }")
+
+# Extract activity ID from response
+ACTIVITY_ID=$(echo $ACTIVITY_RESPONSE | jq -r '.id')
+echo "Created activity with ID: $ACTIVITY_ID"
+
+# Get the activity
+echo "Retrieving the activity..."
+curl -s -X GET "${BASE_URL}/activities/${ACTIVITY_ID}" | jq '.' 
