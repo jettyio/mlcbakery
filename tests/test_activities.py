@@ -147,7 +147,7 @@ def test_create_activity_without_optional_relationships(test_db):
     assert data["name"] == activity_data["name"]
     assert data["input_dataset_ids"] == dataset_ids
     assert data["output_model_id"] is None
-    assert data["agent_ids"] is None
+    assert data["agent_ids"] == []
     assert "id" in data
     assert "created_at" in data
 

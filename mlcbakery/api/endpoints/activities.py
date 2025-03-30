@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from ...database import get_db
 from ...models import Activity, Dataset, TrainedModel, Agent
-from ...schemas.activity import ActivityCreate, Activity as ActivitySchema
+from ...schemas.activity import ActivityCreate, ActivityResponse
 
 router = APIRouter()
 
 
-@router.post("/", response_model=ActivitySchema)
+@router.post("/activities/", response_model=ActivityResponse)
 def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
     """Create a new activity with relationships."""
     # Verify input datasets exist
@@ -52,7 +52,7 @@ def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
     return db_activity
 
 
-@router.get("/", response_model=List[ActivitySchema])
+@router.get("/activities/", response_model=List[ActivityResponse])
 def list_activities(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
@@ -63,7 +63,7 @@ def list_activities(
     return activities
 
 
-@router.get("/{activity_id}", response_model=ActivitySchema)
+@router.get("/activities/{activity_id}", response_model=ActivityResponse)
 def get_activity(activity_id: int, db: Session = Depends(get_db)):
     """Get a specific activity by ID."""
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
@@ -72,7 +72,7 @@ def get_activity(activity_id: int, db: Session = Depends(get_db)):
     return activity
 
 
-@router.delete("/{activity_id}")
+@router.delete("/activities/{activity_id}")
 def delete_activity(activity_id: int, db: Session = Depends(get_db)):
     """Delete an activity."""
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
