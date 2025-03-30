@@ -5,21 +5,13 @@ from sqlalchemy import pool
 
 from alembic import context
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
+# Import your models here
 from mlcbakery.database import Base
-from mlcbakery.models import Entity  # Import all models here
+from mlcbakery.models import Entity, TrainedModel, Activity, Dataset
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-
-# Override sqlalchemy.url with environment variable if set
-if os.getenv("ALEMBIC_DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.getenv("ALEMBIC_DATABASE_URL"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

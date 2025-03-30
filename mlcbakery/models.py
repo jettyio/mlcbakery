@@ -84,7 +84,10 @@ class TrainedModel(Entity):
 
     # Relationships
     training_activity = relationship(
-        "Activity", back_populates="output_model", uselist=False
+        "Activity",
+        back_populates="output_model",
+        uselist=False,
+        foreign_keys="Activity.output_model_id",
     )
 
     __mapper_args__ = {"polymorphic_identity": "trained_model"}
@@ -126,7 +129,11 @@ class Activity(Base):
     input_datasets = relationship(
         "Dataset", secondary=activity_datasets, back_populates="activities"
     )
-    output_model = relationship("TrainedModel", back_populates="training_activity")
+    output_model = relationship(
+        "TrainedModel",
+        back_populates="training_activity",
+        foreign_keys=[output_model_id],
+    )
 
     agents = relationship(
         "Agent",
