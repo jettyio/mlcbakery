@@ -46,6 +46,10 @@ class Entity(Base):
     name = Column(String, nullable=False)
     entity_type = Column(String, nullable=False)  # Discriminator column
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
+
+    # Relationships
+    collection = relationship("Collection", back_populates="entities")
 
     __mapper_args__ = {"polymorphic_on": entity_type, "polymorphic_identity": "entity"}
 
@@ -58,14 +62,12 @@ class Dataset(Entity):
     id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
     data_path = Column(String, nullable=False)
     format = Column(String, nullable=False)
-    collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
     metadata_version = Column(String, nullable=True)
     dataset_metadata = Column(JSON, nullable=True)
     preview = Column(LargeBinary, nullable=True)
     preview_type = Column(String, nullable=True)
 
     # Relationships
-    collection = relationship("Collection", back_populates="datasets")
     activities = relationship(
         "Activity", secondary=activity_datasets, back_populates="input_datasets"
     )
@@ -81,6 +83,8 @@ class TrainedModel(Entity):
     id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
     model_path = Column(String, nullable=False)
     framework = Column(String, nullable=False)
+    metadata_version = Column(String, nullable=True)
+    model_metadata = Column(JSON, nullable=True)
 
     # Relationships
     training_activity = relationship(
@@ -96,13 +100,13 @@ class TrainedModel(Entity):
 class Collection(Base):
     """Represents a collection in the system.
 
-    A collection is a logical grouping of datasets that can be tracked together.
+    A collection is a logical grouping of entities (datasets and models) that can be tracked together.
 
     Attributes:
         id: The primary key for the collection.
         name: The name of the collection.
         description: A description of what the collection contains.
-        datasets: Relationship to associated datasets.
+        entities: Relationship to associated entities (datasets and models).
     """
 
     __tablename__ = "collections"
@@ -112,7 +116,7 @@ class Collection(Base):
     description = Column(Text)
 
     # Relationships
-    datasets = relationship("Dataset", back_populates="collection")
+    entities = relationship("Entity", back_populates="collection")
 
 
 class Activity(Base):

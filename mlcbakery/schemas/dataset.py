@@ -11,6 +11,7 @@ class DatasetBase(EntityBase):
     metadata_version: Optional[str] = None
     dataset_metadata: Optional[Dict[str, Any]] = None
     preview_type: Optional[str] = None
+    entity_type: str = "dataset"
 
 
 class DatasetCreate(DatasetBase):

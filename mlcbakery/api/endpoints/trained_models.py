@@ -12,24 +12,19 @@ from ...schemas.trained_model import (
 router = APIRouter()
 
 
-@router.post("/trained_models", response_model=TrainedModelResponse)
+@router.post("/trained_models/", response_model=TrainedModelResponse)
 def create_trained_model(
     trained_model: TrainedModelCreate, db: Session = Depends(get_db)
 ):
     """Create a new trained model."""
-    db_trained_model = TrainedModel(
-        name=trained_model.name,
-        entity_type="trained_model",
-        model_path=trained_model.model_path,
-        framework=trained_model.framework,
-    )
+    db_trained_model = TrainedModel(**trained_model.model_dump())
     db.add(db_trained_model)
     db.commit()
     db.refresh(db_trained_model)
     return db_trained_model
 
 
-@router.get("/trained_models", response_model=List[TrainedModelResponse])
+@router.get("/trained_models/", response_model=List[TrainedModelResponse])
 def list_trained_models(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """List all trained models."""
     trained_models = db.query(TrainedModel).offset(skip).limit(limit).all()
