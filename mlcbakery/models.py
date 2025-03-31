@@ -15,13 +15,6 @@ from .database import Base
 
 
 # Association tables
-was_generated_by = Table(
-    "was_generated_by",
-    Base.metadata,
-    Column("entity_id", Integer, ForeignKey("entities.id"), primary_key=True),
-    Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-)
-
 was_associated_with = Table(
     "was_associated_with",
     Base.metadata,
@@ -29,11 +22,11 @@ was_associated_with = Table(
     Column("agent_id", Integer, ForeignKey("agents.id"), primary_key=True),
 )
 
-activity_datasets = Table(
-    "activity_datasets",
+activity_entities = Table(
+    "activity_entities",
     Base.metadata,
     Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-    Column("dataset_id", Integer, ForeignKey("datasets.id"), primary_key=True),
+    Column("entity_id", Integer, ForeignKey("entities.id"), primary_key=True),
 )
 
 
@@ -50,6 +43,16 @@ class Entity(Base):
 
     # Relationships
     collection = relationship("Collection", back_populates="entities")
+    input_activities = relationship(
+        "Activity",
+        secondary=activity_entities,
+        back_populates="input_entities",
+    )
+    output_activities = relationship(
+        "Activity",
+        back_populates="output_entity",
+        foreign_keys="Activity.output_entity_id",
+    )
 
     __mapper_args__ = {"polymorphic_on": entity_type, "polymorphic_identity": "entity"}
 
@@ -67,11 +70,6 @@ class Dataset(Entity):
     preview = Column(LargeBinary, nullable=True)
     preview_type = Column(String, nullable=True)
 
-    # Relationships
-    activities = relationship(
-        "Activity", secondary=activity_datasets, back_populates="input_datasets"
-    )
-
     __mapper_args__ = {"polymorphic_identity": "dataset"}
 
 
@@ -85,14 +83,6 @@ class TrainedModel(Entity):
     framework = Column(String, nullable=False)
     metadata_version = Column(String, nullable=True)
     model_metadata = Column(JSON, nullable=True)
-
-    # Relationships
-    training_activity = relationship(
-        "Activity",
-        back_populates="output_model",
-        uselist=False,
-        foreign_keys="Activity.output_model_id",
-    )
 
     __mapper_args__ = {"polymorphic_identity": "trained_model"}
 
@@ -127,18 +117,19 @@ class Activity(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    output_model_id = Column(Integer, ForeignKey("trained_models.id"), nullable=True)
+    output_entity_id = Column(Integer, ForeignKey("entities.id"), nullable=True)
 
     # Relationships
-    input_datasets = relationship(
-        "Dataset", secondary=activity_datasets, back_populates="activities"
+    input_entities = relationship(
+        "Entity",
+        secondary=activity_entities,
+        back_populates="input_activities",
     )
-    output_model = relationship(
-        "TrainedModel",
-        back_populates="training_activity",
-        foreign_keys=[output_model_id],
+    output_entity = relationship(
+        "Entity",
+        back_populates="output_activities",
+        foreign_keys=[output_entity_id],
     )
-
     agents = relationship(
         "Agent",
         secondary=was_associated_with,
