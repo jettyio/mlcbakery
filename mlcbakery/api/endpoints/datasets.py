@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, 
 from sqlalchemy.orm import Session
 from typing import Annotated
 
-from mlcbakery.models import Dataset
+from mlcbakery.models import Dataset, Collection
 from mlcbakery.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
@@ -128,3 +128,24 @@ async def get_dataset_preview(dataset_id: int, db: Session = Depends(get_db)):
         content=db_dataset.preview,
         media_type=db_dataset.preview_type,
     )
+
+
+@router.get(
+    "/datasets/{collection_name}/{dataset_name}", response_model=DatasetResponse
+)
+async def get_dataset_by_name(
+    collection_name: str,
+    dataset_name: str,
+    db: Session = Depends(get_db),
+):
+    """Get a specific dataset by collection name and dataset name."""
+    dataset = (
+        db.query(Dataset)
+        .join(Collection)
+        .filter(Collection.name == collection_name)
+        .filter(Dataset.name == dataset_name)
+        .first()
+    )
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
