@@ -6,7 +6,7 @@ import pytest
 import base64
 
 from mlcbakery.main import app
-from mlcbakery.models import Base, Dataset, Collection
+from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
 from mlcbakery.database import get_db
 
 # Create test database
@@ -42,21 +42,16 @@ def test_db():
     try:
         # Create test collections first
         test_collections = [
-            Collection(
-                id=1, name="Test Collection 1", description="First test collection"
-            ),
-            Collection(
-                id=2, name="Test Collection 2", description="Second test collection"
-            ),
-            Collection(
-                id=3, name="Test Collection 3", description="Third test collection"
-            ),
-            Collection(
-                id=4, name="Test Collection 4", description="Fourth test collection"
-            ),
+            Collection(name="Test Collection 1", description="First test collection"),
+            Collection(name="Test Collection 2", description="Second test collection"),
+            Collection(name="Test Collection 3", description="Third test collection"),
+            Collection(name="Test Collection 4", description="Fourth test collection"),
         ]
         db.add_all(test_collections)
         db.commit()
+
+        # Get the collection IDs after they've been created
+        collection_ids = {c.name: c.id for c in test_collections}
 
         # Then create test datasets
         test_datasets = [
@@ -64,7 +59,7 @@ def test_db():
                 name="Test Dataset 1",
                 data_path="/path/to/data1",
                 format="csv",
-                collection_id=1,
+                collection_id=collection_ids["Test Collection 1"],
                 entity_type="dataset",
                 metadata_version="1.0",
                 dataset_metadata={
@@ -76,7 +71,7 @@ def test_db():
                 name="Test Dataset 2",
                 data_path="/path/to/data2",
                 format="parquet",
-                collection_id=2,
+                collection_id=collection_ids["Test Collection 2"],
                 entity_type="dataset",
                 metadata_version="1.0",
                 dataset_metadata={
@@ -344,3 +339,118 @@ def test_get_missing_preview(test_db):
     response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
     assert response.status_code == 404
     assert response.json()["detail"] == "Dataset has no preview"
+
+
+def test_get_dataset_upstream_tree(test_db):
+    """Test getting the upstream entity tree for a dataset."""
+    # Create a test collection with a unique name
+    collection = Collection(
+        name="Upstream Test Collection", description="Test collection for upstream tree"
+    )
+    test_db.add(collection)
+    test_db.commit()
+    test_db.refresh(collection)
+
+    # Create a source dataset
+    source_dataset = Dataset(
+        name="Source Dataset",
+        data_path="/path/to/source",
+        format="csv",
+        entity_type="dataset",
+        collection_id=collection.id,
+        metadata_version="1.0",
+        dataset_metadata={"description": "Source dataset"},
+    )
+    test_db.add(source_dataset)
+    test_db.commit()
+    test_db.refresh(source_dataset)
+
+    # Create an intermediate dataset
+    intermediate_dataset = Dataset(
+        name="Intermediate Dataset",
+        data_path="/path/to/intermediate",
+        format="parquet",
+        entity_type="dataset",
+        collection_id=collection.id,
+        metadata_version="1.0",
+        dataset_metadata={"description": "Intermediate dataset"},
+    )
+    test_db.add(intermediate_dataset)
+    test_db.commit()
+    test_db.refresh(intermediate_dataset)
+
+    # Create a target dataset
+    target_dataset = Dataset(
+        name="Target Dataset",
+        data_path="/path/to/target",
+        format="parquet",
+        entity_type="dataset",
+        collection_id=collection.id,
+        metadata_version="1.0",
+        dataset_metadata={"description": "Target dataset"},
+    )
+    test_db.add(target_dataset)
+    test_db.commit()
+    test_db.refresh(target_dataset)
+
+    # Create activities to link the datasets
+    activity1 = Activity(name="First Processing Step")
+    activity1.input_entities = [source_dataset]
+    activity1.output_entity = intermediate_dataset
+    test_db.add(activity1)
+    test_db.commit()
+    test_db.refresh(activity1)
+
+    activity2 = Activity(name="Second Processing Step")
+    activity2.input_entities = [intermediate_dataset]
+    activity2.output_entity = target_dataset
+    test_db.add(activity2)
+    test_db.commit()
+    test_db.refresh(activity2)
+
+    # Get the upstream tree
+    response = client.get(
+        f"/api/v1/datasets/{collection.name}/{target_dataset.name}/upstream"
+    )
+    assert response.status_code == 200
+    tree = response.json()
+
+    # Verify the tree structure
+    assert tree["id"] == target_dataset.id
+    assert tree["name"] == "Target Dataset"
+    assert tree["entity_type"] == "dataset"
+    assert tree["activity_id"] == activity2.id
+    assert tree["activity_name"] == "Second Processing Step"
+    assert len(tree["children"]) == 1
+
+    # Verify intermediate dataset
+    intermediate_node = tree["children"][0]
+    assert intermediate_node["id"] == intermediate_dataset.id
+    assert intermediate_node["name"] == "Intermediate Dataset"
+    assert intermediate_node["entity_type"] == "dataset"
+    assert intermediate_node["activity_id"] == activity1.id
+    assert intermediate_node["activity_name"] == "First Processing Step"
+    assert len(intermediate_node["children"]) == 1
+
+    # Verify source dataset
+    source_node = intermediate_node["children"][0]
+    assert source_node["id"] == source_dataset.id
+    assert source_node["name"] == "Source Dataset"
+    assert source_node["entity_type"] == "dataset"
+    assert source_node["activity_id"] is None
+    assert source_node["activity_name"] is None
+    assert len(source_node["children"]) == 0
+
+    # Test with non-existent dataset
+    response = client.get(
+        f"/api/v1/datasets/{collection.name}/NonExistentDataset/upstream"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
+
+    # Test with non-existent collection
+    response = client.get(
+        f"/api/v1/datasets/NonExistentCollection/{target_dataset.name}/upstream"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"

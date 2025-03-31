@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Response
 from sqlalchemy.orm import Session
-from typing import Annotated
+from typing import Annotated, List
 
-from mlcbakery.models import Dataset, Collection
+from mlcbakery.models import Dataset, Collection, Activity, Entity
 from mlcbakery.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
     DatasetResponse,
     DatasetPreviewResponse,
+    UpstreamEntityNode,
 )
 from mlcbakery.database import get_db
 
@@ -149,3 +150,54 @@ async def get_dataset_by_name(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return dataset
+
+
+@router.get(
+    "/datasets/{collection_name}/{dataset_name}/upstream",
+    response_model=UpstreamEntityNode,
+)
+async def get_dataset_upstream_tree(
+    collection_name: str,
+    dataset_name: str,
+    db: Session = Depends(get_db),
+) -> UpstreamEntityNode:
+    """Get the upstream entity tree for a dataset, showing all entities that contributed to its creation."""
+    # Get the dataset by collection name and dataset name
+    dataset = (
+        db.query(Dataset)
+        .join(Collection)
+        .filter(Collection.name == collection_name)
+        .filter(Dataset.name == dataset_name)
+        .first()
+    )
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    def build_upstream_tree(entity: Entity, visited: set = None) -> UpstreamEntityNode:
+        if visited is None:
+            visited = set()
+
+        # Create the node for the current entity
+        node = UpstreamEntityNode(
+            id=entity.id,
+            name=entity.name,
+            entity_type=entity.entity_type,
+        )
+
+        # Get activity information from output_activities (the activity that created this entity)
+        if entity.output_activities:
+            activity = entity.output_activities[0]  # Get the most recent activity
+            node.activity_id = activity.id
+            node.activity_name = activity.name
+
+            # Add input entities from this activity as children
+            for input_entity in activity.input_entities:
+                if input_entity.id not in visited:
+                    visited.add(input_entity.id)
+                    child_node = build_upstream_tree(input_entity, visited)
+                    node.children.append(child_node)
+
+        return node
+
+    # Build the tree starting from the dataset
+    return build_upstream_tree(dataset)
