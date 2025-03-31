@@ -1,6 +1,6 @@
 """refactor activity to use entities
 
-Revision ID: refactor_activity_to_use_entities
+Revision ID: a1b2c3d4
 Revises: 23a3b6e6f8ce
 Create Date: 2025-03-26 10:00:00.000000
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "refactor_activity_to_use_entities"
+revision: str = "a1b2c3d4"
 down_revision: Union[str, None] = "23a3b6e6f8ce"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
