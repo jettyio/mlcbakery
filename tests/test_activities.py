@@ -5,7 +5,15 @@ from datetime import datetime
 import pytest
 
 from mlcbakery.main import app
-from mlcbakery.models import Base, Activity, Dataset, TrainedModel, Agent, Collection
+from mlcbakery.models import (
+    Base,
+    Activity,
+    Dataset,
+    TrainedModel,
+    Agent,
+    Collection,
+    Entity,
+)
 from mlcbakery.database import get_db
 
 # Create test database
@@ -115,16 +123,16 @@ def test_create_activity(test_db):
     # Create activity
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": dataset_ids,
-        "output_model_id": model_id,
+        "input_entity_ids": dataset_ids,
+        "output_entity_id": model_id,
         "agent_ids": [agent_id],
     }
     response = client.post("/api/v1/activities/", json=activity_data)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == activity_data["name"]
-    assert data["input_dataset_ids"] == dataset_ids
-    assert data["output_model_id"] == model_id
+    assert data["input_entity_ids"] == dataset_ids
+    assert data["output_entity_id"] == model_id
     assert data["agent_ids"] == [agent_id]
     assert "id" in data
     assert "created_at" in data
@@ -139,14 +147,14 @@ def test_create_activity_without_optional_relationships(test_db):
     # Create activity without optional relationships
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": dataset_ids,
+        "input_entity_ids": dataset_ids,
     }
     response = client.post("/api/v1/activities/", json=activity_data)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == activity_data["name"]
-    assert data["input_dataset_ids"] == dataset_ids
-    assert data["output_model_id"] is None
+    assert data["input_entity_ids"] == dataset_ids
+    assert data["output_entity_id"] is None
     assert data["agent_ids"] == []
     assert "id" in data
     assert "created_at" in data
@@ -156,8 +164,8 @@ def test_create_activity_with_nonexistent_entities(test_db):
     """Test creating an activity with nonexistent entities."""
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": [999],
-        "output_model_id": 999,
+        "input_entity_ids": [999],
+        "output_entity_id": 999,
         "agent_ids": [999],
     }
     response = client.post("/api/v1/activities/", json=activity_data)
@@ -173,7 +181,7 @@ def test_list_activities(test_db):
 
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": dataset_ids,
+        "input_entity_ids": dataset_ids,
     }
     client.post("/api/v1/activities/", json=activity_data)
 
@@ -183,7 +191,7 @@ def test_list_activities(test_db):
     data = response.json()
     assert len(data) == 1
     assert data[0]["name"] == "Test Activity"
-    assert data[0]["input_dataset_ids"] == dataset_ids
+    assert data[0]["input_entity_ids"] == dataset_ids
 
 
 def test_list_activities_pagination(test_db):
@@ -195,7 +203,7 @@ def test_list_activities_pagination(test_db):
     for i in range(3):
         activity_data = {
             "name": f"Test Activity {i}",
-            "input_dataset_ids": dataset_ids,
+            "input_entity_ids": dataset_ids,
         }
         client.post("/api/v1/activities/", json=activity_data)
 
@@ -216,7 +224,7 @@ def test_get_activity(test_db):
 
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": dataset_ids,
+        "input_entity_ids": dataset_ids,
     }
     create_response = client.post("/api/v1/activities/", json=activity_data)
     activity_id = create_response.json()["id"]
@@ -226,7 +234,7 @@ def test_get_activity(test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Test Activity"
-    assert data["input_dataset_ids"] == dataset_ids
+    assert data["input_entity_ids"] == dataset_ids
 
 
 def test_get_nonexistent_activity(test_db):
@@ -244,7 +252,7 @@ def test_delete_activity(test_db):
 
     activity_data = {
         "name": "Test Activity",
-        "input_dataset_ids": dataset_ids,
+        "input_entity_ids": dataset_ids,
     }
     create_response = client.post("/api/v1/activities/", json=activity_data)
     activity_id = create_response.json()["id"]

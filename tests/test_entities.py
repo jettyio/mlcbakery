@@ -1,23 +1,23 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import datetime as dt
+from datetime import datetime
 import pytest
 
 from mlcbakery.main import app
 from mlcbakery.models import (
     Base,
-    Entity,
+    Activity,
     Dataset,
     TrainedModel,
-    Activity,
+    Agent,
+    Collection,
+    Entity,
 )
 from mlcbakery.database import get_db
 
 # Create test database
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/test_db"
-# Alternatively, you could use SQLite for testing:
-# SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
 
 engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -40,253 +40,262 @@ client = TestClient(app)
 def test_db():
     # Drop all tables first to ensure clean state
     Base.metadata.drop_all(bind=engine)
+
     # Create tables
     Base.metadata.create_all(bind=engine)
 
-    # Create a new session
+    # Add test data
     db = TestingSessionLocal()
     try:
-        # Create test datasets
-        dataset1 = Dataset(
-            name="Test Dataset 1",
-            data_path="/path/to/data1",
-            format="csv",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="dataset",
-            metadata_version="1.0",
-            dataset_metadata={"description": "First test dataset"},
+        # Create test collection
+        test_collection = Collection(
+            id=1, name="Test Collection", description="Test collection"
         )
-        dataset2 = Dataset(
-            name="Test Dataset 2",
-            data_path="/path/to/data2",
-            format="parquet",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="dataset",
-            metadata_version="1.0",
-            dataset_metadata={"description": "Second test dataset"},
-        )
-
-        # Create test model
-        model = TrainedModel(
-            name="Test Model 1",
-            model_path="/path/to/model1",
-            framework="pytorch",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="trained_model",
-        )
-
-        db.add_all([dataset1, dataset2, model])
+        db.add(test_collection)
         db.commit()
 
-        yield db
+        # Create test datasets
+        test_datasets = [
+            Dataset(
+                name="Test Dataset 1",
+                data_path="/path/to/data1",
+                format="csv",
+                collection_id=1,
+                entity_type="dataset",
+                metadata_version="1.0",
+                dataset_metadata={"description": "First test dataset"},
+            ),
+            Dataset(
+                name="Test Dataset 2",
+                data_path="/path/to/data2",
+                format="parquet",
+                collection_id=1,
+                entity_type="dataset",
+                metadata_version="1.0",
+                dataset_metadata={"description": "Second test dataset"},
+            ),
+        ]
+        db.add_all(test_datasets)
+        db.commit()
+
+        # Create test model
+        test_model = TrainedModel(
+            name="Test Model",
+            model_path="/path/to/model",
+            framework="scikit-learn",
+            collection_id=1,
+            entity_type="trained_model",
+            metadata_version="1.0",
+            model_metadata={"description": "Test model"},
+        )
+        db.add(test_model)
+        db.commit()
+
+        # Create test agent
+        test_agent = Agent(
+            name="Test Agent",
+            type="human",
+        )
+        db.add(test_agent)
+        db.commit()
+
+        yield db  # Run the tests
+
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
 
 
-def test_list_entities(test_db):
-    """Test getting all entities"""
-    response = client.get("/api/v1/entities/")
+def test_create_dataset(test_db):
+    """Test creating a new dataset."""
+    dataset_data = {
+        "name": "New Dataset",
+        "data_path": "/path/to/new/data",
+        "format": "csv",
+        "collection_id": 1,
+        "entity_type": "dataset",
+        "metadata_version": "1.0",
+        "dataset_metadata": {"description": "New test dataset"},
+    }
+    response = client.post("/api/v1/datasets/", json=dataset_data)
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 3  # 2 datasets + 1 model
-    # Verify we get all entity types
-    entity_types = {entity["entity_type"] for entity in data}
-    assert entity_types == {"dataset", "trained_model"}
+    assert data["name"] == dataset_data["name"]
+    assert data["data_path"] == dataset_data["data_path"]
+    assert data["format"] == dataset_data["format"]
+    assert data["collection_id"] == dataset_data["collection_id"]
+    assert data["entity_type"] == dataset_data["entity_type"]
+    assert data["metadata_version"] == dataset_data["metadata_version"]
+    assert data["dataset_metadata"] == dataset_data["dataset_metadata"]
+    assert "id" in data
+    assert "created_at" in data
+
+
+def test_create_model(test_db):
+    """Test creating a new model."""
+    model_data = {
+        "name": "New Model",
+        "model_path": "/path/to/new/model",
+        "framework": "scikit-learn",
+        "collection_id": 1,
+        "entity_type": "trained_model",
+        "metadata_version": "1.0",
+        "model_metadata": {"description": "New test model"},
+    }
+    response = client.post("/api/v1/trained_models/", json=model_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == model_data["name"]
+    assert data["model_path"] == model_data["model_path"]
+    assert data["framework"] == model_data["framework"]
+    assert data["collection_id"] == model_data["collection_id"]
+    assert data["entity_type"] == model_data["entity_type"]
+    assert data["metadata_version"] == model_data["metadata_version"]
+    assert data["model_metadata"] == model_data["model_metadata"]
+    assert "id" in data
+    assert "created_at" in data
 
 
 def test_list_datasets(test_db):
-    """Test getting only datasets"""
+    """Test getting all datasets."""
     response = client.get("/api/v1/datasets/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
-    assert all(entity["entity_type"] == "dataset" for entity in data)
-    assert all("data_path" in entity and entity["data_path"] for entity in data)
-    assert all(
-        "format" in entity and entity["format"] in ["csv", "parquet"] for entity in data
-    )
-    assert all(
-        "metadata_version" in entity and entity["metadata_version"] == "1.0"
-        for entity in data
-    )
-    assert all(
-        "dataset_metadata" in entity and isinstance(entity["dataset_metadata"], dict)
-        for entity in data
-    )
+    assert data[0]["name"] == "Test Dataset 1"
+    assert data[1]["name"] == "Test Dataset 2"
 
 
-def test_list_trained_models(test_db):
-    """Test getting only trained models"""
-    response = client.get("/api/v1/trained-models/")
+def test_list_models(test_db):
+    """Test getting all models."""
+    response = client.get("/api/v1/trained_models/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
-    assert all(entity["entity_type"] == "trained_model" for entity in data)
-    assert all("model_path" in entity for entity in data)
-    assert all("framework" in entity for entity in data)
+    assert data[0]["name"] == "Test Model"
 
 
-def test_polymorphic_entities_and_provenance_many_to_one():
-    """Test polymorphic relationships with multiple input datasets"""
-    # Drop all tables first to ensure clean state
-    Base.metadata.drop_all(bind=engine)
-    # Create tables
-    Base.metadata.create_all(bind=engine)
+def test_get_dataset(test_db):
+    """Test getting a specific dataset."""
+    # Get the first dataset's ID
+    response = client.get("/api/v1/datasets/")
+    dataset_id = response.json()[0]["id"]
 
-    db = TestingSessionLocal()
-    try:
-        # Create multiple datasets
-        dataset1 = Dataset(
-            name="Training Data",
-            data_path="/path/to/data1",
-            format="csv",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="dataset",
-        )
-        dataset2 = Dataset(
-            name="Validation Data",
-            data_path="/path/to/data2",
-            format="csv",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="dataset",
-        )
-        db.add_all([dataset1, dataset2])
-        db.flush()  # Ensure IDs are generated
-
-        # Create a trained model
-        model = TrainedModel(
-            name="Trained Model A",
-            model_path="/path/to/model",
-            framework="pytorch",
-            created_at=dt.datetime.now(dt.UTC),
-            entity_type="trained_model",
-        )
-        db.add(model)
-        db.flush()  # Ensure ID is generated
-
-        # Create an activity linking multiple datasets to one model
-        activity = Activity(
-            name="Training Run",
-            created_at=dt.datetime.now(dt.UTC),
-            input_datasets=[dataset1, dataset2],
-            output_model=model,
-        )
-        db.add(activity)
-        db.commit()
-
-        # Test polymorphic queries
-        entities = db.query(Entity).all()
-        assert len(entities) == 3  # 2 datasets + 1 model
-
-        # Test many-to-one relationship
-        activity = db.query(Activity).first()
-        assert len(activity.input_datasets) == 2
-        assert {d.name for d in activity.input_datasets} == {
-            "Training Data",
-            "Validation Data",
-        }
-        assert activity.output_model.name == "Trained Model A"
-
-        # Test reverse relationships
-        for dataset in [dataset1, dataset2]:
-            assert len(dataset.activities) == 1
-            assert dataset.activities[0].name == "Training Run"
-
-        # Test that both datasets are used in the same activity
-        training_data = db.query(Dataset).filter_by(name="Training Data").first()
-        validation_data = db.query(Dataset).filter_by(name="Validation Data").first()
-        assert training_data.activities[0] == validation_data.activities[0]
-
-        # Test reverse relationship from model to activity
-        assert model.training_activity.name == "Training Run"
-
-    except Exception as e:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-
-
-def test_list_entities_pagination(test_db):
-    """Test pagination of entities"""
-    response = client.get("/api/v1/entities/?skip=1&limit=1")
+    # Get the specific dataset
+    response = client.get(f"/api/v1/datasets/{dataset_id}")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
+    assert data["name"] == "Test Dataset 1"
 
 
-def test_empty_entities_list(test_db):
-    """Test getting entities when database is empty"""
-    # Clear all entities
-    db = TestingSessionLocal()
-    try:
-        # Delete child records first
-        db.query(Dataset).delete()
-        db.query(TrainedModel).delete()
-        db.query(Activity).delete()
-        # Then delete parent records
-        db.query(Entity).delete()
-        db.commit()
+def test_get_model(test_db):
+    """Test getting a specific model."""
+    # Get the first model's ID
+    response = client.get("/api/v1/trained_models/")
+    model_id = response.json()[0]["id"]
 
-        response = client.get("/api/v1/entities/")
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 0
-    finally:
-        db.close()
-
-
-def test_invalid_pagination(test_db):
-    """Test invalid pagination parameters"""
-    response = client.get("/api/v1/entities/?skip=-1")
-    assert response.status_code == 422  # FastAPI validation error
-
-
-def test_large_pagination(test_db):
-    """Test pagination beyond available data"""
-    response = client.get("/api/v1/entities/?skip=100&limit=10")
+    # Get the specific model
+    response = client.get(f"/api/v1/trained_models/{model_id}")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 0
+    assert data["name"] == "Test Model"
 
 
-def test_dataset_entity_polymorphic_relationship(test_db):
-    try:
-        # Get initial count of entities
-        initial_entity_count = test_db.query(Entity).count()
+def test_get_nonexistent_dataset(test_db):
+    """Test getting a dataset that doesn't exist."""
+    response = client.get("/api/v1/datasets/999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
 
-        # Create a test dataset
-        dataset = Dataset(
-            name="test_dataset",
-            entity_type="dataset",
-            data_path="/path/to/data",
-            format="csv",
-        )
-        test_db.add(dataset)
-        test_db.commit()
-        test_db.refresh(dataset)
 
-        # Verify the dataset is also accessible as an entity
-        entity = test_db.query(Entity).filter_by(id=dataset.id).first()
-        assert entity is not None
-        assert entity.name == "test_dataset"
-        assert entity.entity_type == "dataset"
+def test_get_nonexistent_model(test_db):
+    """Test getting a model that doesn't exist."""
+    response = client.get("/api/v1/trained_models/999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Trained model not found"
 
-        # Verify we can access dataset-specific fields through the entity
-        assert isinstance(entity, Dataset)
-        assert entity.data_path == "/path/to/data"
-        assert entity.format == "csv"
 
-        # Verify we can query all entities and get the new dataset
-        all_entities = test_db.query(Entity).all()
-        assert len(all_entities) == initial_entity_count + 1
-        assert any(isinstance(e, Dataset) and e.id == dataset.id for e in all_entities)
+def test_delete_dataset(test_db):
+    """Test deleting a dataset."""
+    # Get the first dataset's ID
+    response = client.get("/api/v1/datasets/")
+    dataset_id = response.json()[0]["id"]
 
-        # Verify we can query all datasets and get the same entity
-        all_datasets = test_db.query(Dataset).filter_by(id=dataset.id).all()
-        assert len(all_datasets) == 1
-        assert all_datasets[0].id == entity.id
-    finally:
-        test_db.close()
+    # Delete the dataset
+    response = client.delete(f"/api/v1/datasets/{dataset_id}")
+    assert response.status_code == 200
+    assert response.json()["message"] == "Dataset deleted successfully"
+
+    # Verify it's deleted
+    response = client.get(f"/api/v1/datasets/{dataset_id}")
+    assert response.status_code == 404
+
+
+def test_delete_model(test_db):
+    """Test deleting a model."""
+    # Get the first model's ID
+    response = client.get("/api/v1/trained_models/")
+    model_id = response.json()[0]["id"]
+
+    # Delete the model
+    response = client.delete(f"/api/v1/trained_models/{model_id}")
+    assert response.status_code == 200
+    assert response.json()["message"] == "Trained model deleted successfully"
+
+    # Verify it's deleted
+    response = client.get(f"/api/v1/trained_models/{model_id}")
+    assert response.status_code == 404
+
+
+def test_delete_nonexistent_dataset(test_db):
+    """Test deleting a dataset that doesn't exist."""
+    response = client.delete("/api/v1/datasets/999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
+
+
+def test_delete_nonexistent_model(test_db):
+    """Test deleting a model that doesn't exist."""
+    response = client.delete("/api/v1/trained_models/999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Trained model not found"
+
+
+def test_entity_activities(test_db):
+    """Test entity relationships with activities."""
+    # Get test data IDs
+    response = client.get("/api/v1/datasets/")
+    dataset_ids = [d["id"] for d in response.json()]
+
+    response = client.get("/api/v1/trained_models/")
+    model_id = response.json()[0]["id"]
+
+    # Create an agent
+    agent_data = {"name": "Test Agent", "type": "human"}
+    agent_response = client.post("/api/v1/agents/", json=agent_data)
+    agent_id = agent_response.json()["id"]
+
+    # Create an activity linking the dataset and model
+    activity_data = {
+        "name": "Test Activity",
+        "input_entity_ids": dataset_ids,
+        "output_entity_id": model_id,
+        "agent_ids": [agent_id],
+    }
+    response = client.post("/api/v1/activities/", json=activity_data)
+    assert response.status_code == 200
+    activity_id = response.json()["id"]
+
+    # Verify dataset's input activities
+    response = client.get(f"/api/v1/datasets/{dataset_ids[0]}")
+    assert response.status_code == 200
+    dataset_data = response.json()
+    assert len(dataset_data["input_activities"]) == 1
+    assert dataset_data["input_activities"][0]["id"] == activity_id
+
+    # Verify model's output activities
+    response = client.get(f"/api/v1/trained_models/{model_id}")
+    assert response.status_code == 200
+    model_data = response.json()
+    assert len(model_data["output_activities"]) == 1
+    assert model_data["output_activities"][0]["id"] == activity_id

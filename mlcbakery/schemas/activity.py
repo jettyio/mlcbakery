@@ -1,8 +1,7 @@
 from pydantic import BaseModel, ConfigDict, computed_field
 from typing import List, Optional
 from datetime import datetime
-from .dataset import DatasetResponse
-from .trained_model import TrainedModelResponse
+from .entity import EntityResponse
 from .agent import AgentResponse
 
 
@@ -11,16 +10,16 @@ class ActivityBase(BaseModel):
 
 
 class ActivityCreate(ActivityBase):
-    input_dataset_ids: List[int]
-    output_model_id: Optional[int] = None
+    input_entity_ids: List[int]
+    output_entity_id: Optional[int] = None
     agent_ids: Optional[List[int]] = None
 
 
 class ActivityResponse(ActivityBase):
     id: int
     created_at: datetime
-    input_datasets: List[DatasetResponse]
-    output_model: Optional[TrainedModelResponse]
+    input_entities: List[EntityResponse]
+    output_entity: Optional[EntityResponse]
     agents: List[AgentResponse]
 
     model_config = ConfigDict(
@@ -30,12 +29,12 @@ class ActivityResponse(ActivityBase):
     )
 
     @computed_field
-    def input_dataset_ids(self) -> List[int]:
-        return [dataset.id for dataset in self.input_datasets]
+    def input_entity_ids(self) -> List[int]:
+        return [entity.id for entity in self.input_entities]
 
     @computed_field
-    def output_model_id(self) -> Optional[int]:
-        return self.output_model.id if self.output_model else None
+    def output_entity_id(self) -> Optional[int]:
+        return self.output_entity.id if self.output_entity else None
 
     @computed_field
     def agent_ids(self) -> Optional[List[int]]:

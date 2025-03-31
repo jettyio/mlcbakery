@@ -1,8 +1,9 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from .entity import EntityBase
+from .activity import ActivityResponse
 
 
 class TrainedModelBase(EntityBase):
@@ -26,6 +27,8 @@ class TrainedModelCreate(TrainedModelBase):
 class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime
+    input_activities: List[ActivityResponse] = []
+    output_activities: List[ActivityResponse] = []
 
     model_config = ConfigDict(
         from_attributes=True,

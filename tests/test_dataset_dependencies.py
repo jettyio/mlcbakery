@@ -50,7 +50,7 @@ def test_dataset_generation_from_another_dataset(test_db):
             name="Data Preprocessing",
             created_at=dt.datetime.now(dt.UTC),
         )
-        activity.input_datasets = [source_dataset]
+        activity.input_entities = [source_dataset]
         test_db.add(activity)
         test_db.commit()
         test_db.refresh(activity)
@@ -73,23 +73,28 @@ def test_dataset_generation_from_another_dataset(test_db):
         test_db.refresh(derived_dataset)
 
         # Add derived dataset to the activity
-        activity.input_datasets.append(derived_dataset)
+        activity.input_entities.append(derived_dataset)
+        activity.output_entity = derived_dataset
         test_db.commit()
         test_db.refresh(activity)
 
         # Verify relationships
-        assert len(activity.input_datasets) == 2
-        assert source_dataset in activity.input_datasets
-        assert derived_dataset in activity.input_datasets
+        assert len(activity.input_entities) == 2
+        assert source_dataset in activity.input_entities
+        assert derived_dataset in activity.input_entities
+        assert activity.output_entity == derived_dataset
 
         # Verify we can trace the dependency
-        source_activities = source_dataset.activities
+        source_activities = source_dataset.input_activities
         assert len(source_activities) == 1
         assert source_activities[0].name == "Data Preprocessing"
 
-        derived_activities = derived_dataset.activities
+        derived_activities = derived_dataset.input_activities
         assert len(derived_activities) == 1
         assert derived_activities[0].name == "Data Preprocessing"
+
+        # Verify output activity relationship
+        assert derived_dataset.output_activities == [activity]
 
         # Verify metadata captures the relationship
         assert (

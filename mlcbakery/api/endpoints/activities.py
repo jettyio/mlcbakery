@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from ...database import get_db
-from ...models import Activity, Dataset, TrainedModel, Agent
+from ...models import Activity, Entity, Agent
 from ...schemas.activity import ActivityCreate, ActivityResponse
 
 router = APIRouter()
@@ -11,25 +11,23 @@ router = APIRouter()
 @router.post("/activities/", response_model=ActivityResponse)
 def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
     """Create a new activity with relationships."""
-    # Verify input datasets exist
-    input_datasets = (
-        db.query(Dataset).filter(Dataset.id.in_(activity.input_dataset_ids)).all()
+    # Verify input entities exist
+    input_entities = (
+        db.query(Entity).filter(Entity.id.in_(activity.input_entity_ids)).all()
     )
-    if len(input_datasets) != len(activity.input_dataset_ids):
+    if len(input_entities) != len(activity.input_entity_ids):
         raise HTTPException(
-            status_code=404, detail="One or more input datasets not found"
+            status_code=404, detail="One or more input entities not found"
         )
 
-    # Verify output model exists if specified
-    output_model = None
-    if activity.output_model_id:
-        output_model = (
-            db.query(TrainedModel)
-            .filter(TrainedModel.id == activity.output_model_id)
-            .first()
+    # Verify output entity exists if specified
+    output_entity = None
+    if activity.output_entity_id:
+        output_entity = (
+            db.query(Entity).filter(Entity.id == activity.output_entity_id).first()
         )
-        if not output_model:
-            raise HTTPException(status_code=404, detail="Output model not found")
+        if not output_entity:
+            raise HTTPException(status_code=404, detail="Output entity not found")
 
     # Verify agents exist if specified
     agents = []
@@ -40,9 +38,9 @@ def create_activity(activity: ActivityCreate, db: Session = Depends(get_db)):
 
     # Create activity
     db_activity = Activity(name=activity.name)
-    db_activity.input_datasets = input_datasets
-    if output_model:
-        db_activity.output_model = output_model
+    db_activity.input_entities = input_entities
+    if output_entity:
+        db_activity.output_entity = output_entity
     if agents:
         db_activity.agents = agents
 

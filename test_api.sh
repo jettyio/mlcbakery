@@ -97,8 +97,8 @@ ACTIVITY_RESPONSE=$(curl -s -X POST "${BASE_URL}/activities/" \
   -H "Content-Type: application/json" \
   -d "{
     \"name\": \"Titanic Model Training\",
-    \"input_dataset_ids\": [$DATASET_ID],
-    \"output_model_id\": $MODEL_ID,
+    \"input_entity_ids\": [$DATASET_ID],
+    \"output_entity_id\": $MODEL_ID,
     \"agent_ids\": [$AGENT_ID]
   }")
 
