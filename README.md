@@ -143,4 +143,4 @@ The application uses the following main tables:
 
 ## License
 
-[Add your license information here]
+MIT
