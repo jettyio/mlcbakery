@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from .entity import EntityBase
 from .activity import ActivityResponse
+from .collection import CollectionResponse
 import base64
 
 
@@ -22,6 +23,7 @@ class UpstreamEntityNode(BaseModel):
 
     id: int
     name: str
+    collection_name: str
     entity_type: str
     activity_id: Optional[int] = None
     activity_name: Optional[str] = None
@@ -52,7 +54,6 @@ class DatasetResponse(DatasetBase):
     created_at: datetime
     input_activities: List[ActivityResponse] = []
     output_activities: List[ActivityResponse] = []
-
     model_config = ConfigDict(
         from_attributes=True,
         json_encoders={datetime: lambda v: v.isoformat()},

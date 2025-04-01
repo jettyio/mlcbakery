@@ -1,31 +1,31 @@
 [project]
 name = "mlcbakery"
 version = "0.1.0"
-description = "Your project description"
-requires-python = ">=3.9"
+description = "A machine learning data and model management system with provenance tracking"
+requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 
 [tool.black]
 line-length = 88
-target-version = ['py38']
+target-version = ['py311']
 include = '\.pyi?$'
 
 [tool.poetry]
-name = "your-project-name"
+name = "mlcbakery"
 version = "0.1.0"
-description = "FastAPI project with SQLAlchemy and PostgreSQL"
+description = "A machine learning data and model management system with provenance tracking"
 authors = ["Your Name <your.email@example.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.11"
 fastapi = "^0.109.0"
 uvicorn = "^0.27.0"
 sqlalchemy = "^2.0.25"
@@ -41,6 +41,11 @@ pytest-asyncio = "^0.23.5"
 pytest-cov = "^4.1.0"
 httpx = "^0.26.0"
 mypy = "^1.8.0"
+
+[tool.poetry.group.webclient.dependencies]
+streamlit = "^1.32.0"
+pandas = "^2.2.0"
+mlcroissant = "^1.0.15"
 
 [build-system]
 requires = ["poetry-core"]

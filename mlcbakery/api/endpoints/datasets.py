@@ -181,6 +181,7 @@ async def get_dataset_upstream_tree(
         node = UpstreamEntityNode(
             id=entity.id,
             name=entity.name,
+            collection_name=entity.collection.name,
             entity_type=entity.entity_type,
         )
 
