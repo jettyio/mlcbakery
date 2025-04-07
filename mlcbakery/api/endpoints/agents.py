@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # Needed if Agent has relationships to eager load
 from typing import List
-
+import python_multipart
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse

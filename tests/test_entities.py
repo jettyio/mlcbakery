@@ -14,7 +14,7 @@ from mlcbakery.models import (
     Collection,
     Entity,
 )
-from mlcbakery.database import get_db
+from mlcbakery.database import get_async_db
 
 # Create test database
 SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
@@ -32,7 +32,7 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
+app.dependency_overrides[get_async_db] = override_get_db
 client = TestClient(app)
 
 

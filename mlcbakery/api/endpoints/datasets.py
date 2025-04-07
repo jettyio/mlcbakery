@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload, contains_eager, joinedload
 from typing import Annotated, List, Set
+import base64
+import binascii
 
 from mlcbakery.models import Dataset, Collection, Activity, Entity
 from mlcbakery.schemas.dataset import (
@@ -77,6 +79,8 @@ async def list_datasets(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Get a list of datasets with pagination (async)."""
+    if skip < 0 or limit < 0:
+        raise HTTPException(status_code=400, detail="Offset and limit must be non-negative")
     stmt = (
         select(Dataset)
         .where(Dataset.entity_type == 'dataset')
@@ -243,10 +247,11 @@ async def update_dataset_metadata(
 @router.put("/datasets/{dataset_id}/preview", response_model=DatasetPreviewResponse)
 async def update_dataset_preview(
     dataset_id: int,
-    preview: UploadFile = File(...),
+    preview_update: UploadFile = File(...), # Expect UploadFile as form data
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Update a dataset's preview (async)."""
+    """Update a dataset's preview (async) using file upload."""
+    # Fetch the dataset first
     stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -254,18 +259,52 @@ async def update_dataset_preview(
     if not db_dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Read the file content
-    preview_data = await preview.read()
+    # Read the file content directly from the UploadFile object
+    preview_data: bytes = await preview_update.read()
 
-    # Update the dataset
-    db_dataset.preview = preview_data
-    db_dataset.preview_type = preview.content_type
+    # Check if data was actually read (e.g., empty file upload)
+    if not preview_data:
+        # Decide how to handle empty file: error or clear preview?
+        # Option 1: Error
+        # raise HTTPException(status_code=400, detail="Preview file cannot be empty")
+        # Option 2: Clear preview (if allowed)
+        db_dataset.preview = None
+        db_dataset.preview_type = None
+    else:
+        db_dataset.preview = preview_data
+        # Get content type directly from the UploadFile object
+        db_dataset.preview_type = preview_update.content_type
 
     db.add(db_dataset)
     await db.commit()
-    await db.refresh(db_dataset)
-    # Don't need to eager load collection here as preview response doesn't need it
-    return db_dataset
+
+    # RE-FETCH the updated dataset with relationships needed by the response model
+    stmt_refresh = (
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .options(
+             selectinload(Dataset.collection),
+             # Eager load OUTPUT activities (activity that *created* this dataset)
+             selectinload(Dataset.output_activities).options(
+                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
+                 selectinload(Activity.agents)
+             ),
+             # ADDED: Eager load INPUT activities (activities that *used* this dataset)
+             selectinload(Dataset.input_activities).options(
+                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
+                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
+                 selectinload(Activity.agents)
+            )
+         )
+     )
+    result_refresh = await db.execute(stmt_refresh)
+    # Use unique() because multiple options paths might cause duplicates
+    refreshed_dataset = result_refresh.scalars().unique().one_or_none()
+
+    if not refreshed_dataset:
+         raise HTTPException(status_code=500, detail="Failed to reload dataset after preview update")
+
+    return refreshed_dataset # Return the refreshed object with relationships loaded
 
 
 @router.get("/datasets/{dataset_id}/preview")

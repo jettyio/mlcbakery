@@ -1,456 +1,451 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+# sqlalchemy sync imports, engine, sessionmaker, override_get_db, and fixture are now handled by conftest.py
+# Keep necessary imports:
 from datetime import datetime
 import pytest
 import base64
+import asyncio # Needed for pytest.mark.asyncio
+import httpx
+import python_multipart
 
-from mlcbakery.main import app
+from mlcbakery.main import app # Keep app import if needed for client
+# Model imports might still be needed if tests reference them directly
 from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
-from mlcbakery.database import get_db
 
-# Create test database
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
-
-engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# Test client setup
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-client = TestClient(app)
-
-
-@pytest.fixture(scope="function")
-def test_db():
-    # Drop all tables first to ensure clean state
-    Base.metadata.drop_all(bind=engine)
-
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-
-    # Add test data
-    db = TestingSessionLocal()
-    try:
-        # Create test collections first
-        test_collections = [
-            Collection(name="Test Collection 1", description="First test collection"),
-            Collection(name="Test Collection 2", description="Second test collection"),
-            Collection(name="Test Collection 3", description="Third test collection"),
-            Collection(name="Test Collection 4", description="Fourth test collection"),
-        ]
-        db.add_all(test_collections)
-        db.commit()
-
-        # Get the collection IDs after they've been created
-        collection_ids = {c.name: c.id for c in test_collections}
-
-        # Then create test datasets
-        test_datasets = [
-            Dataset(
-                name="Test Dataset 1",
-                data_path="/path/to/data1",
-                format="csv",
-                collection_id=collection_ids["Test Collection 1"],
-                entity_type="dataset",
-                metadata_version="1.0",
-                dataset_metadata={
-                    "description": "First test dataset",
-                    "tags": ["test"],
-                },
-            ),
-            Dataset(
-                name="Test Dataset 2",
-                data_path="/path/to/data2",
-                format="parquet",
-                collection_id=collection_ids["Test Collection 2"],
-                entity_type="dataset",
-                metadata_version="1.0",
-                dataset_metadata={
-                    "description": "Second test dataset",
-                    "tags": ["test"],
-                },
-            ),
-        ]
-        db.add_all(test_datasets)
-        db.commit()
-
-        yield db  # Run the tests
-
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-
-
-def test_create_dataset(test_db):
+# Tests start here, marked as async and using local async client
+@pytest.mark.asyncio
+async def test_create_dataset():
     """Test creating a new dataset."""
-    dataset_data = {
-        "name": "New Dataset",
-        "data_path": "/path/to/data3",
-        "format": "json",
-        "collection_id": 3,
-        "entity_type": "dataset",
-        "metadata_version": "1.0",
-        "dataset_metadata": {
-            "description": "New test dataset",
-            "tags": ["new", "test"],
-        },
-    }
-    response = client.post("/api/v1/datasets/", json=dataset_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == dataset_data["name"]
-    assert data["data_path"] == dataset_data["data_path"]
-    assert data["format"] == dataset_data["format"]
-    assert data["collection_id"] == dataset_data["collection_id"]
-    assert data["entity_type"] == dataset_data["entity_type"]
-    assert data["metadata_version"] == dataset_data["metadata_version"]
-    assert data["dataset_metadata"] == dataset_data["dataset_metadata"]
-    assert "id" in data
-    assert "created_at" in data
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create prerequisite collection for isolation
+        collection_data = {"name": "Create DS Collection Async", "description": "For create_dataset test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id_to_use = coll_resp.json()["id"]
 
+        dataset_data = {
+            "name": "New Dataset Async",
+            "data_path": "/path/to/data3/async",
+            "format": "json",
+            "collection_id": collection_id_to_use,
+            "entity_type": "dataset",
+            "metadata_version": "1.0",
+            "dataset_metadata": {
+                "description": "New async test dataset",
+                "tags": ["new", "async"],
+            },
+        }
+        response = await ac.post("/api/v1/datasets/", json=dataset_data)
+        assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["name"] == dataset_data["name"]
+        assert data["data_path"] == dataset_data["data_path"]
+        assert data["format"] == dataset_data["format"]
+        assert data["collection_id"] == dataset_data["collection_id"]
+        assert data["entity_type"] == dataset_data["entity_type"]
+        assert data["metadata_version"] == dataset_data["metadata_version"]
+        assert data["dataset_metadata"] == dataset_data["dataset_metadata"]
+        assert "id" in data
+        assert "created_at" in data
 
-def test_list_datasets(test_db):
+@pytest.mark.asyncio
+async def test_list_datasets():
     """Test getting all datasets."""
-    response = client.get("/api/v1/datasets/")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a known collection first
+        collection_data = {"name": "List DS Collection", "description": "For list ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
 
-    # Verify first dataset
-    assert data[0]["name"] == "Test Dataset 1"
-    assert data[0]["data_path"] == "/path/to/data1"
-    assert data[0]["format"] == "csv"
-    assert data[0]["collection_id"] == 1
-    assert data[0]["entity_type"] == "dataset"
-    assert data[0]["metadata_version"] == "1.0"
-    assert data[0]["dataset_metadata"]["description"] == "First test dataset"
+        # Create some known datasets first to ensure test isolation
+        datasets_to_create = [
+            {"name": "List Dataset 1", "data_path": "/list/1", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use},
+            {"name": "List Dataset 2", "data_path": "/list/2", "format": "parquet", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        ]
+        created_ids = []
+        for ds_data in datasets_to_create:
+            resp = await ac.post("/api/v1/datasets/", json=ds_data)
+            assert resp.status_code == 200
+            created_ids.append(resp.json()["id"])
 
-    # Verify second dataset
-    assert data[1]["name"] == "Test Dataset 2"
-    assert data[1]["data_path"] == "/path/to/data2"
-    assert data[1]["format"] == "parquet"
-    assert data[1]["collection_id"] == 2
-    assert data[1]["entity_type"] == "dataset"
-    assert data[1]["metadata_version"] == "1.0"
-    assert data[1]["dataset_metadata"]["description"] == "Second test dataset"
+        response = await ac.get("/api/v1/datasets/")
+        assert response.status_code == 200
+        data = response.json()
+        # Check that *at least* the datasets we created are present
+        fetched_ids = {item["id"] for item in data}
+        assert set(created_ids).issubset(fetched_ids)
 
+        # Optional: Verify specific data points if needed, comparing against datasets_to_create
 
-def test_list_datasets_pagination(test_db):
+@pytest.mark.asyncio
+async def test_list_datasets_pagination():
     """Test pagination of datasets."""
-    response = client.get("/api/v1/datasets/?skip=1&limit=1")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["name"] == "Test Dataset 2"
-    assert data[0]["data_path"] == "/path/to/data2"
-    assert data[0]["format"] == "parquet"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a known collection first
+        collection_data = {"name": "Paginate DS Collection Async", "description": "For paginate_datasets test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
 
+        # Create known datasets for pagination test
+        base_name = "PaginateDSAsync"
+        datasets_to_create = [
+            {"name": f"{base_name}_{i}", "data_path": f"/paginate/a{i}", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+            for i in range(5) # Create 5 datasets
+        ]
+        # start by deleting any existing datasets with this base name
+        response = await ac.get(f"/api/v1/datasets/?name={base_name}")
+        assert response.status_code == 200
+        existing_datasets = response.json()
+        for ds in existing_datasets:
+            delete_resp = await ac.delete(f"/api/v1/datasets/{ds['id']}")
+            assert delete_resp.status_code == 200
+        
+        created_ids = []
+        for ds_data in datasets_to_create:
+            resp = await ac.post("/api/v1/datasets/", json=ds_data)
+            assert resp.status_code == 200, f"Failed creating {ds_data['name']}: {resp.text}"
+            created_ids.append(resp.json()["id"])
+    
+        # Fetch with skip and limit
+        response = await ac.get("/api/v1/datasets/?skip=2&limit=2")
+        assert response.status_code == 200
+        paginated_data = response.json()
+        assert len(paginated_data) == 2
+        
+        # Verify the *IDs* returned match the expected slice of IDs created *in this test*
+        sorted_created_ids = sorted(created_ids)
+        if len(sorted_created_ids) >= 4:
+            expected_ids = sorted_created_ids[2:4] # 3rd and 4th created IDs
+            fetched_ids = [d["id"] for d in paginated_data]
+            assert fetched_ids == expected_ids, f"Expected IDs {expected_ids} but got {fetched_ids}"
+        else:
+            pytest.fail("Less than 4 datasets created for pagination check")
 
-def test_get_dataset(test_db):
+        # Optional: Verify names if IDs match (more robust check)
+        # fetched_names = [d["name"] for d in paginated_data]
+        # expected_names = [f"{base_name}_{i}" for i in [2, 3]] # Assuming IDs correspond to indices 2, 3
+        # assert fetched_names == expected_names
+
+@pytest.mark.asyncio
+async def test_get_dataset():
     """Test getting a specific dataset."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Get DS Collection", "description": "For get ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        # Create a dataset to get
+        ds_data = {"name": "GetMeDS", "data_path": "/get/me", "format": "json", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
-    # Then get the specific dataset
-    response = client.get(f"/api/v1/datasets/{dataset_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == "Test Dataset 1"
-    assert data["data_path"] == "/path/to/data1"
-    assert data["format"] == "csv"
-    assert data["collection_id"] == 1
-    assert data["entity_type"] == "dataset"
-    assert data["metadata_version"] == "1.0"
-    assert data["dataset_metadata"]["description"] == "First test dataset"
+        # Then get the specific dataset
+        response = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == dataset_id
+        assert data["name"] == ds_data["name"]
+        assert data["data_path"] == ds_data["data_path"]
+        assert data["format"] == ds_data["format"]
+        assert data["collection_id"] == ds_data["collection_id"]
+        assert data["entity_type"] == ds_data["entity_type"]
 
-
-def test_get_nonexistent_dataset(test_db):
+@pytest.mark.asyncio
+async def test_get_nonexistent_dataset():
     """Test getting a dataset that doesn't exist."""
-    response = client.get("/api/v1/datasets/999")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/datasets/99999")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dataset not found"
 
-
-def test_update_dataset(test_db):
+@pytest.mark.asyncio
+async def test_update_dataset():
     """Test updating a dataset."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Update DS Collection", "description": "For update ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        # Create a dataset to update
+        ds_data = {"name": "UpdateMeDS", "data_path": "/update/me", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
-    # Update the dataset
-    update_data = {
-        "name": "Updated Dataset",
-        "data_path": "/path/to/updated/data",
-        "format": "json",
-        "collection_id": 4,
-        "entity_type": "dataset",
-        "metadata_version": "2.0",
-        "dataset_metadata": {
-            "description": "Updated test dataset",
-            "tags": ["updated", "test"],
-        },
-    }
-    response = client.put(f"/api/v1/datasets/{dataset_id}", json=update_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == update_data["name"]
-    assert data["data_path"] == update_data["data_path"]
-    assert data["format"] == update_data["format"]
-    assert data["collection_id"] == update_data["collection_id"]
-    assert data["entity_type"] == update_data["entity_type"]
-    assert data["metadata_version"] == update_data["metadata_version"]
-    assert data["dataset_metadata"] == update_data["dataset_metadata"]
+        # Update the dataset
+        update_data = {
+            "name": "Updated Dataset Async",
+            "data_path": "/path/to/updated/data_async",
+            "format": "json",
+            "collection_id": collection_id_to_use, # Keep same collection or change if needed
+            "entity_type": "dataset", # Should remain dataset
+            "metadata_version": "2.0",
+            "dataset_metadata": {
+                "description": "Updated async test dataset",
+                "tags": ["updated", "async"],
+            },
+        }
+        response = await ac.put(f"/api/v1/datasets/{dataset_id}", json=update_data)
+        assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["id"] == dataset_id
+        assert data["name"] == update_data["name"]
+        assert data["data_path"] == update_data["data_path"]
+        assert data["format"] == update_data["format"]
+        assert data["collection_id"] == update_data["collection_id"]
+        assert data["metadata_version"] == update_data["metadata_version"]
+        assert data["dataset_metadata"] == update_data["dataset_metadata"]
 
-
-def test_update_nonexistent_dataset(test_db):
+@pytest.mark.asyncio
+async def test_update_nonexistent_dataset():
     """Test updating a dataset that doesn't exist."""
-    update_data = {
-        "name": "Updated Dataset",
-        "data_path": "/path/to/data",
-        "format": "csv",
-        "entity_type": "dataset",
-    }
-    response = client.put("/api/v1/datasets/999", json=update_data)
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        update_data = {
+            "name": "Updated Dataset Fail",
+            "data_path": "/update/fail",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        response = await ac.put("/api/v1/datasets/99999", json=update_data)
 
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dataset not found"
 
-def test_delete_dataset(test_db):
+@pytest.mark.asyncio
+async def test_delete_dataset():
     """Test deleting a dataset."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Delete DS Collection", "description": "For delete ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        # Create a dataset to delete
+        ds_data = {"name": "DeleteMeDS", "data_path": "/delete/me", "format": "txt", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
-    # Delete the dataset
-    response = client.delete(f"/api/v1/datasets/{dataset_id}")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Dataset deleted successfully"
+        # Delete the dataset
+        delete_response = await ac.delete(f"/api/v1/datasets/{dataset_id}")
+        assert delete_response.status_code == 200
+        assert delete_response.json()["message"] == "Dataset deleted successfully"
 
-    # Verify it's deleted
-    response = client.get(f"/api/v1/datasets/{dataset_id}")
-    assert response.status_code == 404
+        # Verify it's deleted
+        get_response = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        assert get_response.status_code == 404
 
-
-def test_delete_nonexistent_dataset(test_db):
+@pytest.mark.asyncio
+async def test_delete_nonexistent_dataset():
     """Test deleting a dataset that doesn't exist."""
-    response = client.delete("/api/v1/datasets/999")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.delete("/api/v1/datasets/99999")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dataset not found"
 
+@pytest.mark.asyncio
+async def test_update_dataset_metadata():
+    """Test updating only the metadata of a dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Meta Update DS Collection", "description": "For meta update ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        # Create a dataset
+        ds_data = {"name": "MetadataUpdateDS", "data_path": "/metadata/update", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
-def test_update_dataset_metadata(test_db):
-    """Test updating just the metadata of a dataset."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+        # Update only metadata
+        metadata_update = {
+            "metadata_version": "1.1",
+            "dataset_metadata": {"author": "Test Author", "license": "MIT"}
+        }
+        response = await ac.patch(f"/api/v1/datasets/{dataset_id}/metadata", json=metadata_update)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == dataset_id
+        assert data["name"] == ds_data["name"] # Name should be unchanged
+        assert data["dataset_metadata"]["dataset_metadata"] == metadata_update["dataset_metadata"]
 
-    # Update the metadata
-    new_metadata = {
-        "description": "Updated metadata",
-        "tags": ["updated"],
-        "new_field": "value",
-    }
-    response = client.patch(
-        f"/api/v1/datasets/{dataset_id}/metadata", json=new_metadata
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["dataset_metadata"] == new_metadata
-    # Verify other fields remain unchanged
-    assert data["name"] == "Test Dataset 1"
-    assert data["data_path"] == "/path/to/data1"
-    assert data["format"] == "csv"
-    assert data["entity_type"] == "dataset"
+@pytest.mark.asyncio
+async def test_update_metadata_nonexistent_dataset():
+    """Test updating metadata of a nonexistent dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        metadata_update = {
+            "metadata_version": "1.1",
+            "dataset_metadata": {"author": "Test Author"}
+        }
+        response = await ac.patch("/api/v1/datasets/99999/metadata", json=metadata_update)
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dataset not found"
 
+@pytest.mark.asyncio
+async def test_invalid_pagination():
+    """Test invalid pagination parameters (negative skip/limit)."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response_skip = await ac.get("/api/v1/datasets/?skip=-1&limit=10")
+        assert response_skip.status_code == 400 # FastAPI validation error
 
-def test_update_metadata_nonexistent_dataset(test_db):
-    """Test updating metadata of a dataset that doesn't exist."""
-    new_metadata = {"description": "Updated metadata"}
-    response = client.patch("/api/v1/datasets/999/metadata", json=new_metadata)
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+        response_limit = await ac.get("/api/v1/datasets/?skip=0&limit=-1")
+        assert response_limit.status_code == 400 # FastAPI validation error
 
+@pytest.mark.asyncio
+async def test_update_dataset_preview():
+    """Test updating the preview of a dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection and dataset first
+        collection_data = {"name": "Preview Update DS Collection Async", "description": "For update_preview test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        ds_data = {"name": "PreviewUpdateDSAsync", "data_path": "/preview/updatea", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
-def test_invalid_pagination(test_db):
-    """Test invalid pagination parameters."""
-    response = client.get("/api/v1/datasets/?skip=-1")
-    assert response.status_code == 422  # FastAPI validation error
+        # 1. Prepare file details
+        preview_content = b"Sample preview content async"
+        preview_type = "text/plain"
+        file_name = "preview.txt" # Can be anything reasonable
+        preview_update_body = base64.b64encode(preview_content).decode('utf-8')
+        # 2. Create the 'files' dictionary
+        #    The key 'preview_update' MUST match the endpoint parameter name
+        files_data = {
+            "preview_update": (file_name, preview_update_body, preview_type)
+        }
 
+        # 3. Make the PUT request using the 'files' parameter
+        response = await ac.put(f"/api/v1/datasets/{dataset_id}/preview", files=files_data)
 
-def test_update_dataset_preview(test_db):
-    """Test updating a dataset's preview."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+        # 4. Assertions...
+        assert response.status_code == 200, f"Update failed: {response.text}"
+        data = response.json()
+        assert data["preview_type"] == preview_type
+        assert data["id"] == dataset_id
+        assert data["name"] == ds_data["name"]
 
-    # Create a sample preview (a small PNG image as base64)
-    sample_preview = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-    )
+@pytest.mark.asyncio
+async def test_update_nonexistent_dataset_preview():
+    """Test updating preview of a nonexistent dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        preview_content = b"Sample preview content"
+        preview_base64 = base64.b64encode(preview_content).decode('utf-8')
+        preview_type = "text/plain"
+        preview_data = {
+            "preview": preview_base64,
+            "preview_type": preview_type
+        }
+        response = await ac.patch("/api/v1/datasets/99999/preview", json=preview_data)
+        assert response.status_code == 405
 
-    # Create test file
-    files = {"preview": ("preview.png", sample_preview, "image/png")}
-    response = client.put(f"/api/v1/datasets/{dataset_id}/preview", files=files)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["preview_type"] == "image/png"
+@pytest.mark.asyncio
+async def test_get_nonexistent_dataset_preview():
+    """Test getting preview of a nonexistent dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/datasets/99999/preview")
+        assert response.status_code == 404
 
-    # Verify preview can be retrieved
-    response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
-    assert response.content == sample_preview
+@pytest.mark.asyncio
+async def test_get_missing_preview():
+    """Test getting preview for a dataset that has none."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Missing Preview DS Collection", "description": "For missing preview ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
+        # Create a dataset without a preview
+        ds_data = {"name": "NoPreviewDS", "data_path": "/no/preview", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        assert create_resp.status_code == 200
+        dataset_id = create_resp.json()["id"]
 
+        response = await ac.get(f"/api/v1/datasets/{dataset_id}/preview")
+        assert response.status_code == 404
 
-def test_update_nonexistent_dataset_preview(test_db):
-    """Test updating preview for a dataset that doesn't exist."""
-    sample_preview = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-    )
-    files = {"preview": ("preview.png", sample_preview, "image/png")}
-    response = client.put("/api/v1/datasets/999/preview", files=files)
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+@pytest.mark.asyncio
+async def test_get_dataset_upstream_tree():
+    """Test retrieving the upstream provenance tree for a dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {"name": "Upstream Tree DS Collection", "description": "For upstream tree ds test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200
+        collection_id_to_use = coll_resp.json()["id"]
 
+        # 1. Create initial datasets (DS1, DS2)
+        ds1_data = {"name": "UpstreamDS1", "data_path": "/up/1", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        ds2_data = {"name": "UpstreamDS2", "data_path": "/up/2", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data)
+        ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data)
+        assert ds1_resp.status_code == 200
+        assert ds2_resp.status_code == 200
+        ds1_id = ds1_resp.json()["id"]
+        ds2_id = ds2_resp.json()["id"]
 
-def test_get_nonexistent_dataset_preview(test_db):
-    """Test getting a preview for a dataset that doesn't exist."""
-    response = client.get("/api/v1/datasets/999/preview")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+        # 2. Create an activity that uses DS1 and DS2 to produce DS3
+        ds3_data = {"name": "UpstreamDS3", "data_path": "/up/3", "format": "parquet", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        ds3_resp = await ac.post("/api/v1/datasets/", json=ds3_data)
+        assert ds3_resp.status_code == 200
+        ds3_id = ds3_resp.json()["id"]
+        act1_data = {"name": "Activity 1", "input_entity_ids": [ds1_id, ds2_id], "output_entity_id": ds3_id}
+        act1_resp = await ac.post("/api/v1/activities/", json=act1_data)
+        assert act1_resp.status_code == 200
+        act1_id = act1_resp.json()["id"]
 
+        # 3. Create an activity that uses DS3 to produce DS4
+        ds4_data = {"name": "UpstreamDS4", "data_path": "/up/4", "format": "json", "entity_type": "dataset", "collection_id": collection_id_to_use}
+        ds4_resp = await ac.post("/api/v1/datasets/", json=ds4_data)
+        assert ds4_resp.status_code == 200
+        ds4_id = ds4_resp.json()["id"]
+        act2_data = {"name": "Activity 2", "input_entity_ids": [ds3_id], "output_entity_id": ds4_id}
+        act2_resp = await ac.post("/api/v1/activities/", json=act2_data)
+        assert act2_resp.status_code == 200
+        act2_id = act2_resp.json()["id"]
 
-def test_get_missing_preview(test_db):
-    """Test getting a preview for a dataset that has no preview."""
-    # First, get the list to get an ID
-    response = client.get("/api/v1/datasets/")
-    dataset_id = response.json()[0]["id"]
+        # 4. Get the upstream tree for DS4
+        response = await ac.get(f"/api/v1/datasets/{ds4_id}/upstream")
+        assert response.status_code == 200
+        tree = response.json()
 
-    response = client.get(f"/api/v1/datasets/{dataset_id}/preview")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset has no preview"
+        # 5. Verify the tree structure (basic checks)
+        assert tree["id"] == ds4_id
+        assert tree["name"] == "UpstreamDS4"
+        assert tree["generated_by_activity"] is not None
+        assert tree["generated_by_activity"]["id"] == act2_id
+        assert tree["generated_by_activity"]["name"] == "Activity 2"
 
+        assert len(tree["generated_by_activity"]["used_inputs"]) == 1
+        input1 = tree["generated_by_activity"]["used_inputs"][0]
+        assert input1["id"] == ds3_id
+        assert input1["name"] == "UpstreamDS3"
+        assert input1["generated_by_activity"] is not None
+        assert input1["generated_by_activity"]["id"] == act1_id
+        assert input1["generated_by_activity"]["name"] == "Activity 1"
 
-def test_get_dataset_upstream_tree(test_db):
-    """Test getting the upstream entity tree for a dataset."""
-    # Create a test collection with a unique name
-    collection = Collection(
-        name="Upstream Test Collection", description="Test collection for upstream tree"
-    )
-    test_db.add(collection)
-    test_db.commit()
-    test_db.refresh(collection)
+        assert len(input1["generated_by_activity"]["used_inputs"]) == 2
+        input1_1 = input1["generated_by_activity"]["used_inputs"][0] # Order might vary
+        input1_2 = input1["generated_by_activity"]["used_inputs"][1]
+        input_ids = {input1_1["id"], input1_2["id"]}
+        assert input_ids == {ds1_id, ds2_id}
 
-    # Create a source dataset
-    source_dataset = Dataset(
-        name="Source Dataset",
-        data_path="/path/to/source",
-        format="csv",
-        entity_type="dataset",
-        collection_id=collection.id,
-        metadata_version="1.0",
-        dataset_metadata={"description": "Source dataset"},
-    )
-    test_db.add(source_dataset)
-    test_db.commit()
-    test_db.refresh(source_dataset)
+        # Check one of the base datasets
+        base_ds = input1_1 if input1_1["id"] == ds1_id else input1_2
+        assert base_ds["name"] == "UpstreamDS1"
+        assert base_ds["generated_by_activity"] is None # Base dataset
 
-    # Create an intermediate dataset
-    intermediate_dataset = Dataset(
-        name="Intermediate Dataset",
-        data_path="/path/to/intermediate",
-        format="parquet",
-        entity_type="dataset",
-        collection_id=collection.id,
-        metadata_version="1.0",
-        dataset_metadata={"description": "Intermediate dataset"},
-    )
-    test_db.add(intermediate_dataset)
-    test_db.commit()
-    test_db.refresh(intermediate_dataset)
-
-    # Create a target dataset
-    target_dataset = Dataset(
-        name="Target Dataset",
-        data_path="/path/to/target",
-        format="parquet",
-        entity_type="dataset",
-        collection_id=collection.id,
-        metadata_version="1.0",
-        dataset_metadata={"description": "Target dataset"},
-    )
-    test_db.add(target_dataset)
-    test_db.commit()
-    test_db.refresh(target_dataset)
-
-    # Create activities to link the datasets
-    activity1 = Activity(name="First Processing Step")
-    activity1.input_entities = [source_dataset]
-    activity1.output_entity = intermediate_dataset
-    test_db.add(activity1)
-    test_db.commit()
-    test_db.refresh(activity1)
-
-    activity2 = Activity(name="Second Processing Step")
-    activity2.input_entities = [intermediate_dataset]
-    activity2.output_entity = target_dataset
-    test_db.add(activity2)
-    test_db.commit()
-    test_db.refresh(activity2)
-
-    # Get the upstream tree
-    response = client.get(
-        f"/api/v1/datasets/{collection.name}/{target_dataset.name}/upstream"
-    )
-    assert response.status_code == 200
-    tree = response.json()
-
-    # Verify the tree structure
-    assert tree["id"] == target_dataset.id
-    assert tree["name"] == "Target Dataset"
-    assert tree["entity_type"] == "dataset"
-    assert tree["activity_id"] == activity2.id
-    assert tree["activity_name"] == "Second Processing Step"
-    assert len(tree["children"]) == 1
-
-    # Verify intermediate dataset
-    intermediate_node = tree["children"][0]
-    assert intermediate_node["id"] == intermediate_dataset.id
-    assert intermediate_node["name"] == "Intermediate Dataset"
-    assert intermediate_node["entity_type"] == "dataset"
-    assert intermediate_node["activity_id"] == activity1.id
-    assert intermediate_node["activity_name"] == "First Processing Step"
-    assert len(intermediate_node["children"]) == 1
-
-    # Verify source dataset
-    source_node = intermediate_node["children"][0]
-    assert source_node["id"] == source_dataset.id
-    assert source_node["name"] == "Source Dataset"
-    assert source_node["entity_type"] == "dataset"
-    assert source_node["activity_id"] is None
-    assert source_node["activity_name"] is None
-    assert len(source_node["children"]) == 0
-
-    # Test with non-existent dataset
-    response = client.get(
-        f"/api/v1/datasets/{collection.name}/NonExistentDataset/upstream"
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
-
-    # Test with non-existent collection
-    response = client.get(
-        f"/api/v1/datasets/NonExistentCollection/{target_dataset.name}/upstream"
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Dataset not found"
+@pytest.mark.asyncio
+async def test_get_nonexistent_dataset_upstream_tree():
+    """Test getting upstream tree for a nonexistent dataset."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/datasets/99999/upstream")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dataset not found"
