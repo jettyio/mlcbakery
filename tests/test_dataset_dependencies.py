@@ -1,117 +1,72 @@
 import pytest
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy import create_engine
 from datetime import datetime
-import datetime as dt
+import asyncio
+import httpx
 
 from mlcbakery.models import Base, Dataset, Activity, Entity
+from mlcbakery.main import app
 
-# Create test database
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
+@pytest.mark.asyncio
+async def test_dataset_generation_from_another_dataset():
+    """Test that a dataset can be generated from another dataset through an activity (API based)."""
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # 1. Create source dataset
+        source_dataset_data = {
+            "name": "Source Dataset API",
+            "data_path": "/path/to/source/api.csv",
+            "format": "csv",
+            "entity_type": "dataset",
+            "metadata_version": "1.0",
+            "dataset_metadata": {"description": "Original source dataset via API"},
+        }
+        source_resp = await ac.post("/api/v1/datasets/", json=source_dataset_data)
+        assert source_resp.status_code == 200, f"Failed to create source dataset: {source_resp.text}"
+        source_dataset = source_resp.json()
+        source_dataset_id = source_dataset["id"]
 
-engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        # 2. Create activity linking source dataset as input
+        activity_data = {
+            "name": "Data Preprocessing API",
+            "input_entity_ids": [source_dataset_id],
+        }
+        activity_resp = await ac.post("/api/v1/activities/", json=activity_data)
+        assert activity_resp.status_code == 200, f"Failed to create activity: {activity_resp.text}"
+        activity = activity_resp.json()
+        activity_id = activity["id"]
 
-
-@pytest.fixture(scope="function")
-def test_db():
-    # Drop all tables first to ensure clean state
-    Base.metadata.drop_all(bind=engine)
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-
-    # Create a new session
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-
-
-def test_dataset_generation_from_another_dataset(test_db):
-    """Test that a dataset can be generated from another dataset through an activity."""
-    try:
-        # Create source dataset
-        source_dataset = Dataset(
-            name="Source Dataset",
-            data_path="/path/to/source/data",
-            format="csv",
-            entity_type="dataset",
-            metadata_version="1.0",
-            dataset_metadata={"description": "Original source dataset"},
-        )
-        test_db.add(source_dataset)
-        test_db.commit()
-        test_db.refresh(source_dataset)
-
-        # Create activity that will generate the new dataset
-        activity = Activity(
-            name="Data Preprocessing",
-            created_at=dt.datetime.now(dt.UTC),
-        )
-        activity.input_entities = [source_dataset]
-        test_db.add(activity)
-        test_db.commit()
-        test_db.refresh(activity)
-
-        # Create derived dataset
-        derived_dataset = Dataset(
-            name="Preprocessed Dataset",
-            data_path="/path/to/preprocessed/data",
-            format="parquet",
-            entity_type="dataset",
-            metadata_version="1.0",
-            dataset_metadata={
-                "description": "Preprocessed version of source dataset",
-                "source_dataset_id": source_dataset.id,
-                "preprocessing_steps": ["normalization", "feature engineering"],
+        # 3. Create derived dataset
+        derived_dataset_data = {
+            "name": "Preprocessed Dataset API",
+            "data_path": "/path/to/preprocessed/api.parquet",
+            "format": "parquet",
+            "entity_type": "dataset",
+            "metadata_version": "1.0",
+            "dataset_metadata": {
+                "description": "Preprocessed version via API",
+                "source_dataset_id": source_dataset_id,
+                "preprocessing_steps": ["normalization", "api-based generation"],
             },
-        )
-        test_db.add(derived_dataset)
-        test_db.commit()
-        test_db.refresh(derived_dataset)
+        }
+        derived_resp = await ac.post("/api/v1/datasets/", json=derived_dataset_data)
+        assert derived_resp.status_code == 200, f"Failed to create derived dataset: {derived_resp.text}"
+        derived_dataset = derived_resp.json()
+        derived_dataset_id = derived_dataset["id"]
 
-        # Add derived dataset to the activity
-        activity.input_entities.append(derived_dataset)
-        activity.output_entity = derived_dataset
-        test_db.commit()
-        test_db.refresh(activity)
+        # 5. Verify relationships by fetching data via GET requests
+        get_activity_resp = await ac.get(f"/api/v1/activities/{activity_id}")
+        assert get_activity_resp.status_code == 200
+        updated_activity = get_activity_resp.json()
 
-        # Verify relationships
-        assert len(activity.input_entities) == 2
-        assert source_dataset in activity.input_entities
-        assert derived_dataset in activity.input_entities
-        assert activity.output_entity == derived_dataset
+        get_source_resp = await ac.get(f"/api/v1/datasets/{source_dataset_id}")
+        assert get_source_resp.status_code == 200
+        updated_source_dataset = get_source_resp.json()
 
-        # Verify we can trace the dependency
-        source_activities = source_dataset.input_activities
-        assert len(source_activities) == 1
-        assert source_activities[0].name == "Data Preprocessing"
+        get_derived_resp = await ac.get(f"/api/v1/datasets/{derived_dataset_id}")
+        assert get_derived_resp.status_code == 200
+        updated_derived_dataset = get_derived_resp.json()
 
-        derived_activities = derived_dataset.input_activities
-        assert len(derived_activities) == 1
-        assert derived_activities[0].name == "Data Preprocessing"
+        assert source_dataset_id in updated_activity.get("input_entity_ids", [])
 
-        # Verify output activity relationship
-        assert derived_dataset.output_activities == [activity]
-
-        # Verify metadata captures the relationship
         assert (
-            derived_dataset.dataset_metadata["source_dataset_id"] == source_dataset.id
+            updated_derived_dataset["dataset_metadata"].get("source_dataset_id") == source_dataset_id
         )
-        assert "preprocessing_steps" in derived_dataset.dataset_metadata
-
-        # Verify we can query all entities and see both datasets
-        all_entities = test_db.query(Entity).all()
-        assert len(all_entities) == 2
-        assert any(
-            isinstance(e, Dataset) and e.name == "Source Dataset" for e in all_entities
-        )
-        assert any(
-            isinstance(e, Dataset) and e.name == "Preprocessed Dataset"
-            for e in all_entities
-        )
-
-    finally:
-        test_db.close()

@@ -1,138 +1,145 @@
-from sqlalchemy import orm
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+# sqlalchemy sync imports, engine, sessionmaker, override_get_db, and fixture are now handled by conftest.py
+# Keep necessary imports:
+from datetime import datetime
 import pytest
+import base64
+import asyncio # Needed for pytest.mark.asyncio
+import httpx
+import python_multipart
 
-from mlcbakery import models
 from mlcbakery.main import app
-from mlcbakery.database import get_async_db, Base
+from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
 
-# Create test database
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test_db"
-
-engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-@pytest.fixture(scope="session")
-def db_engine():
-    Base.metadata.create_all(bind=engine)
-    yield engine
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture(scope="function")
-def db(db_engine):
-    connection = db_engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    yield session
-    session.close()
-    transaction.rollback()
-    connection.close()
-
-
-@pytest.fixture(scope="function")
-def client(db):
-    """Create a test client that uses the same database session as the test function."""
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_async_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
-
-def test_create_trained_model(client, db):
+# Refactored tests using local async client pattern (Relying on global setup now)
+@pytest.mark.asyncio
+async def test_create_trained_model():
     """Test creating a new trained model."""
-    trained_model_data = {
-        "name": "test-model",
-        "model_path": "/path/to/model.pkl",
-        "framework": "scikit-learn",
-        "entity_type": "trained_model",
-    }
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create the prerequisite collection within the test
+        collection_data = {"name": "Model Test Collection Create", "description": "For model create test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
 
-    response = client.post("/api/v1/trained_models/", json=trained_model_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == trained_model_data["name"]
-    assert data["model_path"] == trained_model_data["model_path"]
-    assert data["framework"] == trained_model_data["framework"]
-    assert data["entity_type"] == trained_model_data["entity_type"]
-    assert "id" in data
-    assert "created_at" in data
+        trained_model_data = {
+            "name": "test-model-async",
+            "model_path": "/path/to/model-async.pkl",
+            "framework": "scikit-learn",
+            "entity_type": "trained_model", # Ensure this matches your model
+            "collection_id": collection_id,
+        }
 
+        response = await ac.post("/api/v1/trained_models/", json=trained_model_data)
+        assert response.status_code == 200, f"Create failed: {response.text}"
+        data = response.json()
+        assert data["name"] == trained_model_data["name"]
+        assert data["model_path"] == trained_model_data["model_path"]
+        assert data["framework"] == trained_model_data["framework"]
+        assert data["entity_type"] == "trained_model"
+        assert data["collection_id"] == collection_id
+        assert "id" in data
+        assert "created_at" in data
 
-def test_get_trained_model(client, db):
+@pytest.mark.asyncio
+async def test_get_trained_model():
     """Test getting a specific trained model."""
-    # Create a test model first
-    trained_model = models.TrainedModel(
-        name="test-model",
-        entity_type="trained_model",
-        model_path="/path/to/model.pkl",
-        framework="scikit-learn",
-    )
-    db.add(trained_model)
-    db.commit()
-    db.refresh(trained_model)
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create the prerequisite collection within the test
+        collection_data = {"name": "Model Test Collection Get", "description": "For model get test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
 
-    response = client.get(f"/api/v1/trained_models/{trained_model.id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["id"] == trained_model.id
-    assert data["name"] == trained_model.name
+        # Create a test model first
+        model_data = {
+            "name":"get-model-async",
+            "entity_type":"trained_model",
+            "model_path":"/path/get.pkl",
+            "framework":"pytorch",
+            "collection_id": collection_id,
+        }
+        create_resp = await ac.post("/api/v1/trained_models/", json=model_data)
+        assert create_resp.status_code == 200
+        model_id = create_resp.json()["id"]
 
+        # Get the model
+        response = await ac.get(f"/api/v1/trained_models/{model_id}")
+        assert response.status_code == 200, f"Get failed: {response.text}"
+        data = response.json()
+        assert data["id"] == model_id
+        assert data["name"] == model_data["name"]
+        assert data["framework"] == model_data["framework"]
+        assert data["collection_id"] == collection_id
 
-def test_list_trained_models(client, db):
+@pytest.mark.asyncio
+async def test_list_trained_models():
     """Test listing all trained models."""
-    # Create some test models
-    models_list = [
-        models.TrainedModel(
-            name=f"test-model-{i}",
-            entity_type="trained_model",
-            model_path=f"/path/to/model_{i}.pkl",
-            framework="scikit-learn",
-        )
-        for i in range(3)
-    ]
-    for model in models_list:
-        db.add(model)
-    db.commit()
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create the prerequisite collection within the test
+        collection_data = {"name": "Model Test Collection List", "description": "For model list test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
 
-    response = client.get("/api/v1/trained_models/")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 3
-    assert all(isinstance(item, dict) for item in data)
+        # Create some test models
+        created_ids = []
+        for i in range(3):
+            model_data = {
+                "name":f"list-model-async-{i}",
+                "entity_type":"trained_model",
+                "model_path":f"/path/list_{i}.pkl",
+                "framework":"tensorflow",
+                "collection_id": collection_id,
+            }
+            resp = await ac.post("/api/v1/trained_models/", json=model_data)
+            assert resp.status_code == 200
+            created_ids.append(resp.json()["id"])
 
+        # List models
+        response = await ac.get("/api/v1/trained_models/")
+        assert response.status_code == 200, f"List failed: {response.text}"
+        data = response.json()
 
-def test_delete_trained_model(client, db):
+        # Check that created models are in the list
+        fetched_ids = {item["id"] for item in data}
+        assert set(created_ids).issubset(fetched_ids)
+
+@pytest.mark.asyncio
+async def test_delete_trained_model():
     """Test deleting a trained model."""
-    # Create a test model first
-    trained_model = models.TrainedModel(
-        name="test-model",
-        entity_type="trained_model",
-        model_path="/path/to/model.pkl",
-        framework="scikit-learn",
-    )
-    db.add(trained_model)
-    db.commit()
-    db.refresh(trained_model)
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create the prerequisite collection within the test
+        collection_data = {"name": "Model Test Collection Delete", "description": "For model delete test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
 
-    response = client.delete(f"/api/v1/trained_models/{trained_model.id}")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Trained model deleted successfully"
+        # Create a test model first
+        model_data = {
+            "name":"delete-model-async",
+            "entity_type":"trained_model",
+            "model_path":"/path/delete.pkl",
+            "framework":"jax",
+            "collection_id": collection_id,
+        }
+        create_resp = await ac.post("/api/v1/trained_models/", json=model_data)
+        assert create_resp.status_code == 200
+        model_id = create_resp.json()["id"]
 
-    # Verify the model is deleted
-    response = client.get(f"/api/v1/trained_models/{trained_model.id}")
-    assert response.status_code == 404
+        # Delete the model
+        response = await ac.delete(f"/api/v1/trained_models/{model_id}")
+        assert response.status_code == 200, f"Delete failed: {response.text}"
+        assert response.json()["message"] == "Trained model deleted successfully"
 
+        # Verify the model is deleted
+        get_response = await ac.get(f"/api/v1/trained_models/{model_id}")
+        assert get_response.status_code == 404
 
-def test_get_nonexistent_trained_model(client, db):
+@pytest.mark.asyncio
+async def test_get_nonexistent_trained_model():
     """Test getting a nonexistent trained model."""
-    response = client.get("/api/v1/trained_models/999")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Trained model not found"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/trained_models/99999")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Trained model not found"

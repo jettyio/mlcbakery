@@ -4,10 +4,12 @@ from fastapi.testclient import TestClient
 from datetime import datetime
 import pytest
 import asyncio # Needed for pytest.mark.asyncio
-
+import python_multipart
 from mlcbakery.main import app # Keep app import if needed for client
 # Model imports might still be needed if tests reference them directly
 # from mlcbakery.models import Base, Agent, Collection
+import httpx
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # TestClient remains synchronous, it uses the globally overridden dependency
 # Ensure the `app` object used here is the same one modified in conftest.py
@@ -56,53 +58,87 @@ async def test_create_agent_without_type():
 @pytest.mark.asyncio
 async def test_list_agents():
     """Test getting all agents."""
-    response = client.get("/api/v1/agents/")
-    assert response.status_code == 200
-    data = response.json()
-    # Check length after test data seeding
-    assert len(data) >= 2 # Use >= in case other tests add agents without cleaning up perfectly
-    # Find the specific agents we added, order might not be guaranteed
-    agent1_found = any(d["name"] == "Test Agent 1" and d["type"] == "human" for d in data)
-    agent2_found = any(d["name"] == "Test Agent 2" and d["type"] == "system" for d in data)
-    assert agent1_found
-    assert agent2_found
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create known agents for this test
+        agents_to_create = [
+            {"name": "List Agent 1 Async", "type": "human"},
+            {"name": "List Agent 2 Async", "type": "system"},
+        ]
+        created_agents_info = []
+        for agent_data in agents_to_create:
+            resp = await ac.post("/api/v1/agents/", json=agent_data)
+            assert resp.status_code == 200, f"Failed creating {agent_data['name']}: {resp.text}"
+            created_agents_info.append(resp.json()) # Store created agent data
+
+        response = await ac.get("/api/v1/agents/")
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Check that the agents we created are present in the full list
+        fetched_agent_map = {item["id"]: item for item in data}
+        for created_agent in created_agents_info:
+            assert created_agent["id"] in fetched_agent_map
+            fetched_agent = fetched_agent_map[created_agent["id"]]
+            assert fetched_agent["name"] == created_agent["name"]
+            assert fetched_agent["type"] == created_agent["type"]
 
 
 @pytest.mark.asyncio
 async def test_list_agents_pagination():
     """Test pagination of agents."""
-    # Ensure at least 2 agents exist from the fixture
-    response_all = client.get("/api/v1/agents/")
-    assert response_all.status_code == 200
-    all_agents = response_all.json()
-    if len(all_agents) < 2:
-        pytest.skip("Not enough agents created by fixture for pagination test")
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        base_name = "PaginateAgentAsync"
+        agents_to_create = [
+            {"name": f"{base_name}_{i}", "type": "human" if i % 2 == 0 else "system"}
+            for i in range(5) # Create 5 agents for pagination check
+        ]
+        # delete all agents
+        response = await ac.get("/api/v1/agents/")
+        assert response.status_code == 200
+        data = response.json()
+        for agent in data:
+            await ac.delete(f"/api/v1/agents/{agent['id']}")
 
-    # Fetch page 2 (skip=1, limit=1)
-    response = client.get("/api/v1/agents/?skip=1&limit=1")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    # The specific agent depends on default ordering, which might not be guaranteed.
-    # Check that the agent returned is one of the seeded agents.
-    assert data[0]["name"] in ["Test Agent 1", "Test Agent 2"]
+        created_agents = []
+        for agent_data in agents_to_create:
+            resp = await ac.post("/api/v1/agents/", json=agent_data)
+            assert resp.status_code == 200, f"Failed creating {agent_data['name']}: {resp.text}"
+            created_agents.append(resp.json())
+
+        
+        # Fetch page 2 (skip=2, limit=2) to get 3rd and 4th items
+        response = await ac.get("/api/v1/agents/?skip=2&limit=2")
+        assert response.status_code == 200
+        paginated_data = response.json()
+        assert len(paginated_data) == 2
+
+        # Verify IDs match expected slice of agents created in this test (assuming default ID order)
+        sorted_created_ids = sorted([a["id"] for a in created_agents])
+        if len(sorted_created_ids) >= 4:
+            expected_ids = sorted_created_ids[2:4] # 3rd and 4th created IDs
+            fetched_ids = [d["id"] for d in paginated_data]
+            assert fetched_ids == expected_ids, f"Expected IDs {expected_ids} but got {fetched_ids}"
+        else:
+             pytest.fail("Less than 4 agents created for pagination check")
 
 
 @pytest.mark.asyncio
 async def test_get_agent():
     """Test getting a specific agent."""
-    # Find the ID of "Test Agent 1"
-    response_all = client.get("/api/v1/agents/")
-    agents = response_all.json()
-    agent_id = next((agent["id"] for agent in agents if agent["name"] == "Test Agent 1"), None)
-    assert agent_id is not None, "Test Agent 1 not found"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create agent to get
+        agent_data = {"name": "GetAgentAsync", "type": "human"}
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
+        agent_id = create_resp.json()["id"]
 
-    # Then get the specific agent
-    response = client.get(f"/api/v1/agents/{agent_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == "Test Agent 1"
-    assert data["type"] == "human"
+        # Get the specific agent
+        response = await ac.get(f"/api/v1/agents/{agent_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == agent_id
+        assert data["name"] == agent_data["name"]
+        assert data["type"] == agent_data["type"]
 
 
 @pytest.mark.asyncio
@@ -116,21 +152,21 @@ async def test_get_nonexistent_agent():
 @pytest.mark.asyncio
 async def test_delete_agent():
     """Test deleting an agent."""
-    # Find the ID of "Test Agent 1"
-    response_all = client.get("/api/v1/agents/")
-    agents = response_all.json()
-    agent_id = next((agent["id"] for agent in agents if agent["name"] == "Test Agent 1"), None)
-    assert agent_id is not None, "Test Agent 1 not found for deletion"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create agent to delete
+        agent_data = {"name": "DeleteAgentAsync", "type": "system"}
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
+        agent_id = create_resp.json()["id"]
 
+        # Delete the agent
+        response = await ac.delete(f"/api/v1/agents/{agent_id}")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Agent deleted successfully"
 
-    # Delete the agent
-    response = client.delete(f"/api/v1/agents/{agent_id}")
-    assert response.status_code == 200
-    assert response.json()["message"] == "Agent deleted successfully"
-
-    # Verify it's deleted
-    response = client.get(f"/api/v1/agents/{agent_id}")
-    assert response.status_code == 404
+        # Verify it's deleted
+        get_response = await ac.get(f"/api/v1/agents/{agent_id}")
+        assert get_response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -144,24 +180,31 @@ async def test_delete_nonexistent_agent():
 @pytest.mark.asyncio
 async def test_update_agent():
     """Test updating an agent."""
-    # Find the ID of "Test Agent 1"
-    response_all = client.get("/api/v1/agents/")
-    agents = response_all.json()
-    agent_id = next((agent["id"] for agent in agents if agent["name"] == "Test Agent 1"), None)
-    assert agent_id is not None, "Test Agent 1 not found for update"
+    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+        # Create agent to update
+        agent_data = {"name": "UpdateAgentAsync", "type": "human"}
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
+        agent_id = create_resp.json()["id"]
 
+        # Update the agent
+        update_data = {
+            "name": "Updated Agent Name Async", # Changed name
+            "type": "system", # Changed type
+        }
+        response = await ac.put(f"/api/v1/agents/{agent_id}", json=update_data)
+        assert response.status_code == 200, f"Update failed: {response.text}"
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["type"] == update_data["type"]
+        assert data["id"] == agent_id # Ensure ID hasn't changed
 
-    # Update the agent
-    update_data = {
-        "name": "Updated Agent Name", # Changed name
-        "type": "system", # Changed type
-    }
-    response = client.put(f"/api/v1/agents/{agent_id}", json=update_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == update_data["name"]
-    assert data["type"] == update_data["type"]
-    assert data["id"] == agent_id # Ensure ID hasn't changed
+        # Optional: Verify by fetching again
+        get_resp = await ac.get(f"/api/v1/agents/{agent_id}")
+        assert get_resp.status_code == 200
+        get_data = get_resp.json()
+        assert get_data["name"] == update_data["name"]
+        assert get_data["type"] == update_data["type"]
 
 
 @pytest.mark.asyncio
