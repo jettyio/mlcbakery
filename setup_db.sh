@@ -27,6 +27,6 @@ sed -i '' "s|sqlalchemy.url = .*|sqlalchemy.url = $DATABASE_URL|" alembic.ini
 
 # Run migrations
 echo "Running database migrations..."
-alembic upgrade head
+alembic upgrade heads
 
 echo "Database setup complete!" 

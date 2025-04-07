@@ -69,7 +69,7 @@ class Dataset(Entity):
     dataset_metadata = Column(JSON, nullable=True)
     preview = Column(LargeBinary, nullable=True)
     preview_type = Column(String, nullable=True)
-
+    long_description = Column(Text, nullable=True)
     __mapper_args__ = {"polymorphic_identity": "dataset"}
 
 

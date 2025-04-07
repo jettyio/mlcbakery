@@ -2,7 +2,8 @@ import datetime as dt
 import streamlit as st
 from mlcbakery.webclient import client
 
-
+_HOST = "https://bakery.jetty.io"
+_ALL_DATASETS = []
 def parse_url_path():
     """Parse the URL path to extract collection and dataset names."""
     query_params = st._get_query_params()
@@ -15,48 +16,39 @@ def _render_list_of_collections_datasets(bakery_client: client.BakeryClient):
     for collection in bakery_client.get_collections():
         _collection_name = collection["name"]
         st.write(f"## {_collection_name}")
-        for dataset in bakery_client.get_datasets_by_collection(_collection_name):
-            # Update session state when button is clicked
-            if st.button(dataset["name"], key=f"{_collection_name}/{dataset['name']}"):
-                st.session_state["collection_name"] = _collection_name
-                st.session_state["dataset_name"] = dataset["name"]
-                st.rerun()
-
+    for dataset in bakery_client.get_datasets_by_collection(_collection_name):
+        # Update session state when button is clicked
+        if st.button(dataset["name"], key=f"{_collection_name}/{dataset['name']}"):
+            st.session_state["collection_name"] = _collection_name
+            st.session_state["dataset_name"] = dataset["name"]
+            st.rerun()
+def _get_all_datasets(bakery_client: client.BakeryClient):
+    for collection in bakery_client.get_collections():
+        for dataset in bakery_client.get_datasets_by_collection(collection["name"]):
+            _ALL_DATASETS.append(f"{collection['name']}/{dataset['name']}")
+    return _ALL_DATASETS
 
 def main():
+    global _ALL_DATASETS
     st.set_page_config(page_title="Dataset Metadata Viewer", layout="wide")
+    dataset_name = st.session_state.get("dataset_name", None)
+    collection_name = st.session_state.get("collection_name", None)
+
+    if len(_ALL_DATASETS) == 0:
+        bakery_client = client.BakeryClient(_HOST)
+        _ALL_DATASETS = _get_all_datasets(bakery_client)
 
     # Add sidebar for host configuration
     with st.sidebar:
-        st.title("Configuration")
-        host = st.text_input(
-            "Bakery Host",
-            value="http://localhost:8000",
-            help="Enter the host URL for the Bakery server",
-        )
-        st.session_state["collection_name"] = st.text_input(
-            "Collection Name",
-            value=st.session_state.get("collection_name", ""),
-            help="Enter the name of the collection to view",
-        )
-        st.session_state["dataset_name"] = st.text_input(
-            "Dataset Name",
-            value=st.session_state.get("dataset_name", ""),
-            help="Enter the name of the dataset to view",
-        )
-        bakery_client = client.BakeryClient(host)
+        st.title("Dataset")
+        collection_and_dataset = st.selectbox("Select a dataset", _ALL_DATASETS)
+        collection_name, dataset_name = collection_and_dataset.split("/")
+        st.session_state["collection_name"] = collection_name
+        st.session_state["dataset_name"] = dataset_name
+        # st.rerun()
     st.title("MLC Bakery")
 
-    # Get collection and dataset from URL path
-    dataset_name = st.session_state.get("dataset_name", None)
-    collection_name = st.session_state.get("collection_name", None)
-    print(collection_name, dataset_name)
-    if not collection_name or not dataset_name:
-        _render_list_of_collections_datasets(bakery_client)
-        st.error("Please provide collection and dataset names in the URL path")
-        st.info("Example: /my_collection/my_dataset")
-        return
-
+    
     st.title(f"Dataset: {collection_name}/{dataset_name}")
 
     bakery_dataset = bakery_client.get_dataset_by_name(collection_name, dataset_name)
@@ -70,7 +62,7 @@ def main():
     created_at = dt.datetime.strptime(
         bakery_dataset.created_at.split(".")[0], "%Y-%m-%dT%H:%M:%S"
     )
-
+    
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Name", bakery_dataset.name)
@@ -94,6 +86,7 @@ def main():
         st.subheader("Preview")
         st.write(bakery_dataset.preview)
 
+    st.write(bakery_dataset.long_description)
 
 if __name__ == "__main__":
     main()

@@ -8,15 +8,8 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-RUN pip install uv
-
-# Create and activate virtual environment
-RUN python -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-
-# Install poetry in the virtual environment
-RUN /app/venv/bin/pip install poetry
+# Install poetry and uvicorn
+RUN pip install poetry uvicorn
 
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
@@ -35,4 +28,4 @@ RUN pip install -e .
 ENV PYTHONPATH=/app
 
 # Command to run the application
-CMD ["uvicorn", "mlcbakery.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["poetry", "run", "uvicorn", "mlcbakery.main:app", "--host", "0.0.0.0", "--port", "8000"]

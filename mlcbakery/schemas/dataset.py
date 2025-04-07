@@ -16,7 +16,7 @@ class DatasetBase(EntityBase):
     dataset_metadata: Optional[dict] = None
     preview_type: Optional[str] = None
     entity_type: str = "dataset"
-
+    long_description: Optional[str] = None
 
 class UpstreamEntityNode(BaseModel):
     """Represents a node in the upstream entity tree."""
@@ -47,6 +47,7 @@ class DatasetUpdate(DatasetBase):
     metadata_version: Optional[str] = None
     dataset_metadata: Optional[dict] = None
     preview_type: Optional[str] = None
+    long_description: Optional[str] = None
 
 
 class DatasetResponse(DatasetBase):

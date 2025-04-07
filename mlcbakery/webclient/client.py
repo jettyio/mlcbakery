@@ -3,9 +3,11 @@ import io
 import json
 import requests
 import mlcroissant
+import logging  
 
 import pandas as pd
 
+_LOGGER = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class BakeryCollection:
@@ -24,9 +26,9 @@ class BakeryDataset:
     preview: pd.DataFrame | None = None
     format: str | None = None
     created_at: str | None = None
-    metadata_version: str | None = None
+    metadata_version: str | None = None 
     data_path: str | None = None
-
+    long_description: str | None = None
 
 class BakeryClient:
     def __init__(self, bakery_url: str = "http://localhost:8000"):
@@ -73,6 +75,7 @@ class BakeryClient:
         format: str,
         metadata: mlcroissant.Dataset,
         preview: bytes,
+        long_description: str | None = None,
     ) -> BakeryDataset:
         """Push a dataset to the bakery."""
         collection_name = dataset_path.split("/")[0]
@@ -105,6 +108,7 @@ class BakeryClient:
                     "dataset_metadata": metadata.jsonld,
                     "data_path": data_path,
                     "format": format,
+                    "long_description": long_description,
                 },
             )
         # update the preview:
@@ -127,7 +131,7 @@ class BakeryClient:
             metadata = mlcroissant.Dataset(jsonld=json_str)
 
         preview = self.get_preview(dataset_response["id"])
-        print(dataset_response.keys())
+        _LOGGER.info(dataset_response.keys())
         return BakeryDataset(
             id=dataset_response["id"],
             name=dataset_response["name"],
@@ -138,6 +142,7 @@ class BakeryClient:
             format=dataset_response.get("format", ""),
             created_at=dataset_response.get("created_at", ""),
             data_path=dataset_response.get("data_path", ""),
+            long_description=dataset_response.get("long_description", ""),
         )
 
     def get_preview(self, dataset_id: str) -> pd.DataFrame:

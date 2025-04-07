@@ -134,6 +134,12 @@ The application uses the following main tables:
 - `was_generated_by`: Links datasets to activities
 - `was_associated_with`: Links activities to agents
 
+## Resetting the database
+```
+docker compose exec db psql -U postgres -d mlcbakery -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+docker compose exec web alembic -c alembic.ini upgrade heads
+```
+
 ## Contributing
 
 1. Create a new branch for your feature
