@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from mlcbakery.api.endpoints import (
     entities,
     datasets,
@@ -8,7 +9,8 @@ from mlcbakery.api.endpoints import (
     agents,
 )
 
-app = FastAPI()
+
+app = FastAPI(title="MLCBakery")
 
 
 @app.get("/api/v1/health")

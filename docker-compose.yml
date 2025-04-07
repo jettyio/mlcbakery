@@ -8,7 +8,7 @@ services:
       - .:/app
     
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mlcbakery
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app
     depends_on:
       - db
@@ -22,7 +22,7 @@ services:
     volumes:
       - .:/app
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mlcbakery
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app
     depends_on:
       - db
