@@ -1,5 +1,5 @@
 services:
-  web:
+  api:
     container_name: mlcbakery
     build: .
     ports:
@@ -12,6 +12,20 @@ services:
       - PYTHONPATH=/app
     depends_on:
       - db
+    networks:
+      - caddy-network
+
+  mcp_server:
+    container_name: mcp_server
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - MLCBAKERY_API_BASE_URL=http://api:8000/v1/api
+      - PYTHONPATH=/app
+    command: ["python", "mcp_server/main.py", "--host", "0.0.0.0", "--port", "8001"]
+    depends_on:
+      - api
     networks:
       - caddy-network
 
@@ -53,8 +67,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - web
+      - api
       - streamlit
+      - mcp_server
     networks:
       - caddy-network
 volumes:

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -14,9 +14,9 @@ RUN pip install poetry uvicorn
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies using poetry
+# Install dependencies using poetry, including the webclient group
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --no-root
+    poetry install --no-interaction --no-ansi --no-root --with webclient
 
 # Copy application code
 COPY . .
