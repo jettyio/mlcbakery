@@ -15,8 +15,8 @@ A Python-based service for managing ML model provenance and lineage, built with 
 
 ### Prerequisites
 
-- Python 3.8+
-- PostgreSQL 13+
+- Python 3.12+
+- PostgreSQL 15+
 - Docker and Docker Compose (for running the server)
 
 ### Local Development Setup
@@ -50,7 +50,7 @@ A Python-based service for managing ML model provenance and lineage, built with 
    createdb mlcbakery
 
    # Run migrations
-   alembic upgrade head
+   alembic upgrade heads
    ```
 
 ### Running Tests

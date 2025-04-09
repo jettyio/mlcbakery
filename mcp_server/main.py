@@ -14,6 +14,8 @@ from contextlib import asynccontextmanager
 import dataclasses
 from mcp.server.fastmcp.prompts import base
 from mlcbakery.webclient import client as bakery_client
+import pandas as pd
+import mlcroissant
 
 _BAKERY_API_URL = "http://api:8000"
 
@@ -38,21 +40,45 @@ mcp = FastMCP("MLC-Bakery-MPC", lifespan=app_lifespan)
 @mcp.resource("config://app", description="App configuration")
 def get_config() -> str:
     """Static configuration data"""
-    return "App configuration here"
+    return "{}"
 
 
 @mcp.resource("mlcbakery://collections/{pattern}", description="Search for collections")
-async def search_collections(pattern: str) -> list[str]:
+async def search_collections(pattern: str = "") -> list[str]:
     """Search Collection
     """
     client = bakery_client.BakeryClient(_BAKERY_API_URL)
     collections = client.get_collections()
-    return [collection["name"] for collection in collections ]
+    return [collection["name"] for collection in collections if pattern.lower() in collection["name"].lower()]
 
-# @mcp.tool("mlcbakery://add", description="Add two numbers")
-# def add(a: int, b: int) -> int:
-#     """Add two numbers"""
-#     return a + b
+@mcp.tool("mlcbakery://datasets/", description="list all datasets by collection")
+async def list_datasets() -> list[str]:
+    """List all datasets
+    """
+    client = bakery_client.BakeryClient(_BAKERY_API_URL)
+    collections = client.get_collections()
+    dataset_list = []
+    for collection in collections:
+        datasets = client.get_datasets_by_collection(collection["name"])
+        for dataset in datasets:
+            dataset_list.append(f"{collection['name']}/{dataset['name']}")
+    return dataset_list
+    
+
+
+@mcp.tool("mlcbakery://dataset-preview/{dataset_name}", description="Get a dataset preview as a JSON string")
+async def get_dataset_preview(dataset_name: str) -> str | None:
+    """Get a dataset preview
+
+    Args:
+        dataset_name: The name of the dataset to get the preview for (e.g. 'collection_name/dataset_name')
+    """
+    client = bakery_client.BakeryClient(_BAKERY_API_URL)
+    collection_name, ds_name = dataset_name.split("/")
+    dataset = client.get_dataset_by_name(collection_name, ds_name)
+    if dataset.preview is None:
+        return "No preview available"
+    return str(dataset.preview)
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:

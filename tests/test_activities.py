@@ -9,7 +9,6 @@ from mlcbakery.main import app # Keep app import if needed for client
 # Model imports might still be needed if tests reference them directly
 # from mlcbakery.models import ...
 
-# REMOVED: client = TestClient(app)
 
 # Helper function to create prerequisites consistently
 async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
