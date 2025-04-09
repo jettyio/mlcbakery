@@ -11,17 +11,6 @@ def parse_url_path():
     return collection_name, dataset_name
 
 
-def _render_list_of_collections_datasets(bakery_client: client.BakeryClient):
-    st.write("Collections")
-    for collection in bakery_client.get_collections():
-        _collection_name = collection["name"]
-        st.write(f"## {_collection_name}")
-    for dataset in bakery_client.get_datasets_by_collection(_collection_name):
-        # Update session state when button is clicked
-        if st.button(dataset["name"], key=f"{_collection_name}/{dataset['name']}"):
-            st.session_state["collection_name"] = _collection_name
-            st.session_state["dataset_name"] = dataset["name"]
-            st.rerun()
 def _get_all_datasets(bakery_client: client.BakeryClient):
     for collection in bakery_client.get_collections():
         for dataset in bakery_client.get_datasets_by_collection(collection["name"]):

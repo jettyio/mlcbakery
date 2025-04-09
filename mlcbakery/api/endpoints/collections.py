@@ -4,7 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # For eager loading entities
 from typing import List
 
-from mlcbakery.models import Collection, Dataset, Entity
+from mlcbakery.models import Collection, Dataset, Entity, Activity
 from mlcbakery.schemas.collection import CollectionCreate, CollectionResponse
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.database import get_async_db # Use async dependency
@@ -54,9 +54,7 @@ async def list_collections(
 async def list_datasets_by_collection(
     collection_name: str,
     skip: int = fastapi.Query(default=0, description="Number of records to skip"),
-    limit: int = fastapi.Query(
-        default=100, description="Maximum number of records to return"
-    ),
+    limit: int = fastapi.Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = fastapi.Depends(get_async_db),
 ):
     """Get a list of datasets for a specific collection with pagination (async)."""
@@ -72,12 +70,23 @@ async def list_datasets_by_collection(
     stmt_datasets = (
         select(Dataset)
         .where(Dataset.collection_id == collection.id)
-        .where(Dataset.entity_type == 'dataset') # Explicitly filter for datasets
+        .where(Dataset.entity_type == 'dataset')  # Explicitly filter for datasets
+        .options(
+            selectinload(Dataset.collection),
+            selectinload(Dataset.input_activities).options(
+                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
+                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
+                selectinload(Activity.agents)
+            ),
+            selectinload(Dataset.output_activities).options(
+                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
+                selectinload(Activity.agents)
+            )
+        )
         .offset(skip)
         .limit(limit)
-        # Eager load related data if needed by DatasetResponse
-        # .options(selectinload(Dataset.collection))
+        .order_by(Dataset.id)  # Add consistent ordering
     )
     result_datasets = await db.execute(stmt_datasets)
-    datasets = result_datasets.scalars().all()
+    datasets = result_datasets.scalars().unique().all()
     return datasets
