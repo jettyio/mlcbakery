@@ -1,7 +1,10 @@
+import os # Import os module
+import asyncio # Import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine # Import async engine creator
 
 from alembic import context
 
@@ -12,6 +15,13 @@ from mlcbakery.models import Entity, TrainedModel, Activity, Dataset
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Set the database URL from the environment variable
+# This overrides the value in alembic.ini if it exists
+db_url = os.environ.get('DATABASE_URL')
+if not db_url:
+    raise ValueError("DATABASE_URL environment variable not set for Alembic")
+config.set_main_option('sqlalchemy.url', db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -40,9 +50,9 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # url = config.get_main_option("sqlalchemy.url") # No longer needed, set above
     context.configure(
-        url=url,
+        # url=url, # Use url directly from config object
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -59,17 +69,31 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Get the engine configuration from alembic.ini
+    # config object already has the URL set from environment variable
+    url = config.get_main_option("sqlalchemy.url")
+    if not url:
+         raise ValueError("Database URL not found in Alembic config or environment.")
 
-    with connectable.connect() as connection:
+    # Create an async engine
+    connectable = create_async_engine(url, poolclass=pool.NullPool)
+
+    # Define the migration function to be run synchronously
+    def do_run_migrations(connection):
         context.configure(connection=connection, target_metadata=target_metadata)
-
         with context.begin_transaction():
             context.run_migrations()
+
+    # Define the main async task
+    async def async_run_migrations():
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+
+        # Dispose the engine
+        await connectable.dispose()
+
+    # Run the async task
+    asyncio.run(async_run_migrations())
 
 
 if context.is_offline_mode():
