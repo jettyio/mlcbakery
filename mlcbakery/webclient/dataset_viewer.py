@@ -1,9 +1,11 @@
 import datetime as dt
 import streamlit as st
-from mlcbakery.webclient import client
+from mlcbakery import bakery_client as bc
+import os
 
 _HOST = "https://bakery.jetty.io"
 _ALL_DATASETS = []
+_AUTH_TOKEN = os.getenv("BAKERY_AUTH_TOKEN")
 def parse_url_path():
     """Parse the URL path to extract collection and dataset names."""
     query_params = st._get_query_params()
@@ -11,10 +13,10 @@ def parse_url_path():
     return collection_name, dataset_name
 
 
-def _get_all_datasets(bakery_client: client.BakeryClient):
+def _get_all_datasets(bakery_client: bc.Client):
     for collection in bakery_client.get_collections():
-        for dataset in bakery_client.get_datasets_by_collection(collection["name"]):
-            _ALL_DATASETS.append(f"{collection['name']}/{dataset['name']}")
+        for dataset in bakery_client.get_datasets_by_collection(collection.name):
+            _ALL_DATASETS.append(f"{collection.name}/{dataset.name}")
     return _ALL_DATASETS
 
 def main():
@@ -24,7 +26,7 @@ def main():
     collection_name = st.session_state.get("collection_name", None)
 
     if len(_ALL_DATASETS) == 0:
-        bakery_client = client.BakeryClient(_HOST)
+        bakery_client = bc.Client(_HOST, token=_AUTH_TOKEN)
         _ALL_DATASETS = _get_all_datasets(bakery_client)
 
     # Add sidebar for host configuration

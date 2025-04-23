@@ -13,11 +13,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import dataclasses
 from mcp.server.fastmcp.prompts import base
-from mlcbakery.webclient import client as bakery_client
-import pandas as pd
-import mlcroissant
+from mlcbakery import bakery_client as bc
+import os
 
 _BAKERY_API_URL = "http://api:8000"
+_AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
 
 @dataclasses.dataclass
 class AppContext:
@@ -47,21 +47,21 @@ def get_config() -> str:
 async def search_collections(pattern: str = "") -> list[str]:
     """Search Collection
     """
-    client = bakery_client.BakeryClient(_BAKERY_API_URL)
+    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
     collections = client.get_collections()
-    return [collection["name"] for collection in collections if pattern.lower() in collection["name"].lower()]
+    return [collection.name for collection in collections if pattern.lower() in collection.name.lower()]
 
 @mcp.tool("mlcbakery://datasets/", description="list all datasets by collection")
 async def list_datasets() -> list[str]:
     """List all datasets
     """
-    client = bakery_client.BakeryClient(_BAKERY_API_URL)
+    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
     collections = client.get_collections()
     dataset_list = []
     for collection in collections:
-        datasets = client.get_datasets_by_collection(collection["name"])
+        datasets = client.get_datasets_by_collection(collection.name)
         for dataset in datasets:
-            dataset_list.append(f"{collection['name']}/{dataset['name']}")
+            dataset_list.append(f"{collection.name}/{dataset.name}")
     return dataset_list
     
 
@@ -73,7 +73,7 @@ async def get_dataset_preview(dataset_name: str) -> str | None:
     Args:
         dataset_name: The name of the dataset to get the preview for (e.g. 'collection_name/dataset_name')
     """
-    client = bakery_client.BakeryClient(_BAKERY_API_URL)
+    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
     collection_name, ds_name = dataset_name.split("/")
     dataset = client.get_dataset_by_name(collection_name, ds_name)
     if dataset.preview is None:
