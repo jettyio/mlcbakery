@@ -58,7 +58,8 @@ async def test_create_agent_without_type():
 @pytest.mark.asyncio
 async def test_list_agents():
     """Test getting all agents."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create known agents for this test
         agents_to_create = [
             {"name": "List Agent 1 Async", "type": "human"},
@@ -86,7 +87,8 @@ async def test_list_agents():
 @pytest.mark.asyncio
 async def test_list_agents_pagination():
     """Test pagination of agents."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         base_name = "PaginateAgentAsync"
         agents_to_create = [
             {"name": f"{base_name}_{i}", "type": "human" if i % 2 == 0 else "system"}
@@ -125,7 +127,8 @@ async def test_list_agents_pagination():
 @pytest.mark.asyncio
 async def test_get_agent():
     """Test getting a specific agent."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to get
         agent_data = {"name": "GetAgentAsync", "type": "human"}
         create_resp = await ac.post("/api/v1/agents/", json=agent_data)
@@ -152,7 +155,8 @@ async def test_get_nonexistent_agent():
 @pytest.mark.asyncio
 async def test_delete_agent():
     """Test deleting an agent."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to delete
         agent_data = {"name": "DeleteAgentAsync", "type": "system"}
         create_resp = await ac.post("/api/v1/agents/", json=agent_data)
@@ -180,7 +184,8 @@ async def test_delete_nonexistent_agent():
 @pytest.mark.asyncio
 async def test_update_agent():
     """Test updating an agent."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to update
         agent_data = {"name": "UpdateAgentAsync", "type": "human"}
         create_resp = await ac.post("/api/v1/agents/", json=agent_data)

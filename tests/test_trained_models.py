@@ -15,7 +15,8 @@ from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
 @pytest.mark.asyncio
 async def test_create_trained_model():
     """Test creating a new trained model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create the prerequisite collection within the test
         collection_data = {"name": "Model Test Collection Create", "description": "For model create test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -44,7 +45,8 @@ async def test_create_trained_model():
 @pytest.mark.asyncio
 async def test_get_trained_model():
     """Test getting a specific trained model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create the prerequisite collection within the test
         collection_data = {"name": "Model Test Collection Get", "description": "For model get test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -75,7 +77,8 @@ async def test_get_trained_model():
 @pytest.mark.asyncio
 async def test_list_trained_models():
     """Test listing all trained models."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create the prerequisite collection within the test
         collection_data = {"name": "Model Test Collection List", "description": "For model list test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -108,7 +111,8 @@ async def test_list_trained_models():
 @pytest.mark.asyncio
 async def test_delete_trained_model():
     """Test deleting a trained model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create the prerequisite collection within the test
         collection_data = {"name": "Model Test Collection Delete", "description": "For model delete test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -139,7 +143,8 @@ async def test_delete_trained_model():
 @pytest.mark.asyncio
 async def test_get_nonexistent_trained_model():
     """Test getting a nonexistent trained model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/trained_models/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Trained model not found"

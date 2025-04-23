@@ -60,7 +60,8 @@ async def create_test_agent(ac: httpx.AsyncClient, name="Test Agent API") -> dic
 @pytest.mark.asyncio
 async def test_create_dataset():
     """Test creating a new dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create prerequisite collection
         collection = await create_test_collection(ac, name="Collection For Create Dataset")
         collection_id = collection["id"]
@@ -91,7 +92,8 @@ async def test_create_dataset():
 @pytest.mark.asyncio
 async def test_create_model():
     """Test creating a new model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create prerequisite collection
         collection = await create_test_collection(ac, name="Collection For Create Model")
         collection_id = collection["id"]
@@ -122,7 +124,8 @@ async def test_create_model():
 @pytest.mark.asyncio
 async def test_list_datasets():
     """Test getting all datasets."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For List Datasets")
         collection_id = collection["id"]
         ds1 = await create_test_dataset(ac, collection_id, name="List DS 1")
@@ -140,7 +143,8 @@ async def test_list_datasets():
 @pytest.mark.asyncio
 async def test_list_models():
     """Test getting all models."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For List Models")
         collection_id = collection["id"]
         model1 = await create_test_model(ac, collection_id, name="List Model 1")
@@ -156,7 +160,8 @@ async def test_list_models():
 @pytest.mark.asyncio
 async def test_get_dataset():
     """Test getting a specific dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For Get Dataset")
         collection_id = collection["id"]
         dataset = await create_test_dataset(ac, collection_id, name="Dataset To Get")
@@ -172,7 +177,8 @@ async def test_get_dataset():
 @pytest.mark.asyncio
 async def test_get_model():
     """Test getting a specific model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For Get Model")
         collection_id = collection["id"]
         model = await create_test_model(ac, collection_id, name="Model To Get")
@@ -188,7 +194,8 @@ async def test_get_model():
 @pytest.mark.asyncio
 async def test_get_nonexistent_dataset():
     """Test getting a dataset that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/datasets/99999") # Use a likely non-existent ID
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
@@ -196,7 +203,8 @@ async def test_get_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_get_nonexistent_model():
     """Test getting a model that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/trained_models/99999") # Use a likely non-existent ID
         assert response.status_code == 404
         assert response.json()["detail"] == "Trained model not found"
@@ -204,7 +212,8 @@ async def test_get_nonexistent_model():
 @pytest.mark.asyncio
 async def test_delete_dataset():
     """Test deleting a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For Delete Dataset")
         collection_id = collection["id"]
         dataset = await create_test_dataset(ac, collection_id, name="Dataset To Delete")
@@ -222,7 +231,8 @@ async def test_delete_dataset():
 @pytest.mark.asyncio
 async def test_delete_model():
     """Test deleting a model."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         collection = await create_test_collection(ac, name="Collection For Delete Model")
         collection_id = collection["id"]
         model = await create_test_model(ac, collection_id, name="Model To Delete")
@@ -240,7 +250,8 @@ async def test_delete_model():
 @pytest.mark.asyncio
 async def test_delete_nonexistent_dataset():
     """Test deleting a dataset that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.delete("/api/v1/datasets/99999") # Use a likely non-existent ID
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
@@ -248,7 +259,8 @@ async def test_delete_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_delete_nonexistent_model():
     """Test deleting a model that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.delete("/api/v1/trained_models/99999") # Use a likely non-existent ID
         assert response.status_code == 404
         assert response.json()["detail"] == "Trained model not found"
@@ -256,7 +268,8 @@ async def test_delete_nonexistent_model():
 @pytest.mark.asyncio
 async def test_entity_activities():
     """Test linking entities to activities."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Setup: Collection, Dataset, Model, Agent
         collection = await create_test_collection(ac, name="Collection For Activity Linking")
         collection_id = collection["id"]

@@ -16,7 +16,8 @@ from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
 @pytest.mark.asyncio
 async def test_create_dataset():
     """Test creating a new dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create prerequisite collection for isolation
         collection_data = {"name": "Create DS Collection Async", "description": "For create_dataset test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -51,7 +52,8 @@ async def test_create_dataset():
 @pytest.mark.asyncio
 async def test_list_datasets():
     """Test getting all datasets."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a known collection first
         collection_data = {"name": "List DS Collection", "description": "For list ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -81,7 +83,8 @@ async def test_list_datasets():
 @pytest.mark.asyncio
 async def test_list_datasets_pagination():
     """Test pagination of datasets."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a known collection first
         collection_data = {"name": "Paginate DS Collection Async", "description": "For paginate_datasets test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -131,7 +134,8 @@ async def test_list_datasets_pagination():
 @pytest.mark.asyncio
 async def test_get_dataset():
     """Test getting a specific dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Get DS Collection", "description": "For get ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -157,7 +161,8 @@ async def test_get_dataset():
 @pytest.mark.asyncio
 async def test_get_nonexistent_dataset():
     """Test getting a dataset that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/datasets/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
@@ -165,7 +170,8 @@ async def test_get_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_update_dataset():
     """Test updating a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Update DS Collection", "description": "For update ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -204,7 +210,8 @@ async def test_update_dataset():
 @pytest.mark.asyncio
 async def test_update_nonexistent_dataset():
     """Test updating a dataset that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         update_data = {
             "name": "Updated Dataset Fail",
             "data_path": "/update/fail",
@@ -219,7 +226,8 @@ async def test_update_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_delete_dataset():
     """Test deleting a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Delete DS Collection", "description": "For delete ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -243,7 +251,8 @@ async def test_delete_dataset():
 @pytest.mark.asyncio
 async def test_delete_nonexistent_dataset():
     """Test deleting a dataset that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.delete("/api/v1/datasets/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
@@ -251,7 +260,8 @@ async def test_delete_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_update_dataset_metadata():
     """Test updating only the metadata of a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Meta Update DS Collection", "description": "For meta update ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -278,7 +288,8 @@ async def test_update_dataset_metadata():
 @pytest.mark.asyncio
 async def test_update_metadata_nonexistent_dataset():
     """Test updating metadata of a nonexistent dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         metadata_update = {
             "metadata_version": "1.1",
             "dataset_metadata": {"author": "Test Author"}
@@ -290,7 +301,8 @@ async def test_update_metadata_nonexistent_dataset():
 @pytest.mark.asyncio
 async def test_invalid_pagination():
     """Test invalid pagination parameters (negative skip/limit)."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response_skip = await ac.get("/api/v1/datasets/?skip=-1&limit=10")
         assert response_skip.status_code == 400 # FastAPI validation error
 
@@ -300,7 +312,8 @@ async def test_invalid_pagination():
 @pytest.mark.asyncio
 async def test_update_dataset_preview():
     """Test updating the preview of a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection and dataset first
         collection_data = {"name": "Preview Update DS Collection Async", "description": "For update_preview test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -335,7 +348,8 @@ async def test_update_dataset_preview():
 @pytest.mark.asyncio
 async def test_update_nonexistent_dataset_preview():
     """Test updating preview of a nonexistent dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         preview_content = b"Sample preview content"
         preview_base64 = base64.b64encode(preview_content).decode('utf-8')
         preview_type = "text/plain"
@@ -349,14 +363,16 @@ async def test_update_nonexistent_dataset_preview():
 @pytest.mark.asyncio
 async def test_get_nonexistent_dataset_preview():
     """Test getting preview of a nonexistent dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/datasets/99999/preview")
         assert response.status_code == 404
 
 @pytest.mark.asyncio
 async def test_get_missing_preview():
     """Test getting preview for a dataset that has none."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Missing Preview DS Collection", "description": "For missing preview ds test"}
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
@@ -374,7 +390,8 @@ async def test_get_missing_preview():
 @pytest.mark.asyncio
 async def test_get_dataset_upstream_tree():
     """Test retrieving the upstream provenance tree for a dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # --- Defensive Cleanup --- 
         # Ensure target collection and datasets don't exist from previous runs
         collection_name = "Upstream Tree DS Collection"
@@ -469,7 +486,8 @@ async def test_get_dataset_upstream_tree():
 @pytest.mark.asyncio
 async def test_get_nonexistent_dataset_upstream_tree():
     """Test getting upstream tree for a nonexistent dataset."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/datasets/99999/upstream")
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"

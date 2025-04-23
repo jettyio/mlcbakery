@@ -46,7 +46,8 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
 @pytest.mark.asyncio
 async def test_create_activity():
     """Test creating a new activity with relationships."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "CreateAct")
         dataset_ids = prereqs["dataset_ids"]
         model_id = prereqs["model_id"]
@@ -72,7 +73,8 @@ async def test_create_activity():
 @pytest.mark.asyncio
 async def test_create_activity_without_optional_relationships():
     """Test creating an activity without optional relationships."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "CreateActNoOpt")
         dataset_ids = prereqs["dataset_ids"]
 
@@ -95,7 +97,8 @@ async def test_create_activity_without_optional_relationships():
 @pytest.mark.asyncio
 async def test_create_activity_with_nonexistent_entities():
     """Test creating an activity with nonexistent entities."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Don't need real prerequisites, just testing invalid IDs
         activity_data = {
             "name": "Test Activity Bad IDs",
@@ -110,7 +113,8 @@ async def test_create_activity_with_nonexistent_entities():
 @pytest.mark.asyncio
 async def test_list_activities():
     """Test getting all activities."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "ListAct")
         dataset_ids = prereqs["dataset_ids"]
 
@@ -134,7 +138,8 @@ async def test_list_activities():
 @pytest.mark.asyncio
 async def test_list_activities_pagination():
     """Test pagination of activities."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "PaginateAct")
         dataset_ids = prereqs["dataset_ids"]
 
@@ -180,7 +185,8 @@ async def test_list_activities_pagination():
 @pytest.mark.asyncio
 async def test_get_activity():
     """Test getting a specific activity."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "GetAct")
         dataset_ids = prereqs["dataset_ids"]
 
@@ -204,7 +210,8 @@ async def test_get_activity():
 @pytest.mark.asyncio
 async def test_get_nonexistent_activity():
     """Test getting an activity that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/api/v1/activities/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Activity not found"
@@ -212,7 +219,8 @@ async def test_get_nonexistent_activity():
 @pytest.mark.asyncio
 async def test_delete_activity():
     """Test deleting an activity."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "DeleteAct")
         dataset_ids = prereqs["dataset_ids"]
 
@@ -237,7 +245,8 @@ async def test_delete_activity():
 @pytest.mark.asyncio
 async def test_delete_nonexistent_activity():
     """Test deleting an activity that doesn't exist."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.delete("/api/v1/activities/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Activity not found"

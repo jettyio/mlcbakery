@@ -9,7 +9,8 @@ from mlcbakery.main import app
 @pytest.mark.asyncio
 async def test_dataset_generation_from_another_dataset():
     """Test that a dataset can be generated from another dataset through an activity (API based)."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Create source dataset
         source_dataset_data = {
             "name": "Source Dataset API",
