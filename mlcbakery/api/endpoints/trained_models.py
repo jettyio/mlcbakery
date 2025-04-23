@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List
+from fastapi.security import HTTPAuthorizationCredentials
 
 from mlcbakery.database import get_async_db
 from ...models import TrainedModel, Collection, Activity, Entity
@@ -10,13 +11,16 @@ from ...schemas.trained_model import (
     TrainedModelCreate,
     TrainedModelResponse,
 )
+from mlcbakery.api.dependencies import verify_admin_token
 
 router = APIRouter()
 
 
 @router.post("/trained_models/", response_model=TrainedModelResponse)
 async def create_trained_model(
-    trained_model: TrainedModelCreate, db: AsyncSession = Depends(get_async_db)
+    trained_model: TrainedModelCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Create a new trained model (async)."""
     if trained_model.collection_id:
@@ -115,7 +119,11 @@ async def get_trained_model(trained_model_id: int, db: AsyncSession = Depends(ge
 
 
 @router.delete("/trained_models/{trained_model_id}", status_code=200)
-async def delete_trained_model(trained_model_id: int, db: AsyncSession = Depends(get_async_db)):
+async def delete_trained_model(
+    trained_model_id: int, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Delete a trained model (async)."""
     stmt = select(TrainedModel).where(TrainedModel.id == trained_model_id).where(TrainedModel.entity_type == 'trained_model')
     result = await db.execute(stmt)

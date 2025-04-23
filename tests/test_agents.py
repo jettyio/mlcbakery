@@ -10,6 +10,10 @@ from mlcbakery.main import app # Keep app import if needed for client
 # from mlcbakery.models import Base, Agent, Collection
 import httpx
 from sqlalchemy.ext.asyncio import create_async_engine
+from conftest import TEST_ADMIN_TOKEN # Import the test token
+
+# Define headers globally or pass them around
+AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 # TestClient remains synchronous, it uses the globally overridden dependency
 # Ensure the `app` object used here is the same one modified in conftest.py
@@ -26,7 +30,7 @@ async def test_create_agent():
         "name": "New Agent",
         "type": "human",
     }
-    response = client.post("/api/v1/agents/", json=agent_data)
+    response = client.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     # Check for the ProgrammingError first
     if response.status_code == 500 and 'NotNullViolationError' in response.text:
          pytest.fail(f"NotNullViolationError encountered: {response.text}")
@@ -44,7 +48,7 @@ async def test_create_agent_without_type():
     agent_data = {
         "name": "New Agent",
     }
-    response = client.post("/api/v1/agents/", json=agent_data)
+    response = client.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert response.status_code == 200 # Expect success, type should default or be nullable
     data = response.json()
     assert data["name"] == agent_data["name"]
@@ -67,7 +71,7 @@ async def test_list_agents():
         ]
         created_agents_info = []
         for agent_data in agents_to_create:
-            resp = await ac.post("/api/v1/agents/", json=agent_data)
+            resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
             assert resp.status_code == 200, f"Failed creating {agent_data['name']}: {resp.text}"
             created_agents_info.append(resp.json()) # Store created agent data
 
@@ -99,11 +103,11 @@ async def test_list_agents_pagination():
         assert response.status_code == 200
         data = response.json()
         for agent in data:
-            await ac.delete(f"/api/v1/agents/{agent['id']}")
+            await ac.delete(f"/api/v1/agents/{agent['id']}", headers=AUTH_HEADERS)
 
         created_agents = []
         for agent_data in agents_to_create:
-            resp = await ac.post("/api/v1/agents/", json=agent_data)
+            resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
             assert resp.status_code == 200, f"Failed creating {agent_data['name']}: {resp.text}"
             created_agents.append(resp.json())
 
@@ -131,7 +135,7 @@ async def test_get_agent():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to get
         agent_data = {"name": "GetAgentAsync", "type": "human"}
-        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
         agent_id = create_resp.json()["id"]
 
@@ -147,7 +151,7 @@ async def test_get_agent():
 @pytest.mark.asyncio
 async def test_get_nonexistent_agent():
     """Test getting an agent that doesn't exist."""
-    response = client.get("/api/v1/agents/99999") # Use a high ID unlikely to exist
+    response = client.get("/api/v1/agents/99999") # GET doesn't need auth headers
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
 
@@ -159,12 +163,12 @@ async def test_delete_agent():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to delete
         agent_data = {"name": "DeleteAgentAsync", "type": "system"}
-        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
         agent_id = create_resp.json()["id"]
 
         # Delete the agent
-        response = await ac.delete(f"/api/v1/agents/{agent_id}")
+        response = await ac.delete(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert response.status_code == 200
         assert response.json()["message"] == "Agent deleted successfully"
 
@@ -176,7 +180,7 @@ async def test_delete_agent():
 @pytest.mark.asyncio
 async def test_delete_nonexistent_agent():
     """Test deleting an agent that doesn't exist."""
-    response = client.delete("/api/v1/agents/99999")
+    response = client.delete("/api/v1/agents/99999", headers=AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
 
@@ -188,7 +192,7 @@ async def test_update_agent():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create agent to update
         agent_data = {"name": "UpdateAgentAsync", "type": "human"}
-        create_resp = await ac.post("/api/v1/agents/", json=agent_data)
+        create_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200, f"Failed creating agent: {create_resp.text}"
         agent_id = create_resp.json()["id"]
 
@@ -197,7 +201,7 @@ async def test_update_agent():
             "name": "Updated Agent Name Async", # Changed name
             "type": "system", # Changed type
         }
-        response = await ac.put(f"/api/v1/agents/{agent_id}", json=update_data)
+        response = await ac.put(f"/api/v1/agents/{agent_id}", json=update_data, headers=AUTH_HEADERS)
         assert response.status_code == 200, f"Update failed: {response.text}"
         data = response.json()
         assert data["name"] == update_data["name"]
@@ -219,6 +223,6 @@ async def test_update_nonexistent_agent():
         "name": "Updated Agent",
         "type": "system",
     }
-    response = client.put("/api/v1/agents/99999", json=update_data)
+    response = client.put("/api/v1/agents/99999", json=update_data, headers=AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"

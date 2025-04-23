@@ -3,18 +3,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # For eager loading entities
 from typing import List
+from fastapi.security import HTTPAuthorizationCredentials
 
 from mlcbakery.models import Collection, Dataset, Entity, Activity
 from mlcbakery.schemas.collection import CollectionCreate, CollectionResponse
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.database import get_async_db # Use async dependency
+from mlcbakery.api.dependencies import verify_admin_token # Add this import
 
 router = fastapi.APIRouter()
 
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
-    collection: CollectionCreate, db: AsyncSession = fastapi.Depends(get_async_db)
+    collection: CollectionCreate, 
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
 ):
     """
     Create a new collection (async).

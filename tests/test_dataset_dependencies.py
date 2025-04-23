@@ -5,6 +5,10 @@ import httpx
 
 from mlcbakery.models import Base, Dataset, Activity, Entity
 from mlcbakery.main import app
+from conftest import TEST_ADMIN_TOKEN # Import the test token
+
+# Define headers globally or pass them around
+AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 @pytest.mark.asyncio
 async def test_dataset_generation_from_another_dataset():
@@ -20,7 +24,7 @@ async def test_dataset_generation_from_another_dataset():
             "metadata_version": "1.0",
             "dataset_metadata": {"description": "Original source dataset via API"},
         }
-        source_resp = await ac.post("/api/v1/datasets/", json=source_dataset_data)
+        source_resp = await ac.post("/api/v1/datasets/", json=source_dataset_data, headers=AUTH_HEADERS)
         assert source_resp.status_code == 200, f"Failed to create source dataset: {source_resp.text}"
         source_dataset = source_resp.json()
         source_dataset_id = source_dataset["id"]
@@ -30,7 +34,7 @@ async def test_dataset_generation_from_another_dataset():
             "name": "Data Preprocessing API",
             "input_entity_ids": [source_dataset_id],
         }
-        activity_resp = await ac.post("/api/v1/activities/", json=activity_data)
+        activity_resp = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert activity_resp.status_code == 200, f"Failed to create activity: {activity_resp.text}"
         activity = activity_resp.json()
         activity_id = activity["id"]
@@ -48,7 +52,7 @@ async def test_dataset_generation_from_another_dataset():
                 "preprocessing_steps": ["normalization", "api-based generation"],
             },
         }
-        derived_resp = await ac.post("/api/v1/datasets/", json=derived_dataset_data)
+        derived_resp = await ac.post("/api/v1/datasets/", json=derived_dataset_data, headers=AUTH_HEADERS)
         assert derived_resp.status_code == 200, f"Failed to create derived dataset: {derived_resp.text}"
         derived_dataset = derived_resp.json()
         derived_dataset_id = derived_dataset["id"]
