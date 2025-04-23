@@ -9,7 +9,7 @@ _AUTH_TOKEN = os.getenv("BAKERY_AUTH_TOKEN")
 def parse_url_path():
     """Parse the URL path to extract collection and dataset names."""
     query_params = st._get_query_params()
-    collection_name, dataset_name = query_params.get("dataset", [""])[0].split("/")
+    collection_name, dataset_name = query_params.get("dataset", ["/"])[0].split("/")
     return collection_name, dataset_name
 
 
@@ -33,6 +33,8 @@ def main():
     with st.sidebar:
         st.title("Dataset")
         collection_and_dataset = st.selectbox("Select a dataset", _ALL_DATASETS)
+        if collection_and_dataset is None:
+            return
         collection_name, dataset_name = collection_and_dataset.split("/")
         st.session_state["collection_name"] = collection_name
         st.session_state["dataset_name"] = dataset_name

@@ -194,3 +194,16 @@ docker-compose down -v
 -   **`DATABASE_URL`:** Ensure the `api` and `streamlit` services can reach the database specified by `DATABASE_URL`. The default in `docker-compose.yml` assumes the `db` service within the same Docker network.
 -   **`Caddyfile`:** Customize the `Caddyfile` for your specific domains and HTTPS setup. The provided file includes examples for local `.localhost` domains and placeholders like `bakery.jetty.io`. Remember to restart Caddy after changes.
 -   **`caddy-network`:** The services rely on the external Docker network `caddy-network` for inter-service communication and Caddy proxying. Ensure this network exists.
+
+### Some useful commands
+
+Add / drop the database:
+```
+docker compose exec db psql -U postgres -c "drop DATABASE mlcbakery;"
+docker compose exec db psql -U postgres -c "create DATABASE mlcbakery;"
+```
+
+Once the api server is running, migrate the schema:
+```
+docker compose exec api alembic -c alembic.ini upgrade heads
+```
