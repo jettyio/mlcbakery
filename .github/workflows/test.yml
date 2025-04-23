@@ -25,10 +25,13 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      run: uv sync --all-extras
+      run: uv pip install .[dev,webclient]
 
     - name: Verify sqlalchemy installation
       run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
+
+    - name: Verify aiosqlite installation
+      run: uv pip list | grep aiosqlite || echo "aiosqlite not found"
 
     - name: Run tests
       env:
