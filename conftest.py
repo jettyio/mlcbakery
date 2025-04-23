@@ -1,4 +1,5 @@
 import pytest
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import NullPool
 
@@ -13,7 +14,7 @@ from mlcbakery.main import app # Import the FastAPI app
 # --- Global Test Database Setup ---
 
 # Create async test database connection URL (ensure this matches your test DB)
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+SQLALCHEMY_TEST_DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Create global async engine
 engine = create_async_engine(SQLALCHEMY_TEST_DATABASE_URL, echo=False, poolclass=NullPool) # Echo can be noisy globally
