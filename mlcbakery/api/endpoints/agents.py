@@ -4,15 +4,21 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # Needed if Agent has relationships to eager load
 from typing import List
 import python_multipart
+from fastapi.security import HTTPAuthorizationCredentials
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse
+from mlcbakery.api.dependencies import verify_admin_token
 
 router = APIRouter()
 
 
 @router.post("/agents/", response_model=AgentResponse)
-async def create_agent(agent: AgentCreate, db: AsyncSession = Depends(get_async_db)):
+async def create_agent(
+    agent: AgentCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Create a new agent (async)."""
     db_agent = Agent(**agent.model_dump())
     db.add(db_agent)
@@ -53,7 +59,10 @@ async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db)):
 
 @router.put("/agents/{agent_id}", response_model=AgentResponse)
 async def update_agent(
-    agent_id: int, agent_update: AgentCreate, db: AsyncSession = Depends(get_async_db)
+    agent_id: int, 
+    agent_update: AgentCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update an agent (async)."""
     # Get the existing agent
@@ -80,7 +89,11 @@ async def update_agent(
 
 
 @router.delete("/agents/{agent_id}", status_code=200)
-async def delete_agent(agent_id: int, db: AsyncSession = Depends(get_async_db)):
+async def delete_agent(
+    agent_id: int, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Delete an agent (async)."""
     stmt = select(Agent).where(Agent.id == agent_id)
     result = await db.execute(stmt)

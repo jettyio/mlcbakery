@@ -3,16 +3,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List, Sequence
+from fastapi.security import HTTPAuthorizationCredentials
 
 from ...database import get_async_db
 from ...models import Activity, Entity, Agent
 from ...schemas.activity import ActivityCreate, ActivityResponse
+from mlcbakery.api.dependencies import verify_admin_token
 
 router = APIRouter()
 
 
 @router.post("/activities/", response_model=ActivityResponse)
-async def create_activity(activity: ActivityCreate, db: AsyncSession = Depends(get_async_db)):
+async def create_activity(
+    activity: ActivityCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Create a new activity with relationships (async)."""
     # Verify input entities exist
     stmt_entities = select(Entity).where(Entity.id.in_(activity.input_entity_ids))
@@ -96,7 +102,11 @@ async def get_activity(activity_id: int, db: AsyncSession = Depends(get_async_db
 
 
 @router.delete("/activities/{activity_id}", status_code=200)
-async def delete_activity(activity_id: int, db: AsyncSession = Depends(get_async_db)):
+async def delete_activity(
+    activity_id: int, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Delete an activity (async)."""
     # First get the activity to ensure it exists
     stmt = select(Activity).where(Activity.id == activity_id)

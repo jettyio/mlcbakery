@@ -6,8 +6,12 @@ import asyncio # Needed for pytest.mark.asyncio
 import httpx # Add httpx
 
 from mlcbakery.main import app # Keep app import if needed for client
+from conftest import TEST_ADMIN_TOKEN # Import the test token
 # Model imports might still be needed if tests reference them directly
 # from mlcbakery.models import ...
+
+# Define headers globally or pass them around
+AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 
 # Helper function to create prerequisites consistently
@@ -15,28 +19,28 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
     """Creates a collection, two datasets, a model, and an agent."""
     # Collection
     coll_data = {"name": f"{prefix} Collection", "description": f"{prefix} Desc"}
-    coll_resp = await ac.post("/api/v1/collections/", json=coll_data)
+    coll_resp = await ac.post("/api/v1/collections/", json=coll_data, headers=AUTH_HEADERS)
     assert coll_resp.status_code == 200
     collection_id = coll_resp.json()["id"]
 
     # Datasets
     ds1_data = {"name": f"{prefix} Dataset 1", "data_path": "/path/ds1.csv", "format": "csv", "collection_id": collection_id, "entity_type": "dataset"}
     ds2_data = {"name": f"{prefix} Dataset 2", "data_path": "/path/ds2.csv", "format": "csv", "collection_id": collection_id, "entity_type": "dataset"}
-    ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data)
-    ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data)
+    ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data, headers=AUTH_HEADERS)
+    ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data, headers=AUTH_HEADERS)
     assert ds1_resp.status_code == 200
     assert ds2_resp.status_code == 200
     dataset_ids = [ds1_resp.json()["id"], ds2_resp.json()["id"]]
 
     # Model
     model_data = {"name": f"{prefix} Model", "model_path": "/path/model.pkl", "framework": "sklearn", "collection_id": collection_id, "entity_type": "trained_model"}
-    model_resp = await ac.post("/api/v1/trained_models/", json=model_data)
+    model_resp = await ac.post("/api/v1/trained_models/", json=model_data, headers=AUTH_HEADERS)
     assert model_resp.status_code == 200
     model_id = model_resp.json()["id"]
 
     # Agent
     agent_data = {"name": f"{prefix} Agent", "type": "user"}
-    agent_resp = await ac.post("/api/v1/agents/", json=agent_data)
+    agent_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert agent_resp.status_code == 200
     agent_id = agent_resp.json()["id"]
 
@@ -60,7 +64,7 @@ async def test_create_activity():
             "output_entity_id": model_id,
             "agent_ids": [agent_id],
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data)
+        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
         data = response.json()
         assert data["name"] == activity_data["name"]
@@ -84,7 +88,7 @@ async def test_create_activity_without_optional_relationships():
             "input_entity_ids": dataset_ids,
             # output_entity_id and agent_ids omitted
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data)
+        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
         data = response.json()
         assert data["name"] == activity_data["name"]
@@ -106,7 +110,7 @@ async def test_create_activity_with_nonexistent_entities():
             "output_entity_id": 99999,
             "agent_ids": [99997],
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data)
+        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
 
@@ -123,7 +127,7 @@ async def test_list_activities():
             "name": "Activity For Listing",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data)
+        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert create_response.status_code == 200
         created_activity_id = create_response.json()["id"]
 
@@ -154,7 +158,7 @@ async def test_list_activities_pagination():
         for i in range(5): # Create 5 activities for pagination test
             name = f"Paginated Activity {i}"
             activity_data = {"name": name, "input_entity_ids": dataset_ids}
-            resp = await ac.post("/api/v1/activities/", json=activity_data)
+            resp = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
             assert resp.status_code == 200
             activity_id = resp.json()["id"]
             created_ids.append(activity_id)
@@ -195,7 +199,7 @@ async def test_get_activity():
             "name": "Activity To Get",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data)
+        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert create_response.status_code == 200
         activity_id = create_response.json()["id"]
 
@@ -229,12 +233,12 @@ async def test_delete_activity():
             "name": "Activity To Delete",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data)
+        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
         assert create_response.status_code == 200
         activity_id = create_response.json()["id"]
 
         # Delete the activity
-        delete_response = await ac.delete(f"/api/v1/activities/{activity_id}")
+        delete_response = await ac.delete(f"/api/v1/activities/{activity_id}", headers=AUTH_HEADERS)
         assert delete_response.status_code == 200
         assert delete_response.json()["message"] == "Activity deleted successfully"
 
@@ -247,6 +251,6 @@ async def test_delete_nonexistent_activity():
     """Test deleting an activity that doesn't exist."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.delete("/api/v1/activities/99999")
+        response = await ac.delete("/api/v1/activities/99999", headers=AUTH_HEADERS)
         assert response.status_code == 404
         assert response.json()["detail"] == "Activity not found"

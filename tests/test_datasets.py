@@ -11,6 +11,10 @@ import python_multipart
 from mlcbakery.main import app # Keep app import if needed for client
 # Model imports might still be needed if tests reference them directly
 from mlcbakery.models import Base, Dataset, Collection, Activity, Entity
+from conftest import TEST_ADMIN_TOKEN # Import the test token
+
+# Define headers globally or pass them around
+AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 # Tests start here, marked as async and using local async client
 @pytest.mark.asyncio
@@ -20,7 +24,7 @@ async def test_create_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create prerequisite collection for isolation
         collection_data = {"name": "Create DS Collection Async", "description": "For create_dataset test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
         collection_id_to_use = coll_resp.json()["id"]
 
@@ -36,7 +40,7 @@ async def test_create_dataset():
                 "tags": ["new", "async"],
             },
         }
-        response = await ac.post("/api/v1/datasets/", json=dataset_data)
+        response = await ac.post("/api/v1/datasets/", json=dataset_data, headers=AUTH_HEADERS)
         assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
         data = response.json()
         assert data["name"] == dataset_data["name"]
@@ -56,7 +60,7 @@ async def test_list_datasets():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a known collection first
         collection_data = {"name": "List DS Collection", "description": "For list ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
 
@@ -67,7 +71,7 @@ async def test_list_datasets():
         ]
         created_ids = []
         for ds_data in datasets_to_create:
-            resp = await ac.post("/api/v1/datasets/", json=ds_data)
+            resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
             assert resp.status_code == 200
             created_ids.append(resp.json()["id"])
 
@@ -87,7 +91,7 @@ async def test_list_datasets_pagination():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a known collection first
         collection_data = {"name": "Paginate DS Collection Async", "description": "For paginate_datasets test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
 
@@ -102,12 +106,12 @@ async def test_list_datasets_pagination():
         assert response.status_code == 200
         existing_datasets = response.json()
         for ds in existing_datasets:
-            delete_resp = await ac.delete(f"/api/v1/datasets/{ds['id']}")
+            delete_resp = await ac.delete(f"/api/v1/datasets/{ds['id']}", headers=AUTH_HEADERS)
             assert delete_resp.status_code == 200
         
         created_ids = []
         for ds_data in datasets_to_create:
-            resp = await ac.post("/api/v1/datasets/", json=ds_data)
+            resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
             assert resp.status_code == 200, f"Failed creating {ds_data['name']}: {resp.text}"
             created_ids.append(resp.json()["id"])
     
@@ -138,12 +142,12 @@ async def test_get_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Get DS Collection", "description": "For get ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         # Create a dataset to get
         ds_data = {"name": "GetMeDS", "data_path": "/get/me", "format": "json", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
@@ -174,12 +178,12 @@ async def test_update_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Update DS Collection", "description": "For update ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         # Create a dataset to update
         ds_data = {"name": "UpdateMeDS", "data_path": "/update/me", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
@@ -196,7 +200,7 @@ async def test_update_dataset():
                 "tags": ["updated", "async"],
             },
         }
-        response = await ac.put(f"/api/v1/datasets/{dataset_id}", json=update_data)
+        response = await ac.put(f"/api/v1/datasets/{dataset_id}", json=update_data, headers=AUTH_HEADERS)
         assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
         data = response.json()
         assert data["id"] == dataset_id
@@ -218,7 +222,7 @@ async def test_update_nonexistent_dataset():
             "format": "csv",
             "entity_type": "dataset",
         }
-        response = await ac.put("/api/v1/datasets/99999", json=update_data)
+        response = await ac.put("/api/v1/datasets/99999", json=update_data, headers=AUTH_HEADERS)
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
@@ -230,17 +234,17 @@ async def test_delete_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Delete DS Collection", "description": "For delete ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         # Create a dataset to delete
         ds_data = {"name": "DeleteMeDS", "data_path": "/delete/me", "format": "txt", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
         # Delete the dataset
-        delete_response = await ac.delete(f"/api/v1/datasets/{dataset_id}")
+        delete_response = await ac.delete(f"/api/v1/datasets/{dataset_id}", headers=AUTH_HEADERS)
         assert delete_response.status_code == 200
         assert delete_response.json()["message"] == "Dataset deleted successfully"
 
@@ -253,7 +257,7 @@ async def test_delete_nonexistent_dataset():
     """Test deleting a dataset that doesn't exist."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.delete("/api/v1/datasets/99999")
+        response = await ac.delete("/api/v1/datasets/99999", headers=AUTH_HEADERS)
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
 
@@ -264,12 +268,12 @@ async def test_update_dataset_metadata():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Meta Update DS Collection", "description": "For meta update ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         # Create a dataset
         ds_data = {"name": "MetadataUpdateDS", "data_path": "/metadata/update", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
@@ -278,7 +282,7 @@ async def test_update_dataset_metadata():
             "metadata_version": "1.1",
             "dataset_metadata": {"author": "Test Author", "license": "MIT"}
         }
-        response = await ac.patch(f"/api/v1/datasets/{dataset_id}/metadata", json=metadata_update)
+        response = await ac.patch(f"/api/v1/datasets/{dataset_id}/metadata", json=metadata_update, headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == dataset_id
@@ -294,7 +298,7 @@ async def test_update_metadata_nonexistent_dataset():
             "metadata_version": "1.1",
             "dataset_metadata": {"author": "Test Author"}
         }
-        response = await ac.patch("/api/v1/datasets/99999/metadata", json=metadata_update)
+        response = await ac.patch("/api/v1/datasets/99999/metadata", json=metadata_update, headers=AUTH_HEADERS)
         assert response.status_code == 404
         assert response.json()["detail"] == "Dataset not found"
 
@@ -316,11 +320,11 @@ async def test_update_dataset_preview():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection and dataset first
         collection_data = {"name": "Preview Update DS Collection Async", "description": "For update_preview test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         ds_data = {"name": "PreviewUpdateDSAsync", "data_path": "/preview/updatea", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
@@ -336,7 +340,7 @@ async def test_update_dataset_preview():
         }
 
         # 3. Make the PUT request using the 'files' parameter
-        response = await ac.put(f"/api/v1/datasets/{dataset_id}/preview", files=files_data)
+        response = await ac.put(f"/api/v1/datasets/{dataset_id}/preview", files=files_data, headers=AUTH_HEADERS)
 
         # 4. Assertions...
         assert response.status_code == 200, f"Update failed: {response.text}"
@@ -357,7 +361,7 @@ async def test_update_nonexistent_dataset_preview():
             "preview": preview_base64,
             "preview_type": preview_type
         }
-        response = await ac.patch("/api/v1/datasets/99999/preview", json=preview_data)
+        response = await ac.patch("/api/v1/datasets/99999/preview", json=preview_data, headers=AUTH_HEADERS)
         assert response.status_code == 405
 
 @pytest.mark.asyncio
@@ -375,12 +379,12 @@ async def test_get_missing_preview():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create a collection
         collection_data = {"name": "Missing Preview DS Collection", "description": "For missing preview ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
         # Create a dataset without a preview
         ds_data = {"name": "NoPreviewDS", "data_path": "/no/preview", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        create_resp = await ac.post("/api/v1/datasets/", json=ds_data)
+        create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
 
@@ -417,10 +421,10 @@ async def test_get_dataset_upstream_tree():
                            # Check if name matches one we intend to create to be safe
                            if ds_in_coll['name'] in dataset_names:
                                 print(f"Defensive cleanup: Deleting dataset {ds_in_coll['id']} ('{ds_in_coll['name']}')")
-                                await ac.delete(f"/api/v1/datasets/{ds_in_coll['id']}")
+                                await ac.delete(f"/api/v1/datasets/{ds_in_coll['id']}", headers=AUTH_HEADERS)
                                 
                  print(f"Defensive cleanup: Deleting collection {coll['id']} ('{coll['name']}')")
-                 del_coll_resp = await ac.delete(f"/api/v1/collections/{coll['id']}")
+                 del_coll_resp = await ac.delete(f"/api/v1/collections/{coll['id']}", headers=AUTH_HEADERS)
                  # Ignore 404 if already gone between check and delete
                  assert del_coll_resp.status_code in [200, 404], f"Cleanup failed deleting collection {coll['id']}"
         # --- End Defensive Cleanup ---
@@ -428,7 +432,7 @@ async def test_get_dataset_upstream_tree():
         # Create a collection (now guaranteed unique by name for this run)
         # collection_name = "Upstream Tree DS Collection" # Already defined
         collection_data = {"name": collection_name, "description": "For upstream tree ds test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data)
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200, f"Failed creating collection after cleanup: {coll_resp.text}"
         collection_id_to_use = coll_resp.json()["id"]
 
@@ -437,8 +441,8 @@ async def test_get_dataset_upstream_tree():
         ds1_data = {"name": ds1_name, "data_path": "/up/1", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
         ds2_name = "UpstreamDS2"
         ds2_data = {"name": ds2_name, "data_path": "/up/2", "format": "csv", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data)
-        ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data)
+        ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data, headers=AUTH_HEADERS)
+        ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data, headers=AUTH_HEADERS)
         assert ds1_resp.status_code == 200
         assert ds2_resp.status_code == 200
         ds1_id = ds1_resp.json()["id"]
@@ -447,22 +451,22 @@ async def test_get_dataset_upstream_tree():
         # 2. Create an activity that uses DS1 and DS2 to produce DS3
         ds3_name = "UpstreamDS3"
         ds3_data = {"name": ds3_name, "data_path": "/up/3", "format": "parquet", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        ds3_resp = await ac.post("/api/v1/datasets/", json=ds3_data)
+        ds3_resp = await ac.post("/api/v1/datasets/", json=ds3_data, headers=AUTH_HEADERS)
         assert ds3_resp.status_code == 200
         ds3_id = ds3_resp.json()["id"]
         act1_data = {"name": "Activity 1", "input_entity_ids": [ds1_id, ds2_id], "output_entity_id": ds3_id}
-        act1_resp = await ac.post("/api/v1/activities/", json=act1_data)
+        act1_resp = await ac.post("/api/v1/activities/", json=act1_data, headers=AUTH_HEADERS)
         assert act1_resp.status_code == 200
         act1_id = act1_resp.json()["id"]
 
         # 3. Create an activity that uses DS3 to produce DS4
         ds4_name = "UpstreamDS4"
         ds4_data = {"name": ds4_name, "data_path": "/up/4", "format": "json", "entity_type": "dataset", "collection_id": collection_id_to_use}
-        ds4_resp = await ac.post("/api/v1/datasets/", json=ds4_data)
+        ds4_resp = await ac.post("/api/v1/datasets/", json=ds4_data, headers=AUTH_HEADERS)
         assert ds4_resp.status_code == 200
         ds4_id = ds4_resp.json()["id"]
         act2_data = {"name": "Activity 2", "input_entity_ids": [ds3_id], "output_entity_id": ds4_id}
-        act2_resp = await ac.post("/api/v1/activities/", json=act2_data)
+        act2_resp = await ac.post("/api/v1/activities/", json=act2_data, headers=AUTH_HEADERS)
         assert act2_resp.status_code == 200
         act2_id = act2_resp.json()["id"]
 

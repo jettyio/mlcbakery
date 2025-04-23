@@ -1,5 +1,6 @@
 import pytest
 import os
+import sys
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import NullPool
 
@@ -10,6 +11,9 @@ import httpx
 # Adjust the import path if your structure is different
 from mlcbakery.database import get_async_db # Import the dependency getter
 from mlcbakery.main import app # Import the FastAPI app
+
+# --- Test Admin Token ---
+TEST_ADMIN_TOKEN = "test-super-secret-token" # Define a constant for the test token
 
 # --- Global Test Database Setup ---
 
@@ -41,11 +45,33 @@ async def override_get_async_db():
 # This needs to happen before tests run that use the app/client
 app.dependency_overrides[get_async_db] = override_get_async_db
 
-# --- Global Autouse Async Fixture for DB Setup/Teardown ---
+# --- Fixture to Set Admin Auth Token Env Var ---
+@pytest.fixture(scope="session", autouse=True) # Use session scope and autouse
+def set_admin_token_env():
+    original_token = os.environ.get("ADMIN_AUTH_TOKEN")
+    os.environ["ADMIN_AUTH_TOKEN"] = TEST_ADMIN_TOKEN
+    print(f"\n--- Set ADMIN_AUTH_TOKEN to: {TEST_ADMIN_TOKEN} ---") # Added print
+    yield
+    # Teardown: restore original value or unset
+    if original_token is None:
+        del os.environ["ADMIN_AUTH_TOKEN"]
+        print("\n--- Unset ADMIN_AUTH_TOKEN ---") # Added print
+    else:
+        os.environ["ADMIN_AUTH_TOKEN"] = original_token
+        print(f"\n--- Restored ADMIN_AUTH_TOKEN to: {original_token} ---") # Added print
 
+# --- Global Autouse Async Fixture for DB Setup/Teardown ---
+# This fixture needs to run *after* the env var is set, 
+# if the app initialization depends on it (unlikely here, but good practice)
+# Since set_admin_token_env is session-scoped and autouse, it runs first.
 @pytest.fixture(scope="function", autouse=True)
 async def setup_test_db():
     """Auto-running fixture to set up and tear down the test database for each function."""
+    # Ensure Base is imported if not already available globally
+    # This might need adjustment depending on where Base is defined.
+    # If it's in models.py:
+    from mlcbakery.models import Base # Assuming Base is defined here
+
     # Use engine.begin() for explicit transaction management during DDL
     async with engine.begin() as conn: # Use engine.begin()
         try:

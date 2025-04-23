@@ -7,6 +7,7 @@ from fastapi import (
     UploadFile,
     Response,
 )
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload, contains_eager, joinedload
@@ -23,12 +24,17 @@ from mlcbakery.schemas.dataset import (
     UpstreamEntityNode,
 )
 from mlcbakery.database import get_async_db
+from mlcbakery.api.dependencies import verify_admin_token
 
 router = APIRouter()
 
 
 @router.post("/datasets/", response_model=DatasetResponse)
-async def create_dataset(dataset: DatasetCreate, db: AsyncSession = Depends(get_async_db)):
+async def create_dataset(
+    dataset: DatasetCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Create a new dataset (async)."""
     # Check if collection_id exists if provided
     if dataset.collection_id:
@@ -137,7 +143,10 @@ async def get_dataset(dataset_id: int, db: AsyncSession = Depends(get_async_db))
 
 @router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
 async def update_dataset(
-    dataset_id: int, dataset_update: DatasetUpdate, db: AsyncSession = Depends(get_async_db)
+    dataset_id: int, 
+    dataset_update: DatasetUpdate, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update a dataset (async)."""
     # Fetch the dataset first to ensure it exists
@@ -186,7 +195,11 @@ async def update_dataset(
 
 
 @router.delete("/datasets/{dataset_id}", status_code=200)
-async def delete_dataset(dataset_id: int, db: AsyncSession = Depends(get_async_db)):
+async def delete_dataset(
+    dataset_id: int, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+):
     """Delete a dataset (async)."""
     stmt = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
     result = await db.execute(stmt)
@@ -202,7 +215,10 @@ async def delete_dataset(dataset_id: int, db: AsyncSession = Depends(get_async_d
 
 @router.patch("/datasets/{dataset_id}/metadata", response_model=DatasetResponse)
 async def update_dataset_metadata(
-    dataset_id: int, metadata: dict, db: AsyncSession = Depends(get_async_db)
+    dataset_id: int, 
+    metadata: dict, 
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update just the metadata of a dataset (async)."""
     # Fetch the dataset first to ensure it exists
@@ -249,6 +265,7 @@ async def update_dataset_preview(
     dataset_id: int,
     preview_update: UploadFile = File(...), # Expect UploadFile as form data
     db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update a dataset's preview (async) using file upload."""
     # Fetch the dataset first
