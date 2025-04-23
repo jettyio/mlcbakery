@@ -10,6 +10,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16 # Use a specific version
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password # Use a simple password for testing
+          POSTGRES_DB: test_db
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          # We use a random free port on the host
+          - 5432:5432 # Keep the default port mapping
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -30,10 +48,27 @@ jobs:
     - name: Verify sqlalchemy installation
       run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
 
-    - name: Verify aiosqlite installation
-      run: uv pip list | grep aiosqlite || echo "aiosqlite not found"
+    # No need to verify aiosqlite anymore
+    # - name: Verify aiosqlite installation
+    #   run: uv pip list | grep aiosqlite || echo "aiosqlite not found"
+
+    # Add this step to install the PostgreSQL client
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+    - name: Wait for PostgreSQL
+      run: |
+        # Wait for the PostgreSQL service to be ready
+        # Use the service hostname 'postgres' and the mapped port
+        until pg_isready -h postgres -p 5432 -U postgres; do
+          echo "Waiting for database..."
+          sleep 2
+        done
+        echo "Database is ready!"
+      env:
+        PGPASSWORD: password # Use the same password as defined in the service
 
     - name: Run tests
       env:
-        DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+        DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/test_db
       run: uv run pytest 
