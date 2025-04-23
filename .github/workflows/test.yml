@@ -63,8 +63,8 @@ jobs:
         retries=30
         count=0
         # Wait for the PostgreSQL service to be ready
-        # Use the service hostname 'postgres' and the mapped port
-        until pg_isready -h postgres -p 5432 -U postgres; do
+        # Try connecting to localhost as the port should be mapped
+        until pg_isready -h localhost -p 5432 -U postgres; do
           count=$((count+1))
           if [ $count -ge $retries ]; then
             echo "Database did not become ready after $retries attempts."
