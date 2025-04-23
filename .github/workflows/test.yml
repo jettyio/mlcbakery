@@ -31,4 +31,6 @@ jobs:
       run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
 
     - name: Run tests
+      env:
+        DATABASE_URL: sqlite+aiosqlite:///:memory:
       run: uv run pytest 
