@@ -25,7 +25,7 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      run: uv pip install .[dev,webclient]
+      run: uv pip install --system .[dev,webclient]
 
     - name: Verify sqlalchemy installation
       run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
