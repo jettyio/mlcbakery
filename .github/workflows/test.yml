@@ -80,10 +80,10 @@ jobs:
     # Add step to run database migrations
     - name: Run database migrations
       env:
-        DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/test_db
+        DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
       run: uv run alembic upgrade heads
 
     - name: Run tests
       env:
-        DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/test_db
+        DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
       run: uv run pytest 
