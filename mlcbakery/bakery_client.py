@@ -3,11 +3,19 @@ import io
 import json
 import logging
 import os
-from typing import Any, Tuple, Optional, Union
+from typing import Any, Tuple, Optional, Union, Dict, List
 
 import requests
-import mlcroissant
+import mlcroissant as mlc
 import pandas as pd
+
+# Import validation functions and result class
+# from .croissant_validation import (
+#     validate_croissant,
+#     validate_records,
+#     generate_validation_report,
+#     ValidationResult,
+# )
 
 _LOGGER = logging.getLogger(__name__)
 # Configure basic logging if not already configured
@@ -29,7 +37,7 @@ class BakeryDataset:
     name: str
     collection_id: str
     parent_collection_dataset: str | None = None
-    metadata: mlcroissant.Dataset | None = None
+    metadata: mlc.Dataset | None = None
     preview: pd.DataFrame | None = None
     format: str | None = None
     created_at: str | None = None
@@ -94,6 +102,51 @@ class Client:
             # Optionally re-raise or handle specific exceptions
             raise
 
+    def validate_croissant_dataset(self, dataset_input: Union[mlc.Dataset, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Validates a Croissant dataset by sending its metadata to the
+        MLC Bakery API's validation endpoint.
+
+        Args:
+            dataset_input: An mlcroissant.Dataset object or a dictionary
+                           representing the JSON-LD metadata.
+
+        Returns:
+            A dictionary containing the validation report from the API.
+
+        Raises:
+            TypeError: If the input is neither an mlcroissant.Dataset nor a dict.
+            requests.exceptions.RequestException: If the API request fails.
+        """
+        _LOGGER.info("Requesting Croissant dataset validation from API.")
+
+        # 1. Determine JSON data
+        json_data: Dict[str, Any]
+        if isinstance(dataset_input, mlc.Dataset):
+            json_data = dataset_input.jsonld
+        else:
+            json_data = dataset_input
+
+        # 2. Call the validation API endpoint
+        endpoint = "/datasets/mlcroissant-validation"
+        try:
+            _LOGGER.info(f"Sending validation request to {endpoint}")
+            # Convert JSON data to a file-like object for upload
+            json_file = io.BytesIO(json.dumps(json_data).encode('utf-8'))
+            files = {'file': ('metadata.json', json_file, 'application/json')}
+            response = self._request("POST", endpoint, files=files, headers={})
+            report = response.json()
+            _LOGGER.info(f"Validation API response received. Overall result: {'Passed' if report.get('overall_passed') else 'Failed'}")
+            return report
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"API request for Croissant validation failed: {e}")
+            # Re-raise the exception to signal failure
+            raise
+        except json.JSONDecodeError as e:
+             _LOGGER.error(f"Failed to decode JSON response from validation API: {e}")
+             # Raise a more specific error or handle as appropriate
+             raise ValueError("Invalid JSON response received from validation API.") from e
+
     def find_or_create_by_collection_name(
         self, collection_name: str
     ) -> BakeryCollection:
@@ -136,7 +189,7 @@ class Client:
         dataset_path: str,
         data_path: str,
         format: str,
-        metadata: mlcroissant.Dataset,
+        metadata: mlc.Dataset,
         preview: bytes | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
@@ -211,7 +264,7 @@ class Client:
             if json_str and "@context" in json_str:
                  try:
                      # The API returns metadata as a dict, mlcroissant expects file path or dict
-                     metadata = mlcroissant.Dataset(jsonld=json_str)
+                     metadata = mlc.Dataset(jsonld=json_str)
                  except Exception as e:
                      _LOGGER.error(f"Failed to parse Croissant metadata for dataset {dataset_response.get('id')}: {e}")
                      metadata = None # Set to None if parsing fails
@@ -371,7 +424,7 @@ class Client:
         destination_path: str, # Changed from 'destination' to 'destination_path' for clarity
         data_path: str,
         format: str,
-        metadata: mlcroissant.Dataset,
+        metadata: mlc.Dataset,
         preview: bytes,
         long_description: str | None = None, # Added long_description
     ) -> BakeryDataset:

@@ -15,7 +15,8 @@ import dataclasses
 from mcp.server.fastmcp.prompts import base
 from mlcbakery import bakery_client as bc
 import os
-from fastapi import HTTPException, Query
+from fastapi import HTTPException, Query, UploadFile, File
+import json
 
 _BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL")
 _AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
@@ -101,6 +102,34 @@ async def search_datasets_tool(query: str = Query(..., description="The search t
         # Log the exception if the client method raises one unexpectedly
         print(f"MCP Tool: Error calling client.search_datasets: {exc}")
         return [] # Return empty list on any error from the client call
+@mcp.tool("mlcbakery://validate-croissant-ds/", description="Validate MLCommons Croissant metadata JSON.")
+async def validate_croissant_file(json_dict: dict[str, Any] = Query(..., description="The Croissant JSON-LD metadata as a dictionary.")) -> dict[str, Any]:
+    """Validate a Croissant dataset JSON dictionary via the MLC Bakery API.
+
+    Args:
+        json_dict: The Croissant metadata as a dictionary.
+
+    Returns:
+        A dictionary containing the validation report.
+
+    Raises:
+        HTTPException: If the validation API call fails.
+    """
+    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
+    try:
+        # Call the validation method from the bakery client directly with the dictionary
+        validation_report = client.validate_croissant_dataset(json_dict)
+        return validation_report
+    except bc.requests.exceptions.RequestException as e:
+        # Handle API request errors
+        detail = f"Error communicating with Bakery validation API: {e}"
+        if e.response is not None:
+             detail += f" - Status: {e.response.status_code}, Response: {e.response.text}"
+        raise HTTPException(status_code=502, detail=detail) from e
+    except Exception as exc:
+        # Catch other unexpected errors
+        print(f"MCP Tool: Unexpected error during Croissant validation: {exc}")
+        raise HTTPException(status_code=500, detail=f"Internal server error during validation: {exc}") from exc
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:

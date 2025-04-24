@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    user: "${UID}:${GID}"
     
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
@@ -20,6 +21,7 @@ services:
     build: .
     volumes:
       - .:/app
+    user: "${UID}:${GID}"
     environment:
       - MLCBAKERY_API_BASE_URL=http://api:8000
       - PYTHONPATH=/app
@@ -35,6 +37,7 @@ services:
     command: streamlit run mlcbakery/webclient/dataset_viewer.py --server.port 8000 --server.address 0.0.0.0
     volumes:
       - .:/app
+    user: "${UID}:${GID}"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app

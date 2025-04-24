@@ -11,11 +11,13 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload, contains_eager, joinedload
-from typing import Annotated, List, Set
+from typing import Annotated, List, Set, Tuple, Dict, Any
 import base64
 import binascii
 import os
 import typesense
+import json
+import tempfile
 
 from mlcbakery.models import Dataset, Collection, Activity, Entity
 from mlcbakery.schemas.dataset import (
@@ -29,6 +31,14 @@ from mlcbakery.schemas.dataset import (
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
 from mlcbakery.search import get_typesense_client, TYPESENSE_COLLECTION_NAME
+from mlcbakery.croissant_validation import (
+    validate_json,
+    validate_croissant,
+    validate_records,
+    generate_validation_report,
+    ValidationResult as CroissantValidationResult,  # Alias to avoid potential name conflicts
+)
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
@@ -149,32 +159,6 @@ async def list_datasets(
         collection_name=dataset.collection.name if dataset.collection else None
     ) for dataset in datasets if dataset.collection and dataset.name]
 
-
-@router.get("/datasets/{dataset_id}", response_model=DatasetResponse)
-async def get_dataset(dataset_id: int, db: AsyncSession = Depends(get_async_db)):
-    """Get a specific dataset by ID (async)."""
-    stmt = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-        .where(Dataset.entity_type == 'dataset')
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
-        )
-    )
-    result = await db.execute(stmt)
-    dataset = result.scalars().unique().one_or_none()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-    return dataset
 
 
 @router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
@@ -457,3 +441,56 @@ async def get_dataset_upstream_tree(
     if not tree:
          raise HTTPException(status_code=500, detail="Failed to build upstream tree")
     return tree
+
+
+@router.post("/datasets/mlcroissant-validation", response_model=dict)
+async def validate_mlcroissant_file(
+    file: UploadFile = File(..., description="Croissant JSON-LD metadata file to validate")
+):
+    """
+    Validate an uploaded Croissant metadata file.
+
+    Performs the following checks:
+    1. Validates if the file is proper JSON.
+    2. Validates if the JSON adheres to the Croissant schema.
+    3. Validates if records can be generated (with a timeout).
+
+    Returns a detailed report and structured validation results.
+    """
+    results: list[tuple[str, CroissantValidationResult]] = []
+    temp_file_path = None
+
+    try:
+        # Create a temporary file to store the uploaded content
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+
+        # 1. Validate JSON
+        json_validation_result = validate_json(temp_file_path)
+        results.append(("JSON Validation", json_validation_result))
+
+        if json_validation_result.passed and json_validation_result.valid_json_data:
+            # 2. Validate Croissant Schema
+            croissant_validation_result = validate_croissant(json_validation_result.valid_json_data)
+            results.append(("Croissant Schema Validation", croissant_validation_result))
+
+            if croissant_validation_result.passed:
+                # 3. Validate Records Generation
+                records_validation_result = validate_records(json_validation_result.valid_json_data)
+                results.append(("Records Generation Validation", records_validation_result))
+
+        # Generate the structured report (now returns a dict)
+        report = generate_validation_report(file.filename or "uploaded_file", json_validation_result.valid_json_data, results)
+
+        # Return the structured report directly
+        return report
+
+    except Exception as e:
+        # Catch any unexpected errors during the process
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during validation: {str(e)}")
+    finally:
+        # Clean up the temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
