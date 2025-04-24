@@ -21,7 +21,7 @@ services:
     volumes:
       - .:/app
     environment:
-      - MLCBAKERY_API_BASE_URL=http://api:8000/v1/api
+      - MLCBAKERY_API_BASE_URL=http://api:8000
       - PYTHONPATH=/app
     command: ["python", "mcp_server/main.py", "--host", "0.0.0.0", "--port", "8001"]
     depends_on:
@@ -38,6 +38,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app
+      - MLCBAKERY_API_BASE_URL=http://api:8000
     depends_on:
       - db
     networks:

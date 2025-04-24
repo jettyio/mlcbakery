@@ -479,3 +479,27 @@ class Client:
             _LOGGER.error(f"Error fetching collections: {e}")
             # Depending on desired behavior, could return empty list or raise
             raise # Raising for now, as listing collections seems fundamental
+
+    def search_datasets(self, query: str, limit: int = 30) -> list[dict]:
+        """Search datasets using a query string.
+
+        Args:
+            query: The search term.
+            limit: The maximum number of results to return.
+
+        Returns:
+            A list of search result 'hits' (dictionaries) from Typesense.
+        """
+        endpoint = "/datasets/search"
+        params = {"q": query, "limit": limit}
+        try:
+            response = self._request("GET", endpoint, params=params)
+            results = response.json()
+            return results.get("hits", [])
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Error searching datasets with query '{query}': {e}")
+            # Return empty list on error, or could re-raise
+            return []
+        except Exception as e:
+            _LOGGER.error(f"Unexpected error searching datasets: {e}")
+            return []

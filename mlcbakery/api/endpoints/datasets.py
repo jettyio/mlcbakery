@@ -23,6 +23,7 @@ from mlcbakery.schemas.dataset import (
     DatasetUpdate,
     DatasetResponse,
     DatasetPreviewResponse,
+    DatasetListResponse,
     UpstreamEntityNode,
 )
 from mlcbakery.database import get_async_db
@@ -43,7 +44,7 @@ async def search_datasets(
         'q': q,
         'query_by': 'long_description, metadata, collection_name, dataset_name, full_name',
         'per_page': limit,
-        'include_fields': 'collection_name, dataset_name, full_name, long_description, metadata',
+        'include_fields': 'collection_name, dataset_name, full_name',
     }
 
     try:
@@ -110,7 +111,7 @@ async def create_dataset(
     return refreshed_dataset
 
 
-@router.get("/datasets/", response_model=list[DatasetResponse])
+@router.get("/datasets/", response_model=list[DatasetListResponse])
 async def list_datasets(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
@@ -140,7 +141,13 @@ async def list_datasets(
     )
     result = await db.execute(stmt)
     datasets = result.scalars().unique().all()
-    return datasets
+    return [DatasetListResponse(
+        id=dataset.id,
+        name=dataset.name,
+        data_path=dataset.data_path,
+        format=dataset.format,
+        collection_name=dataset.collection.name if dataset.collection else None
+    ) for dataset in datasets if dataset.collection and dataset.name]
 
 
 @router.get("/datasets/{dataset_id}", response_model=DatasetResponse)

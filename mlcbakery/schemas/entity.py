@@ -17,7 +17,7 @@ class EntityResponse(EntityBase):
 
 
 class DatasetBase(EntityBase):
-    data_path: str
+    data_path: Optional[str] = None
     format: str
     collection_id: Optional[int] = None
     metadata_version: Optional[str] = None

@@ -9,8 +9,8 @@ import base64
 
 class DatasetBase(EntityBase):
     name: str
-    data_path: str
-    format: str
+    data_path: Optional[str] = None
+    format: Optional[str] = None
     collection_id: Optional[int] = None
     metadata_version: Optional[str] = None
     dataset_metadata: Optional[dict] = None
@@ -49,7 +49,11 @@ class DatasetUpdate(DatasetBase):
     preview_type: Optional[str] = None
     long_description: Optional[str] = None
 
-
+class DatasetListResponse(DatasetBase):
+    id: int
+    name: Optional[str] = None
+    collection_name: Optional[str] = None
+    
 class DatasetResponse(DatasetBase):
     id: int
     created_at: datetime
