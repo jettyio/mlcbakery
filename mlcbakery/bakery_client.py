@@ -82,8 +82,6 @@ class Client:
         url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-            
-        _LOGGER.info(f"Requesting {method} {url} with headers: {headers}") # Log headers here
         
         try:
             response = requests.request(
