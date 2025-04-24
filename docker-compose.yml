@@ -58,7 +58,7 @@ services:
       - caddy-network
 
   caddy:
-    image: caddy:2.9.1-alpine
+    image: caddy:2.10.0-alpine
     ports:
       - "80:80"
       - "443:443"
@@ -72,10 +72,27 @@ services:
       - mcp_server
     networks:
       - caddy-network
+
+  search:
+    image: typesense/typesense:0.25.2 # Use a specific version
+    container_name: mlcbakery_typesense
+    environment:
+      - TYPESENSE_DATA_DIR=/data
+      # Use a strong, randomly generated API key in production
+      - TYPESENSE_API_KEY=thisisatestkey
+      - TYPESENSE_ENABLE_CORS=true # Allow CORS for easier development
+    volumes:
+      - typesense_data:/data
+    ports:
+      - "8108:8108" # Default Typesense port
+    networks:
+      - caddy-network
+
 volumes:
   caddy_data:
   caddy_config:
   postgres_data:
+  typesense_data: {} # Add volume definition
 
 networks:
   caddy-network:

@@ -19,6 +19,7 @@ dependencies = [
     "requests>=2.32.3",
     "sqlalchemy>=2.0.40",
     "starlette>=0.46.2",
+    "typesense>=1.0.3",
 ]
 
 [tool.pytest.ini_options]
@@ -43,10 +44,10 @@ authors = ["Your Name <your.email@example.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = "^0.109.0"
+fastapi = ">=0.109.0"
 uvicorn = "^0.27.0"
 sqlalchemy = "^2.0.25"
-asyncpg = "^0.29.0"
+asyncpg = ">=0.29.0"
 pydantic = "^2.6.1"
 python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
@@ -55,7 +56,7 @@ mcp = {extras = ["cli"], version = "^1.6.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
-pytest-asyncio = "^0.23.5"
+pytest-asyncio = ">=0.23.5"
 pytest-cov = "^4.1.0"
 httpx = "^0.28.0"
 mypy = "^1.8.0"

@@ -2,16 +2,19 @@ import dataclasses
 import io
 import json
 import logging
-from typing import Any, Tuple, Optional
+import os
+from typing import Any, Tuple, Optional, Union
 
 import requests
 import mlcroissant
 import pandas as pd
 
 _LOGGER = logging.getLogger(__name__)
+# Configure basic logging if not already configured
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 AuthType = Optional[Tuple[str, str]]  # Define a type alias for auth credentials
-TokenType = Optional[str] # Define a type alias for bearer token
+TokenType = Union[str, None]  # Assuming token is just a string or None for now
 
 @dataclasses.dataclass
 class BakeryCollection:
@@ -58,23 +61,38 @@ class Client:
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
         files: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, Any]] = None, # Defaulting to None, will be set below
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
+        # Initialize headers if None or provide default
+        if headers is None:
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            
         url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
-        headers = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-
-        response = requests.request(
-            method=method,
-            url=url,
-            params=params,
-            json=json_data,
-            files=files,
-            headers=headers,
-        )
-        response.raise_for_status()  # Let this raise HTTPError for bad responses
-        return response
+            
+        _LOGGER.info(f"Requesting {method} {url} with headers: {headers}") # Log headers here
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_data,
+                files=files,
+                headers=headers,
+                verify=True, # Keep verify=True for HTTPS
+            )
+            response.raise_for_status()  # Let this raise HTTPError for bad responses
+            return response
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Request failed: {e}")
+            # Optionally re-raise or handle specific exceptions
+            raise
 
     def find_or_create_by_collection_name(
         self, collection_name: str
@@ -99,7 +117,7 @@ class Client:
         try:
             response = self._request(
                 "POST",
-                "/collections",
+                "/collections/",
                 json_data={"name": collection_name, "description": ""},
             )
             json_response = response.json()
@@ -119,8 +137,9 @@ class Client:
         data_path: str,
         format: str,
         metadata: mlcroissant.Dataset,
-        preview: bytes,
+        preview: bytes | None = None,
         long_description: str | None = None,
+        metadata_version: str = "1.0.0",
     ) -> BakeryDataset:
         """Push a dataset to the bakery."""
         if "/" not in dataset_path:
@@ -134,11 +153,15 @@ class Client:
         update_payload = {
             "name": dataset_name,
             "collection_id": collection.id,
-            "dataset_metadata": metadata.jsonld,
+            "dataset_metadata": metadata,
             "data_path": data_path,
             "format": format,
-            "long_description": long_description,
+            "preview_type": "parquet",
+            "entity_type": "dataset",
+            "long_description": str(long_description),
+            "metadata_version": metadata_version,
         }
+
         # Filter out None values from payload to avoid overwriting existing fields with null
         update_payload = {k: v for k, v in update_payload.items() if v is not None}
 
@@ -183,7 +206,6 @@ class Client:
             dataset_response = response.json()
 
             json_str = dataset_response.get("dataset_metadata")
-            print(json_str)
             
             metadata = None
             if json_str and "@context" in json_str:
@@ -256,13 +278,14 @@ class Client:
         self, collection_id: str, dataset_name: str, params: dict = dict()
     ) -> BakeryDataset:
         """Create a dataset in a collection."""
-        endpoint = "/datasets"
+        endpoint = "/datasets/" # Ensure trailing slash
         payload = {
             "name": dataset_name,
             "collection_id": collection_id,
             "entity_type": "dataset",
             **params,
         }
+        
         try:
             response = self._request("POST", endpoint, json_data=payload)
             json_response = response.json()
@@ -332,10 +355,10 @@ class Client:
     def save_preview(self, dataset_id: str, preview: bytes):
         """Save a preview (as parquet bytes) to a dataset."""
         endpoint = f"/datasets/{dataset_id}/preview"
-        files = {"preview": ("preview.parquet", preview, "application/parquet")}
+        files = {"preview_update": ("preview.parquet", preview, "application/parquet")}
         try:
             # PUT seems appropriate for replacing/uploading the preview file
-            response = self._request("PUT", endpoint, files=files)
+            response = self._request("PUT", endpoint, files=files, headers={})
             # No return value needed, just raise on error
         except Exception as e:
             raise Exception(
@@ -455,4 +478,4 @@ class Client:
         except Exception as e:
             _LOGGER.error(f"Error fetching collections: {e}")
             # Depending on desired behavior, could return empty list or raise
-            raise # Raising for now, as listing collections seems fundamental 
+            raise # Raising for now, as listing collections seems fundamental

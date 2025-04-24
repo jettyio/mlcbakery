@@ -15,8 +15,9 @@ import dataclasses
 from mcp.server.fastmcp.prompts import base
 from mlcbakery import bakery_client as bc
 import os
+from fastapi import HTTPException, Query
 
-_BAKERY_API_URL = "http://api:8000"
+_BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL", "http://api:8000")
 _AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
 
 @dataclasses.dataclass
@@ -79,6 +80,39 @@ async def get_dataset_preview(dataset_name: str) -> str | None:
     if dataset.preview is None:
         return "No preview available"
     return str(dataset.preview)
+
+@mcp.tool("mlcbakery://search-datasets/{query}", description="Search for datasets using a query string")
+async def search_datasets_tool(query: str = Query(..., description="The search term for datasets")) -> list[dict]:
+    """Search datasets via the MLC Bakery API.
+
+    Args:
+        query: The search term.
+
+    Returns:
+        A list of search result 'hits' (dictionaries).
+    """
+    search_url = f"{_BAKERY_API_URL}/datasets/search"
+    params = {"q": query, "limit": 40}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            print(f"MCP Tool: Calling GET {search_url} with params {params}")
+            response = await client.get(search_url, params=params)
+            response.raise_for_status()
+            
+            results = response.json()
+            hits = results.get("hits", [])
+            print(f"MCP Tool: Received {len(hits)} hits from API")
+            return hits
+        except httpx.HTTPStatusError as exc:
+            print(f"MCP Tool: HTTP error calling search API: {exc.response.status_code} - {exc.response.text}")
+            return []
+        except httpx.RequestError as exc:
+            print(f"MCP Tool: Request error calling search API: {exc}")
+            return []
+        except Exception as exc:
+            print(f"MCP Tool: Unexpected error during dataset search: {exc}")
+            return []
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:

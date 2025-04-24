@@ -14,6 +14,8 @@ from sqlalchemy.orm import selectinload, contains_eager, joinedload
 from typing import Annotated, List, Set
 import base64
 import binascii
+import os
+import typesense
 
 from mlcbakery.models import Dataset, Collection, Activity, Entity
 from mlcbakery.schemas.dataset import (
@@ -25,8 +27,36 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
+from mlcbakery.search import get_typesense_client, TYPESENSE_COLLECTION_NAME
 
 router = APIRouter()
+
+
+@router.get("/datasets/search")
+async def search_datasets(
+    q: str = Query(..., min_length=1, description="Search query term"),
+    limit: int = Query(default=30, ge=1, le=100, description="Number of results to return"),
+    ts: typesense.Client = Depends(get_typesense_client)
+):
+    """Search datasets using Typesense based on query term."""
+    search_parameters = {
+        'q': q,
+        'query_by': 'long_description, metadata, collection_name, dataset_name, full_name',
+        'per_page': limit,
+        'include_fields': 'collection_name, dataset_name, full_name, long_description, metadata',
+    }
+
+    try:
+        search_results = ts.collections[TYPESENSE_COLLECTION_NAME].documents.search(search_parameters)
+        return {"hits": search_results['hits']}
+    except typesense.exceptions.ObjectNotFound:
+        raise HTTPException(status_code=404, detail=f"Typesense collection '{TYPESENSE_COLLECTION_NAME}' not found. Please build the index first.")
+    except typesense.exceptions.TypesenseClientError as e:
+        print(f"Typesense API error: {e}")
+        raise HTTPException(status_code=500, detail=f"Typesense search failed: {e}")
+    except Exception as e:
+        print(f"Unexpected error during Typesense search: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during search")
 
 
 @router.post("/datasets/", response_model=DatasetResponse)
@@ -36,33 +66,36 @@ async def create_dataset(
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Create a new dataset (async)."""
-    # Check if collection_id exists if provided
     if dataset.collection_id:
         stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
         result_coll = await db.execute(stmt_coll)
         if not result_coll.scalar_one_or_none():
             raise HTTPException(status_code=404, detail=f"Collection with id {dataset.collection_id} not found")
+    else:
+        raise HTTPException(status_code=400, detail="Collection ID is required")
+    
+    stmt_check = select(Dataset).where(Dataset.name == dataset.name).where(Dataset.collection_id == dataset.collection_id)
+    result_check = await db.execute(stmt_check)
+    if result_check.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Dataset already exists")
 
     db_dataset = Dataset(**dataset.model_dump())
     db.add(db_dataset)
     await db.commit()
-    # Need the ID after commit before re-fetching
-    await db.flush([db_dataset]) # Ensure ID is available
+    await db.flush([db_dataset])
     new_dataset_id = db_dataset.id 
-    # No need for db.refresh, re-fetch with eager loading
 
-    # Re-fetch the created dataset with all required relationships eager loaded for the response
     stmt_refresh = (
         select(Dataset)
-        .where(Dataset.id == new_dataset_id) # Use the ID obtained after commit/flush
+        .where(Dataset.id == new_dataset_id)
         .options(
             selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options( # Load activities where this dataset is an input
+            selectinload(Dataset.input_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             ),
-            selectinload(Dataset.output_activities).options( # Load the activity that *created* this dataset
+            selectinload(Dataset.output_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             )
@@ -72,7 +105,6 @@ async def create_dataset(
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
     
     if not refreshed_dataset:
-         # Should not happen ideally after a successful insert and commit
          raise HTTPException(status_code=500, detail="Failed to reload dataset after creation")
 
     return refreshed_dataset
@@ -91,25 +123,22 @@ async def list_datasets(
         select(Dataset)
         .where(Dataset.entity_type == 'dataset')
         .options(
-            # Load the Dataset's immediate relationships
             selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options( # Load activities where this dataset is an input
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)), # Eager load entities within those activities
+            selectinload(Dataset.input_activities).options(
+                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             ),
-            selectinload(Dataset.output_activities).options( # Load the activity that *created* this dataset
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)), # Eager load inputs to the creation activity
-                # Output entity of output_activity is the dataset itself, no need to load recursively here
+            selectinload(Dataset.output_activities).options(
+                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             )
         )
         .offset(skip)
         .limit(limit)
-        .order_by(Dataset.id) # Add consistent ordering
+        .order_by(Dataset.id)
     )
     result = await db.execute(stmt)
-    # Use unique() because options loading can cause duplicate parent rows
     datasets = result.scalars().unique().all()
     return datasets
 
@@ -135,7 +164,7 @@ async def get_dataset(dataset_id: int, db: AsyncSession = Depends(get_async_db))
         )
     )
     result = await db.execute(stmt)
-    dataset = result.scalars().unique().one_or_none() # Use unique().one_or_none()
+    dataset = result.scalars().unique().one_or_none()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return dataset
@@ -149,7 +178,6 @@ async def update_dataset(
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update a dataset (async)."""
-    # Fetch the dataset first to ensure it exists
     stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -157,37 +185,32 @@ async def update_dataset(
     if not db_dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Update only provided fields
     update_data = dataset_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_dataset, field, value)
 
     db.add(db_dataset)
     await db.commit()
-    # We don't need db.refresh(db_dataset) because we will re-fetch with eager loading
 
-    # Fetch the updated dataset with all required relationships eager loaded
     stmt_refresh = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
         .options(
             selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options( # Load activities where this dataset is an input
+            selectinload(Dataset.input_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             ),
-            selectinload(Dataset.output_activities).options( # Load the activity that *created* this dataset
+            selectinload(Dataset.output_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             )
         )
     )
     result_refresh = await db.execute(stmt_refresh)
-    # Use unique().one_or_none() as ID should guarantee uniqueness here
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
     
-    # This check shouldn't fail if the update succeeded, but good practice
     if not refreshed_dataset:
          raise HTTPException(status_code=500, detail="Failed to reload dataset after update")
          
@@ -221,7 +244,6 @@ async def update_dataset_metadata(
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update just the metadata of a dataset (async)."""
-    # Fetch the dataset first to ensure it exists
     stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -232,20 +254,18 @@ async def update_dataset_metadata(
     db_dataset.dataset_metadata = metadata
     db.add(db_dataset)
     await db.commit()
-    # No need for db.refresh, re-fetch with eager loading
 
-    # Re-fetch the updated dataset with all required relationships eager loaded
     stmt_refresh = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
         .options(
             selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options( # Load activities where this dataset is an input
+            selectinload(Dataset.input_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             ),
-            selectinload(Dataset.output_activities).options( # Load the activity that *created* this dataset
+            selectinload(Dataset.output_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                 selectinload(Activity.agents)
             )
@@ -263,12 +283,11 @@ async def update_dataset_metadata(
 @router.put("/datasets/{dataset_id}/preview", response_model=DatasetPreviewResponse)
 async def update_dataset_preview(
     dataset_id: int,
-    preview_update: UploadFile = File(...), # Expect UploadFile as form data
+    preview_update: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
 ):
     """Update a dataset's preview (async) using file upload."""
-    # Fetch the dataset first
     stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -276,37 +295,27 @@ async def update_dataset_preview(
     if not db_dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Read the file content directly from the UploadFile object
     preview_data: bytes = await preview_update.read()
 
-    # Check if data was actually read (e.g., empty file upload)
     if not preview_data:
-        # Decide how to handle empty file: error or clear preview?
-        # Option 1: Error
-        # raise HTTPException(status_code=400, detail="Preview file cannot be empty")
-        # Option 2: Clear preview (if allowed)
         db_dataset.preview = None
         db_dataset.preview_type = None
     else:
         db_dataset.preview = preview_data
-        # Get content type directly from the UploadFile object
         db_dataset.preview_type = preview_update.content_type
 
     db.add(db_dataset)
     await db.commit()
 
-    # RE-FETCH the updated dataset with relationships needed by the response model
     stmt_refresh = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
         .options(
              selectinload(Dataset.collection),
-             # Eager load OUTPUT activities (activity that *created* this dataset)
              selectinload(Dataset.output_activities).options(
                  selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                  selectinload(Activity.agents)
              ),
-             # ADDED: Eager load INPUT activities (activities that *used* this dataset)
              selectinload(Dataset.input_activities).options(
                  selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
                  selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
@@ -315,13 +324,12 @@ async def update_dataset_preview(
          )
      )
     result_refresh = await db.execute(stmt_refresh)
-    # Use unique() because multiple options paths might cause duplicates
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
          raise HTTPException(status_code=500, detail="Failed to reload dataset after preview update")
 
-    return refreshed_dataset # Return the refreshed object with relationships loaded
+    return refreshed_dataset
 
 
 @router.get("/datasets/{dataset_id}/preview")
@@ -356,7 +364,6 @@ async def get_dataset_by_name(
         .where(Dataset.name == dataset_name)
         .where(Dataset.entity_type == 'dataset')
         .options(
-            # Add comprehensive eager loading
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
@@ -370,26 +377,22 @@ async def get_dataset_by_name(
         )
     )
     result = await db.execute(stmt)
-    # Add .unique() before fetching the result
     dataset = result.scalars().unique().one_or_none()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return dataset
 
 
-# Helper function to recursively build the upstream tree asynchronously
 async def build_upstream_tree_async(entity_id: int, db: AsyncSession, visited: Set[int]) -> UpstreamEntityNode:
     if entity_id in visited:
-        # Avoid cycles and redundant fetches
         return None 
     visited.add(entity_id)
 
-    # Fetch the current entity and its immediate relationships needed for the node
     stmt = select(Entity).where(Entity.id == entity_id).options(
         selectinload(Entity.collection),
-        selectinload(Entity.output_activities).options( # Load the activity that produced this entity
-            selectinload(Activity.input_entities).options( # Load the inputs to that activity
-                 selectinload(Entity.collection) # And their collections
+        selectinload(Entity.output_activities).options(
+            selectinload(Activity.input_entities).options(
+                 selectinload(Entity.collection)
             )
         )
     )
@@ -397,25 +400,21 @@ async def build_upstream_tree_async(entity_id: int, db: AsyncSession, visited: S
     entity = result.scalar_one_or_none()
 
     if not entity:
-        return None # Should not happen if called from a valid starting entity
+        return None
 
-    # Create the node for the current entity
     node = UpstreamEntityNode(
         id=entity.id,
         name=entity.name,
         collection_name=entity.collection.name if entity.collection else "N/A",
         entity_type=entity.entity_type,
-        children=[] # Initialize children list
+        children=[]
     )
 
-    # Get activity information from output_activities
     if entity.output_activities:
-        # Assuming one activity creates an entity for simplicity here
         activity = entity.output_activities[0]
         node.activity_id = activity.id
         node.activity_name = activity.name
 
-        # Recursively build for input entities of this activity
         for input_entity in activity.input_entities:
             child_node = await build_upstream_tree_async(input_entity.id, db, visited)
             if child_node:
@@ -434,7 +433,6 @@ async def get_dataset_upstream_tree(
     db: AsyncSession = Depends(get_async_db),
 ) -> UpstreamEntityNode:
     """Get the upstream entity tree for a dataset (async)."""
-    # Get the starting dataset ID
     stmt_start = (
         select(Dataset.id)
         .join(Collection, Dataset.collection_id == Collection.id)
@@ -448,8 +446,7 @@ async def get_dataset_upstream_tree(
     if not dataset_id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Build the tree starting from the dataset using the async helper
     tree = await build_upstream_tree_async(dataset_id, db, set())
-    if not tree: # Should theoretically not happen if dataset_id was found
+    if not tree:
          raise HTTPException(status_code=500, detail="Failed to build upstream tree")
     return tree

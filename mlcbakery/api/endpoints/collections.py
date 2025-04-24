@@ -27,10 +27,6 @@ async def create_collection(
     db.add(db_collection)
     await db.commit()
     await db.refresh(db_collection)
-    # Eager load entities if needed for the response
-    # stmt = select(Collection).where(Collection.id == db_collection.id).options(selectinload(Collection.entities))
-    # result = await db.execute(stmt)
-    # db_collection = result.scalar_one()
     return db_collection
 
 

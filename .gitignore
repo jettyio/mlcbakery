@@ -194,3 +194,6 @@ htmlcov/
 
 # Caddyfile
 Caddyfile
+
+# testing notebooks
+.ipynb

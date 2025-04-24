@@ -77,7 +77,7 @@ def main():
 
     if bakery_dataset.preview is not None:
         st.subheader("Preview")
-        st.write(bakery_dataset.preview)
+        st.write(bakery_dataset.preview.head())
 
     st.write(bakery_dataset.long_description)
 

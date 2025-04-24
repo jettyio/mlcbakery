@@ -18,7 +18,7 @@ TEST_ADMIN_TOKEN = "test-super-secret-token" # Define a constant for the test to
 # --- Global Test Database Setup ---
 
 # Create async test database connection URL (ensure this matches your test DB)
-SQLALCHEMY_TEST_DATABASE_URL = os.getenv("DATABASE_URL")
+SQLALCHEMY_TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
 
 # Create global async engine
 engine = create_async_engine(SQLALCHEMY_TEST_DATABASE_URL, echo=False, poolclass=NullPool) # Echo can be noisy globally
