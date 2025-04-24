@@ -103,8 +103,8 @@ async def test_list_trained_models():
             assert resp.status_code == 200
             created_ids.append(resp.json()["id"])
 
-        # List models
-        response = await ac.get("/api/v1/trained_models/", headers=AUTH_HEADERS)
+        # List models, add limit parameter
+        response = await ac.get("/api/v1/trained_models/?limit=1000", headers=AUTH_HEADERS)
         assert response.status_code == 200, f"List failed: {response.text}"
         data = response.json()
 

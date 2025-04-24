@@ -15,12 +15,21 @@ async def test_dataset_generation_from_another_dataset():
     """Test that a dataset can be generated from another dataset through an activity (API based)."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # 1. Create source dataset
+        # 0. Create a Collection first
+        collection_name = "Dataset Dependency Collection"
+        collection_data = {"name": collection_name, "description": "For dataset dependency test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
+        assert coll_resp.status_code == 200, f"Failed to create collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
+
+        # 1. Create source dataset (add collection_id)
+        source_dataset_name = "Source Dataset API"
         source_dataset_data = {
-            "name": "Source Dataset API",
+            "name": source_dataset_name,
             "data_path": "/path/to/source/api.csv",
             "format": "csv",
             "entity_type": "dataset",
+            "collection_id": collection_id,
             "metadata_version": "1.0",
             "dataset_metadata": {"description": "Original source dataset via API"},
         }
@@ -39,12 +48,14 @@ async def test_dataset_generation_from_another_dataset():
         activity = activity_resp.json()
         activity_id = activity["id"]
 
-        # 3. Create derived dataset
+        # 3. Create derived dataset (add collection_id)
+        derived_dataset_name = "Preprocessed Dataset API"
         derived_dataset_data = {
-            "name": "Preprocessed Dataset API",
+            "name": derived_dataset_name,
             "data_path": "/path/to/preprocessed/api.parquet",
             "format": "parquet",
             "entity_type": "dataset",
+            "collection_id": collection_id,
             "metadata_version": "1.0",
             "dataset_metadata": {
                 "description": "Preprocessed version via API",
@@ -62,11 +73,11 @@ async def test_dataset_generation_from_another_dataset():
         assert get_activity_resp.status_code == 200
         updated_activity = get_activity_resp.json()
 
-        get_source_resp = await ac.get(f"/api/v1/datasets/{source_dataset_id}")
+        get_source_resp = await ac.get(f"/api/v1/datasets/{collection_name}/{source_dataset_name}")
         assert get_source_resp.status_code == 200
         updated_source_dataset = get_source_resp.json()
 
-        get_derived_resp = await ac.get(f"/api/v1/datasets/{derived_dataset_id}")
+        get_derived_resp = await ac.get(f"/api/v1/datasets/{collection_name}/{derived_dataset_name}")
         assert get_derived_resp.status_code == 200
         updated_derived_dataset = get_derived_resp.json()
 

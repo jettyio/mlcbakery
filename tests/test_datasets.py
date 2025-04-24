@@ -145,14 +145,16 @@ async def test_get_dataset():
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
+        collection_name_to_use = collection_data["name"] # Get collection name
         # Create a dataset to get
         ds_data = {"name": "GetMeDS", "data_path": "/get/me", "format": "json", "entity_type": "dataset", "collection_id": collection_id_to_use}
         create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
+        dataset_name = ds_data["name"] # Get dataset name
 
-        # Then get the specific dataset
-        response = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        # Then get the specific dataset by name
+        response = await ac.get(f"/api/v1/datasets/{collection_name_to_use}/{dataset_name}") # Use name-based GET
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == dataset_id
@@ -167,9 +169,11 @@ async def test_get_nonexistent_dataset():
     """Test getting a dataset that doesn't exist."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.get("/api/v1/datasets/99999")
+        # Use the name-based GET for a nonexistent dataset/collection
+        response = await ac.get("/api/v1/datasets/NonExistentCollection/NonExistentDataset")
         assert response.status_code == 404
-        assert response.json()["detail"] == "Dataset not found"
+        # The error message might differ slightly, check for "not found"
+        assert "not found" in response.json()["detail"].lower()
 
 @pytest.mark.asyncio
 async def test_update_dataset():
@@ -237,20 +241,24 @@ async def test_delete_dataset():
         coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
         assert coll_resp.status_code == 200
         collection_id_to_use = coll_resp.json()["id"]
+        collection_name_to_use = collection_data["name"] # Get collection name
         # Create a dataset to delete
         ds_data = {"name": "DeleteMeDS", "data_path": "/delete/me", "format": "txt", "entity_type": "dataset", "collection_id": collection_id_to_use}
         create_resp = await ac.post("/api/v1/datasets/", json=ds_data, headers=AUTH_HEADERS)
         assert create_resp.status_code == 200
         dataset_id = create_resp.json()["id"]
+        dataset_name = ds_data["name"] # Get dataset name
 
-        # Delete the dataset
+        # Delete the dataset (still uses ID)
         delete_response = await ac.delete(f"/api/v1/datasets/{dataset_id}", headers=AUTH_HEADERS)
         assert delete_response.status_code == 200
         assert delete_response.json()["message"] == "Dataset deleted successfully"
 
-        # Verify it's deleted
-        get_response = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        # Verify it's deleted using the name-based GET
+        get_response = await ac.get(f"/api/v1/datasets/{collection_name_to_use}/{dataset_name}") # Use name-based GET
         assert get_response.status_code == 404
+        # Check for "not found" in the detail message
+        assert "not found" in get_response.json()["detail"].lower()
 
 @pytest.mark.asyncio
 async def test_delete_nonexistent_dataset():

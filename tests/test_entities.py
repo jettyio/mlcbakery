@@ -159,7 +159,8 @@ async def test_list_models():
         collection_id = collection["id"]
         model1 = await create_test_model(ac, collection_id, name="List Model 1")
 
-        response = await ac.get("/api/v1/trained_models/")
+        # Add limit parameter to ensure all models are fetched
+        response = await ac.get("/api/v1/trained_models/?limit=1000")
         assert response.status_code == 200
         data = response.json()
 
@@ -172,16 +173,21 @@ async def test_get_dataset():
     """Test getting a specific dataset."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        collection = await create_test_collection(ac, name="Collection For Get Dataset")
+        # Need collection name for the correct GET endpoint
+        collection_name = "Collection For Get Dataset"
+        collection = await create_test_collection(ac, name=collection_name)
         collection_id = collection["id"]
-        dataset = await create_test_dataset(ac, collection_id, name="Dataset To Get")
+        # Need dataset name for the correct GET endpoint
+        dataset_name = "Dataset To Get"
+        dataset = await create_test_dataset(ac, collection_id, name=dataset_name)
         dataset_id = dataset["id"]
 
-        response = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        # Use the name-based GET endpoint
+        response = await ac.get(f"/api/v1/datasets/{collection_name}/{dataset_name}")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == dataset_id
-        assert data["name"] == "Dataset To Get"
+        assert data["name"] == dataset_name
         assert data["collection_id"] == collection_id
 
 @pytest.mark.asyncio
@@ -206,9 +212,11 @@ async def test_get_nonexistent_dataset():
     """Test getting a dataset that doesn't exist."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.get("/api/v1/datasets/99999") # Use a likely non-existent ID
+        # Use the name-based GET endpoint for a non-existent entity
+        response = await ac.get("/api/v1/datasets/NonExistentCollection/NonExistentDataset")
         assert response.status_code == 404
-        assert response.json()["detail"] == "Dataset not found"
+        # Check the detail message for "not found"
+        assert "not found" in response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_get_nonexistent_model():
@@ -224,9 +232,13 @@ async def test_delete_dataset():
     """Test deleting a dataset."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        collection = await create_test_collection(ac, name="Collection For Delete Dataset")
+        # Need collection name for the verification GET endpoint
+        collection_name = "Collection For Delete Dataset"
+        collection = await create_test_collection(ac, name=collection_name)
         collection_id = collection["id"]
-        dataset = await create_test_dataset(ac, collection_id, name="Dataset To Delete")
+        # Need dataset name for the verification GET endpoint
+        dataset_name = "Dataset To Delete"
+        dataset = await create_test_dataset(ac, collection_id, name=dataset_name)
         dataset_id = dataset["id"]
 
         # Delete the dataset - Add headers
@@ -234,9 +246,11 @@ async def test_delete_dataset():
         assert response_del.status_code == 200
         assert response_del.json()["message"] == "Dataset deleted successfully"
 
-        # Verify it's deleted
-        response_get = await ac.get(f"/api/v1/datasets/{dataset_id}")
+        # Verify it's deleted using the name-based GET endpoint
+        response_get = await ac.get(f"/api/v1/datasets/{collection_name}/{dataset_name}")
         assert response_get.status_code == 404
+        # Check the detail message for "not found"
+        assert "not found" in response_get.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_delete_model():

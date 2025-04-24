@@ -132,7 +132,7 @@ async def test_list_activities():
         created_activity_id = create_response.json()["id"]
 
         # List activities
-        response = await ac.get("/api/v1/activities/")
+        response = await ac.get("/api/v1/activities/?limit=1000")
         assert response.status_code == 200
         data = response.json()
         found = any(item["id"] == created_activity_id for item in data)
@@ -148,9 +148,11 @@ async def test_list_activities_pagination():
         dataset_ids = prereqs["dataset_ids"]
 
         # Get initial count (might include activities from other tests if run together, ideally run isolated)
-        response_initial = await ac.get("/api/v1/activities/")
+        # Fetch all activities to get a reliable initial count
+        response_initial = await ac.get("/api/v1/activities/?limit=1000")
         assert response_initial.status_code == 200
-        initial_count = len(response_initial.json())
+        initial_data = response_initial.json()
+        initial_count = len(initial_data)
 
         # Create multiple test activities
         created_ids = []
@@ -165,8 +167,8 @@ async def test_list_activities_pagination():
             activity_names[activity_id] = name
 
         # Test pagination
-        # Get total count
-        response_all = await ac.get("/api/v1/activities/")
+        # Get total count by fetching all again
+        response_all = await ac.get("/api/v1/activities/?limit=1000")
         assert response_all.status_code == 200
         total_count = len(response_all.json())
         assert total_count >= initial_count + 5 # Check it increased by at least 5
