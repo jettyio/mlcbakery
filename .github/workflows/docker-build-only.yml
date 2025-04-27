@@ -64,6 +64,10 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    # Explicitly remove service.yaml if it exists, just in case
+    - name: Remove existing service.yaml
+      run: rm -f service.yaml
+
     - name: Deploy MCP Server to Cloud Run
       id: deploy-mcp
       uses: google-github-actions/deploy-cloudrun@v2
