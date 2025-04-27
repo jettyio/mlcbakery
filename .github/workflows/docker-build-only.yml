@@ -10,6 +10,8 @@ env:
   IMAGE_NAME: mlcbakery-unified
   # Use GHCR path - derived from repository owner and image name
   GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-unified
+  # Use GAR path for Cloud Run mirror
+  GAR_IMAGE_PATH: ${{ secrets.GAR_REPOSITORY_PATH }}/mlcbakery-unified
 
   # --- GCP & Cloud Run Details (Reference Secrets) ---
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -64,7 +66,21 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    # Explicitly remove service.yaml if it exists, just in case
+    - name: Log in to Google Artifact Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.CLOUD_RUN_REGION }}-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}
+
+    - name: Mirror GHCR image to Artifact Registry
+      run: |
+        docker pull ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
+        docker tag ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }} ${{ env.GAR_IMAGE_PATH }}:${{ github.sha }}
+        docker tag ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }} ${{ env.GAR_IMAGE_PATH }}:latest
+        docker push ${{ env.GAR_IMAGE_PATH }}:${{ github.sha }}
+        docker push ${{ env.GAR_IMAGE_PATH }}:latest
+
     - name: Remove existing service.yaml
       run: rm -f service.yaml
 
@@ -72,9 +88,7 @@ jobs:
       id: deploy-mcp
       uses: google-github-actions/deploy-cloudrun@v2
       with:
-        # Use the image parameter directly with the GHCR path
-        image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
-        # metadata: ./service.yaml # Removed
+        image: ${{ env.GAR_IMAGE_PATH }}:${{ github.sha }}
         service: ${{ env.MCP_SERVICE_NAME }}
         region: ${{ env.CLOUD_RUN_REGION }}
         # Ensure the Cloud Run service account has permissions to pull from GHCR if it's private
