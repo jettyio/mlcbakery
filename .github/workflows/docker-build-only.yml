@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to GHCR
+name: Build and Deploy MCP Server to Cloud Run
 
 on:
   push:
@@ -8,14 +8,25 @@ on:
 env:
   # Define the image name you want to use locally during the build
   IMAGE_NAME: mlcbakery-unified
+  GHCR_REGISTRY: ghcr.io
+  # Derive GHCR image path from repo owner
+  GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+
+  # --- GCP & Cloud Run Details (Reference Secrets) ---
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+  GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+  CLOUD_RUN_REGION: ${{ secrets.CLOUD_RUN_REGION }}
+  MCP_SERVICE_NAME: ${{ secrets.MCP_SERVER_SERVICE_NAME || 'mcp-server' }} # Default to mcp-server if secret not set
 
 jobs:
-  build_and_push: # Renamed job for clarity
-    name: Build and Push Image
+  build_push_deploy:
+    name: Build, Push and Deploy MCP Server
     runs-on: ubuntu-latest
     permissions:
-      contents: read # Needed to check out the repository
-      packages: write # Needed to push Docker image to GHCR
+      contents: read      # Read repository content
+      packages: write     # Push packages (Docker images) to GHCR
+      id-token: write   # Obtain OIDC token for Google Cloud authentication
 
     steps:
     - name: Checkout repository
@@ -27,22 +38,48 @@ jobs:
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }} # User/org running the action
-        password: ${{ secrets.GITHUB_TOKEN }} # Automatic token
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image to GHCR
+      id: build-push
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile
-        push: true # Push the image
-        tags: | # Tags for GHCR
-          ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-        # load: true # Removed load: true as it's not needed when pushing
+        push: true
+        tags: |
+          ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
+          ${{ env.GHCR_IMAGE_PATH }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Push completed
-      run: echo "Docker image ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }} pushed successfully." 
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+        service_account: ${{ env.GCP_SA_EMAIL }}
+
+    - name: Deploy MCP Server to Cloud Run
+      id: deploy-mcp
+      uses: google-github-actions/deploy-cloudrun@v2
+      with:
+        service: ${{ env.MCP_SERVICE_NAME }}
+        region: ${{ env.CLOUD_RUN_REGION }}
+        # Use the specific image pushed to GHCR with the commit SHA
+        image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
+        # Override command and args to match docker-compose for mcp_server
+        # Use port 8080 as required by Cloud Run convention (or respect PORT env var)
+        command: "python"
+        args: "mcp_server/main.py,--host,0.0.0.0,--port,8080"
+        # Define environment variables for the Cloud Run service
+        env_vars: |
+          PYTHONPATH=/app
+          MLCBAKERY_API_BASE_URL=${{ secrets.API_SERVICE_URL }}
+          MLCBAKERY_HOST=${{ secrets.MLCBAKERY_HOST }}
+          # Add other necessary env vars here
+
+    - name: Output Cloud Run Service URL
+      run: echo "MCP Server Deployed: ${{ steps.deploy-mcp.outputs.url }}" 
