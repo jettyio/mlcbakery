@@ -1,0 +1,36 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [ main ] # Trigger on push to the main branch
+  workflow_dispatch: # Allow manual triggering from the Actions tab
+
+env:
+  # Define the image name you want to use locally during the build
+  IMAGE_NAME: mlcbakery-unified
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image (no push)
+      uses: docker/build-push-action@v5
+      with:
+        context: . # Build context is the root directory
+        file: ./Dockerfile # Path to the Dockerfile
+        push: false # Explicitly set push to false
+        tags: ${{ env.IMAGE_NAME }}:latest # Tag the image for build reference
+        load: true # Load the image into the local Docker daemon (optional, useful for subsequent steps in the same job if needed)
+        cache-from: type=gha # Enable build cache retrieval
+        cache-to: type=gha,mode=max # Enable build cache saving
+
+    - name: Build completed
+      run: echo "Docker image ${{ env.IMAGE_NAME }}:latest built successfully." 
