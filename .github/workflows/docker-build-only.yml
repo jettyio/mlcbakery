@@ -9,7 +9,7 @@ env:
   # Define the image name you want to use locally during the build
   IMAGE_NAME: mlcbakery-unified
   # Use GAR path from secrets
-  GAR_IMAGE_PATH: ${{ secrets.GAR_REPOSITORY_PATH }}/${{ env.IMAGE_NAME }}
+  GAR_IMAGE_PATH: ${{ secrets.GAR_REPOSITORY_PATH }}/mlcbakery-unified
 
   # --- GCP & Cloud Run Details (Reference Secrets) ---
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
