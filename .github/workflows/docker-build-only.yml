@@ -95,14 +95,20 @@ jobs:
         image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
         # Reference the created metadata file
         metadata: ./service.yaml
-        # Add flag to allow pulling public images
-        flags: "--allow-unauthenticated"
         # Define environment variables for the Cloud Run service
         env_vars: |
           PYTHONPATH=/app
           MLCBAKERY_API_BASE_URL=${{ secrets.API_SERVICE_URL }}
           MLCBAKERY_HOST=${{ secrets.MLCBAKERY_HOST }}
           # Add other necessary env vars here
+
+    - name: Allow unauthenticated invocations
+      run: |
+        gcloud run services add-iam-policy-binding ${{ env.MCP_SERVICE_NAME }} \
+          --region=${{ env.CLOUD_RUN_REGION }} \
+          --member="allUsers" \
+          --role="roles/run.invoker" \
+          --project=${{ env.GCP_PROJECT_ID }}
 
     - name: Output Cloud Run Service URL
       run: echo "MCP Server Deployed - ${{ steps.deploy-mcp.outputs.url }}"
