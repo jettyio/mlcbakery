@@ -64,40 +64,14 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    # Create metadata file using GHCR image path
-    - name: Create Cloud Run metadata file
-      id: create-metadata
-      run: |
-        cat <<EOF > service.yaml
-        apiVersion: serving.knative.dev/v1
-        kind: Service
-        metadata:
-          name: ${{ env.MCP_SERVICE_NAME }}
-        spec:
-          template:
-            spec:
-              # Service account for Cloud Run revision (optional but recommended)
-              # serviceAccountName: your-dedicated-sa@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
-              containers:
-              - image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }} # USE GHCR PATH
-                command:
-                - "python"
-                args:
-                - "mcp_server/main.py"
-                - "--host"
-                - "0.0.0.0"
-                - "--port"
-                - "8080"
-        EOF
-        echo "Created service.yaml"
-
     - name: Deploy MCP Server to Cloud Run
       id: deploy-mcp
       uses: google-github-actions/deploy-cloudrun@v2
       with:
-        # Note: 'image' input is ignored when 'metadata' is provided
-        metadata: ./service.yaml
-        service: ${{ env.MCP_SERVICE_NAME }} # Still needed to target the correct service
+        # Use the image parameter directly with the GHCR path
+        image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
+        # metadata: ./service.yaml # Removed
+        service: ${{ env.MCP_SERVICE_NAME }}
         region: ${{ env.CLOUD_RUN_REGION }}
         # Ensure the Cloud Run service account has permissions to pull from GHCR if it's private
         # or configure the service for unauthenticated access if the GHCR package is public.
