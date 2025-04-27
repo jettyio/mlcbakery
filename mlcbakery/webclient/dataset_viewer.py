@@ -14,10 +14,8 @@ def parse_url_path():
 
 
 def _get_all_datasets(bakery_client: bc.Client):
-    for collection in bakery_client.get_collections():
-        for dataset in bakery_client.get_datasets_by_collection(collection.name):
-            _ALL_DATASETS.append(f"{collection.name}/{dataset.name}")
-    return _ALL_DATASETS
+    response = bakery_client._request("GET", "/datasets/")
+    return [f"{item['collection_name']}/{item['name']}" for item in response.json()]
 
 def main():
     global _ALL_DATASETS
@@ -63,7 +61,8 @@ def main():
         st.metric("Created At", created_at.strftime("%Y-%m-%d %H:%M:%S"))
 
     with col2:
-        st.metric("Data Path", bakery_dataset.data_path)
+        st.metric("Origin", bakery_dataset.asset_origin)
+        st.metric("Path", bakery_dataset.data_path)
         # data lineage:
         upstream_entities = bakery_client.get_upstream_entities(
             collection_name, dataset_name

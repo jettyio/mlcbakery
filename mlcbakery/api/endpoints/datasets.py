@@ -323,19 +323,23 @@ async def update_dataset_preview(
     return refreshed_dataset
 
 
-@router.get("/datasets/{dataset_id}/preview")
-async def get_dataset_preview(dataset_id: int, db: AsyncSession = Depends(get_async_db)):
+@router.get("/datasets/{collection_name}/{dataset_name}/preview")
+async def get_dataset_preview(collection_name: str, dataset_name: str, db: AsyncSession = Depends(get_async_db)):
     """Get a dataset's preview (async)."""
-    stmt = select(Dataset.preview, Dataset.preview_type).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
+    stmt = select(Dataset).join(Collection, Dataset.collection_id == Collection.id).where(Collection.name == collection_name).where(Dataset.name == dataset_name).where(Dataset.entity_type == 'dataset').options(
+        selectinload(Dataset.collection),
+    )
     result = await db.execute(stmt)
-    preview_data = result.one_or_none()
+    dataset = result.scalars().unique().one_or_none()
+    preview_data = dataset.preview
+    preview_type = dataset.preview_type
 
-    if not preview_data or not preview_data.preview or not preview_data.preview_type:
+    if not preview_data or not preview_type:
         raise HTTPException(status_code=404, detail="Dataset preview not found or incomplete")
 
     return Response(
-        content=preview_data.preview,
-        media_type=preview_data.preview_type,
+        content=preview_data,
+        media_type=preview_type,
     )
 
 

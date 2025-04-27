@@ -39,6 +39,7 @@ class Entity(Base):
     name = Column(String, nullable=False)
     entity_type = Column(String, nullable=False)  # Discriminator column
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    asset_origin = Column(String, nullable=True)
     collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
 
     # Relationships

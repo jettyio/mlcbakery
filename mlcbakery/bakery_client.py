@@ -44,7 +44,7 @@ class BakeryDataset:
     metadata_version: str | None = None
     data_path: str | None = None
     long_description: str | None = None
-
+    asset_origin: str | None = None
 
 class Client:
     def __init__(
@@ -189,6 +189,7 @@ class Client:
         format: str,
         metadata: mlc.Dataset,
         preview: bytes | None = None,
+        asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
     ) -> BakeryDataset:
@@ -201,12 +202,13 @@ class Client:
 
         dataset = self.get_dataset_by_name(collection_name, dataset_name)
 
-        update_payload = {
+        entity_payload = {
             "name": dataset_name,
             "collection_id": collection.id,
             "dataset_metadata": metadata,
             "data_path": data_path,
             "format": format,
+            "asset_origin": asset_origin,
             "preview_type": "parquet",
             "entity_type": "dataset",
             "long_description": str(long_description),
@@ -214,7 +216,7 @@ class Client:
         }
 
         # Filter out None values from payload to avoid overwriting existing fields with null
-        update_payload = {k: v for k, v in update_payload.items() if v is not None}
+        entity_payload = {k: v for k, v in entity_payload.items() if v is not None}
 
 
         if dataset:
@@ -222,21 +224,18 @@ class Client:
             _LOGGER.info(f"Updating dataset {dataset_name} in collection {collection_name}")
             dataset = self.update_dataset(
                 dataset.id,
-                update_payload
+                entity_payload
             )
         else:
             # Create new dataset
             _LOGGER.info(
                 f"Creating dataset {dataset_name} in collection {collection_name} with collection_id {collection.id}"
             )
-            # Use the same payload structure, but long_description might be specific to creation
-            create_payload = update_payload.copy() # Start with common fields
-            # Add any fields specific to creation if needed, though structure seems similar
 
             dataset = self.create_dataset(
                 collection.id,
                 dataset_name,
-                create_payload, # Pass prepared payload
+                entity_payload.copy(), 
             )
 
         # Update the preview regardless of create/update
@@ -269,7 +268,7 @@ class Client:
 
             preview_df = None
             try:
-                preview_df = self.get_preview(dataset_response["id"])
+                preview_df = self.get_preview(collection_name, dataset_name)
             except Exception as e:
                  _LOGGER.warning(f"Could not fetch or parse preview for dataset {dataset_response.get('id')}: {e}")
 
@@ -285,6 +284,7 @@ class Client:
                 created_at=dataset_response.get("created_at"),
                 data_path=dataset_response.get("data_path"),
                 long_description=dataset_response.get("long_description"),
+                asset_origin=dataset_response.get("asset_origin"),
             )
         except requests.exceptions.HTTPError as e:
              if e.response.status_code == 404:
@@ -298,9 +298,9 @@ class Client:
             raise
 
 
-    def get_preview(self, dataset_id: str) -> pd.DataFrame | None:
+    def get_preview(self, collection_name: str, dataset_name: str) -> pd.DataFrame | None:
         """Get a preview for a dataset."""
-        endpoint = f"/datasets/{dataset_id}/preview"
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/preview"
         try:
             response = self._request("GET", endpoint)
             # Check content type? API might return 404 or empty if no preview
@@ -310,17 +310,17 @@ class Client:
                  # Assuming it's parquet if status is 200 and content exists
                  return pd.read_parquet(io.BytesIO(response.content))
             else:
-                 _LOGGER.info(f"No preview content found for dataset {dataset_id} (status: {response.status_code}).")
+                 _LOGGER.info(f"No preview content found for dataset {collection_name}/{dataset_name} (status: {response.status_code}).")
                  return None
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                 _LOGGER.info(f"Preview for dataset {dataset_id} not found.")
+                 _LOGGER.info(f"Preview for dataset {collection_name}/{dataset_name} not found.")
                  return None
             else:
-                 _LOGGER.error(f"HTTP error fetching preview for dataset {dataset_id}: {e}")
+                 _LOGGER.error(f"HTTP error fetching preview for dataset {collection_name}/{dataset_name}: {e}")
                  raise # Re-raise other HTTP errors
         except Exception as e:
-            _LOGGER.error(f"Error fetching or parsing preview for dataset {dataset_id}: {e}")
+            _LOGGER.error(f"Error fetching or parsing preview for dataset {collection_name}/{dataset_name}: {e}")
             # Decide if to return None or raise. Returning None might be safer.
             return None
 

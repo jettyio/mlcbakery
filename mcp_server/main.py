@@ -17,10 +17,11 @@ from mlcbakery import bakery_client as bc
 import os
 from fastapi import HTTPException, Query, UploadFile, File
 import json
+import requests
 
 _BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL")
 _AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
-
+_BAKERY_HOST = os.getenv("MLCBAKERY_HOST")
 @dataclasses.dataclass
 class AppContext:
     pass
@@ -45,7 +46,7 @@ def get_config() -> str:
     return "{}"
 
 
-@mcp.resource("mlcbakery://collections/{pattern}", description="Search for collections")
+@mcp.resource("bake://collections/{pattern}", description="Search for collections")
 async def search_collections(pattern: str = "") -> list[str]:
     """Search Collection
     """
@@ -53,7 +54,7 @@ async def search_collections(pattern: str = "") -> list[str]:
     collections = client.get_collections()
     return [collection.name for collection in collections if pattern.lower() in collection.name.lower()]
 
-@mcp.tool("mlcbakery://datasets/", description="list all datasets by collection")
+@mcp.tool("datasets/", description="list all datasets by collection")
 async def list_datasets() -> list[str]:
     """List all datasets
     """
@@ -65,24 +66,15 @@ async def list_datasets() -> list[str]:
         for dataset in datasets:
             dataset_list.append(f"{collection.name}/{dataset.name}")
     return dataset_list
-    
 
 
-@mcp.tool("mlcbakery://dataset-preview/{dataset_name}", description="Get a dataset preview as a JSON string")
-async def get_dataset_preview(dataset_name: str) -> str | None:
-    """Get a dataset preview
-
-    Args:
-        dataset_name: The name of the dataset to get the preview for (e.g. 'collection_name/dataset_name')
+@mcp.tool("datasets-preview-url/{collection}/{dataset}", description="get a download url for a dataset preview")
+async def get_dataset_preview_url(collection: str, dataset: str) -> str:
+    """Get a download url for a dataset preview. To read the preview, use pandas.read_parquet({url}).
     """
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
-    collection_name, ds_name = dataset_name.split("/")
-    dataset = client.get_dataset_by_name(collection_name, ds_name)
-    if dataset.preview is None:
-        return "No preview available"
-    return str(dataset.preview)
+    return f"{_BAKERY_HOST}/datasets/{collection}/{dataset}/preview"
 
-@mcp.tool("mlcbakery://search-datasets/{query}", description="Search for datasets using a query string")
+@mcp.tool("search-datasets/{query}", description="Search for datasets using a query string")
 async def search_datasets_tool(query: str = Query(..., description="The search term for datasets")) -> list[dict]:
     """Search datasets via the MLC Bakery API.
 
@@ -102,7 +94,15 @@ async def search_datasets_tool(query: str = Query(..., description="The search t
         # Log the exception if the client method raises one unexpectedly
         print(f"MCP Tool: Error calling client.search_datasets: {exc}")
         return [] # Return empty list on any error from the client call
-@mcp.tool("mlcbakery://validate-croissant-ds/", description="Validate MLCommons Croissant metadata JSON.")
+@mcp.tool("help", description="Get help for the MLC Bakery API")
+async def get_help() -> str:
+    """Get help for the MLC Bakery API
+    """
+    # load the help.md file
+    with open(os.path.join(os.path.dirname(__file__), "templates/help.md"), "r") as f:
+        return f.read()
+
+@mcp.tool("validate-croissant-ds/", description="Validate MLCommons Croissant metadata JSON.")
 async def validate_croissant_file(json_dict: dict[str, Any] = Query(..., description="The Croissant JSON-LD metadata as a dictionary.")) -> dict[str, Any]:
     """Validate a Croissant dataset JSON dictionary via the MLC Bakery API.
 
@@ -130,6 +130,16 @@ async def validate_croissant_file(json_dict: dict[str, Any] = Query(..., descrip
         # Catch other unexpected errors
         print(f"MCP Tool: Unexpected error during Croissant validation: {exc}")
         raise HTTPException(status_code=500, detail=f"Internal server error during validation: {exc}") from exc
+
+@mcp.tool("dataset/{collection}/{dataset}/mlcroissant", description="Get the Croissant dataset template")
+async def get_dataset_metadata(collection: str, dataset: str) -> object | None:
+    """Get the Croissant dataset metadata
+    """
+    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
+    dataset = client.get_dataset_by_name(collection,dataset)
+    if dataset is None:
+        return None
+    return dataset.metadata.jsonld
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:

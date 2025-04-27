@@ -17,6 +17,7 @@ class DatasetBase(EntityBase):
     preview_type: Optional[str] = None
     entity_type: str = "dataset"
     long_description: Optional[str] = None
+    asset_origin: Optional[str] = None
 
 class UpstreamEntityNode(BaseModel):
     """Represents a node in the upstream entity tree."""
