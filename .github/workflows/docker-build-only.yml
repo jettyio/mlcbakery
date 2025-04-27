@@ -95,6 +95,8 @@ jobs:
         image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
         # Reference the created metadata file
         metadata: ./service.yaml
+        # Add flag to allow pulling public images
+        flags: "--allow-unauthenticated"
         # Define environment variables for the Cloud Run service
         env_vars: |
           PYTHONPATH=/app
