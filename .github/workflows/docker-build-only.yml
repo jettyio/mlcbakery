@@ -68,6 +68,8 @@ jobs:
         cat <<EOF > service.yaml
         apiVersion: serving.knative.dev/v1
         kind: Service
+        metadata:
+          name: ${{ env.MCP_SERVICE_NAME }}
         spec:
           template:
             spec:
