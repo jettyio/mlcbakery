@@ -10,7 +10,7 @@ env:
   IMAGE_NAME: mlcbakery-unified
   GHCR_REGISTRY: ghcr.io
   # Derive GHCR image path from repo owner
-  GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+  GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-unified
 
   # --- GCP & Cloud Run Details (Reference Secrets) ---
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
