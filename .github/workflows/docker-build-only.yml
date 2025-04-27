@@ -70,7 +70,7 @@ jobs:
         region: ${{ env.CLOUD_RUN_REGION }}
         # Use the specific image pushed to GHCR with the commit SHA
         image: ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
-        # Override command and args to match docker-compose for mcp_server
+        # Override command and   args to match docker-compose for mcp_server
         # Use port 8080 as required by Cloud Run convention (or respect PORT env var)
         command: "python"
         args: "mcp_server/main.py,--host,0.0.0.0,--port,8080"
@@ -82,4 +82,4 @@ jobs:
           # Add other necessary env vars here
 
     - name: Output Cloud Run Service URL
-      run: echo "MCP Server Deployed: ${{ steps.deploy-mcp.outputs.url }}" 
+      run: echo "MCP Server Deployed - ${{ steps.deploy-mcp.outputs.url }}"
