@@ -498,3 +498,32 @@ async def validate_mlcroissant_file(
         # Clean up the temporary file
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+
+@router.get("/datasets/{collection_name}/{dataset_name}/mlcroissant")
+async def get_dataset_mlcroissant(
+    collection_name: str,
+    dataset_name: str,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get a dataset's Croissant metadata (async)."""
+    stmt = (
+        select(Dataset)
+        .join(Collection, Dataset.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(Dataset.name == dataset_name)
+        .where(Dataset.entity_type == 'dataset')
+        .options(
+            selectinload(Dataset.collection),
+        )
+    )
+    result = await db.execute(stmt)
+    dataset = result.scalars().unique().one_or_none()
+    
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    if not dataset.dataset_metadata:
+        raise HTTPException(status_code=404, detail="Dataset has no Croissant metadata")
+
+    return dataset.dataset_metadata

@@ -94,42 +94,14 @@ async def search_datasets_tool(query: str = Query(..., description="The search t
         # Log the exception if the client method raises one unexpectedly
         print(f"MCP Tool: Error calling client.search_datasets: {exc}")
         return [] # Return empty list on any error from the client call
+    
 @mcp.tool("help", description="Get help for the MLC Bakery API")
 async def get_help() -> str:
     """Get help for the MLC Bakery API
     """
     # load the help.md file
     with open(os.path.join(os.path.dirname(__file__), "templates/help.md"), "r") as f:
-        return f.read()
-
-@mcp.tool("validate-croissant-ds/", description="Validate MLCommons Croissant metadata JSON.")
-async def validate_croissant_file(json_dict: dict[str, Any] = Query(..., description="The Croissant JSON-LD metadata as a dictionary.")) -> dict[str, Any]:
-    """Validate a Croissant dataset JSON dictionary via the MLC Bakery API.
-
-    Args:
-        json_dict: The Croissant metadata as a dictionary.
-
-    Returns:
-        A dictionary containing the validation report.
-
-    Raises:
-        HTTPException: If the validation API call fails.
-    """
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
-    try:
-        # Call the validation method from the bakery client directly with the dictionary
-        validation_report = client.validate_croissant_dataset(json_dict)
-        return validation_report
-    except bc.requests.exceptions.RequestException as e:
-        # Handle API request errors
-        detail = f"Error communicating with Bakery validation API: {e}"
-        if e.response is not None:
-             detail += f" - Status: {e.response.status_code}, Response: {e.response.text}"
-        raise HTTPException(status_code=502, detail=detail) from e
-    except Exception as exc:
-        # Catch other unexpected errors
-        print(f"MCP Tool: Unexpected error during Croissant validation: {exc}")
-        raise HTTPException(status_code=500, detail=f"Internal server error during validation: {exc}") from exc
+        return f.read().replace("{_BAKERY_HOST}", _BAKERY_HOST)
 
 @mcp.tool("dataset/{collection}/{dataset}/mlcroissant", description="Get the Croissant dataset template")
 async def get_dataset_metadata(collection: str, dataset: str) -> object | None:

@@ -44,14 +44,11 @@ To examine the detailed metadata (in Croissant format) for a specific dataset:
 
 ## 4. Validating Croissant Metadata
 
-To check if a given Croissant metadata JSON structure is valid according to the standard:
-
-1.  **Prepare the metadata:** Have the Croissant metadata available as a JSON object (Python dictionary). This could be metadata you've created or modified.
-2.  **Use the validation tool:** Provide the JSON object to the validation tool.
-3.  **Review the validation report:** The tool will return a report indicating whether the metadata is valid. If there are errors or warnings, the report will provide details on what needs to be corrected.
-
-*Relevant Tool: Validate MLCommons Croissant metadata JSON (`mlcbakery://validate-croissant-ds/`)*
-
----
-
-You can also use the `mlcbakery://help` tool to get general help information.
+To validate the croissant metadata for a dataset, POST the file to `{_BAKERY_HOST}/datasets/mlcroissant-validation` .
+Example python code:
+```
+json_file = io.BytesIO(json.dumps(json_data).encode('utf-8'))
+files = {'file': ('metadata.json', json_file, 'application/json')}
+response = self._request("POST", endpoint, files=files, headers={})
+report = response.json()
+```
