@@ -1,0 +1,37 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies (keep libpq-dev just in case, can be removed if not needed)
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install poetry
+RUN pip install poetry
+
+# Copy poetry files
+COPY pyproject.toml poetry.lock* ./
+
+# Install core dependencies using poetry (adjust --no-dev or add --only main if needed)
+# Exclude optional groups like webclient unless mcp_server requires them
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi --no-root
+
+# Copy application code
+COPY . .
+
+# Install the application package itself (if mcp_server imports from mlcbakery)
+# If mcp_server is standalone, this might not be needed.
+RUN pip install -e .
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Default port for Cloud Run
+ENV PORT 8080
+
+# Command to run the mcp_server application
+# Uses sh -c to allow PORT environment variable expansion
+CMD ["sh", "-c", "python mcp_server/main.py --host 0.0.0.0 --port $PORT"] 
