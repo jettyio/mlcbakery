@@ -57,8 +57,7 @@ jobs:
           ${{ env.GHCR_MCP_IMAGE_PATH }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
-
-- name: Build and push Bakery Docker image to GHCR
+    - name: Build and push Bakery Docker image to GHCR
       id: build-push
       uses: docker/build-push-action@v5
       with:
