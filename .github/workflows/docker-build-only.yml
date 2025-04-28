@@ -46,7 +46,7 @@ jobs:
 
     # Build and push Docker image to GHCR
     - name: Build and push MCP Docker image to GHCR
-      id: build-push
+      id: build-push-mcp
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -58,7 +58,7 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
     - name: Build and push Bakery Docker image to GHCR
-      id: build-push
+      id: build-push-bakery
       uses: docker/build-push-action@v5
       with:
         context: .
