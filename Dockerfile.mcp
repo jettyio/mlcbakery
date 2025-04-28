@@ -29,7 +29,6 @@ RUN pip install -e .
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Default port for Cloud Run
 ENV PORT 8080
 
 # Command to run the mcp_server application

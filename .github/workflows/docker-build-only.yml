@@ -9,14 +9,8 @@ env:
   # Define the image name you want to use
   IMAGE_NAME: mlcbakery-mcp
   # Use GHCR path - derived from repository owner and image name
-  GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-mcp
-
-  # --- GCP & Cloud Run Details (Reference Secrets) ---
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
-  GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
-  CLOUD_RUN_REGION: ${{ secrets.CLOUD_RUN_REGION }}
-  MCP_SERVICE_NAME: ${{ secrets.MCP_SERVER_SERVICE_NAME || 'mcp-server' }} # Default to mcp-server if secret not set
+  GHCR_MCP_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-mcp
+  GHCR_BAKERY_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-bakery
 
 jobs:
   build_push_deploy:
@@ -51,7 +45,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }} # Use the built-in GITHUB_TOKEN
 
     # Build and push Docker image to GHCR
-    - name: Build and push Docker image to GHCR
+    - name: Build and push MCP Docker image to GHCR
       id: build-push
       uses: docker/build-push-action@v5
       with:
@@ -59,7 +53,20 @@ jobs:
         file: ./Dockerfile.mcp
         push: true
         tags: |
-          ${{ env.GHCR_IMAGE_PATH }}:${{ github.sha }}
-          ${{ env.GHCR_IMAGE_PATH }}:latest
+          ${{ env.GHCR_MCP_IMAGE_PATH }}:${{ github.sha }}
+          ${{ env.GHCR_MCP_IMAGE_PATH }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+- name: Build and push Bakery Docker image to GHCR
+      id: build-push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.bakery
+        push: true
+        tags: |
+          ${{ env.GHCR_BAKERY_IMAGE_PATH }}:${{ github.sha }}
+          ${{ env.GHCR_BAKERY_IMAGE_PATH }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max

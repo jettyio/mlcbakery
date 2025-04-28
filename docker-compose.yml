@@ -9,7 +9,7 @@ services:
     user: "${UID}:${GID}"
     
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
+      - DATABASE_URL=${DATABASE_URL}
       - PYTHONPATH=/app
     depends_on:
       - db
@@ -40,11 +40,10 @@ services:
       - .:/app
     user: "${UID}:${GID}"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app
       - MLCBAKERY_API_BASE_URL=http://api:8000
     depends_on:
-      - db
+      - api
     networks:
       - caddy-network
 
