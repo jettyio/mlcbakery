@@ -62,6 +62,9 @@ pytest-cov = "^4.1.0"
 httpx = "^0.28.0"
 mypy = "^1.8.0"
 
+[tool.poetry.group.mcp.dependencies]
+mcp = "^1.6.0"
+
 [tool.poetry.group.webclient.dependencies]
 streamlit = "^1.32.0"
 pandas = "^2.2.0"
