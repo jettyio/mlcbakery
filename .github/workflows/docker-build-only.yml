@@ -9,10 +9,15 @@ env:
   # Use GHCR path - derived from repository owner and image name
   GHCR_MCP_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-mcp # Define MCP image path
   GHCR_BAKERY_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/mlcbakery-bakery
+  # --- GCP & Cloud Run Details (Reference Secrets) ---
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+  GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+  CLOUD_RUN_REGION: ${{ secrets.CLOUD_RUN_REGION }}
 
 jobs:
   build_push_deploy:
-    name: Build, Push to GHCR
+    name: Build, Push to GHCR and Deploy MCP Server
     runs-on: ubuntu-latest
     permissions:
       contents: read      # Read repository content
@@ -67,18 +72,3 @@ jobs:
           ${{ env.GHCR_MCP_IMAGE_PATH }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
-    - name: Build and push Bakery Docker image to GHCR
-      id: build-push-bakery
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile.bakery
-        push: true
-        tags: |
-          ${{ env.GHCR_BAKERY_IMAGE_PATH }}:${{ github.sha }}
-          ${{ env.GHCR_BAKERY_IMAGE_PATH }}:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    - name: Output Status
-      run: echo "Successfully built and pushed images to GHCR"
