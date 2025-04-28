@@ -14,9 +14,8 @@ RUN pip install poetry uvicorn
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies using poetry, including the webclient group
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --no-root --with webclient
+    poetry install --no-interaction --no-ansi --no-root
 
 # Copy application code
 COPY . .
