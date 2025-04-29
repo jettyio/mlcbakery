@@ -6,33 +6,30 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import typesense # Keep for exception types
 
-from mlcbakery.models import Collection, Dataset, Activity, Entity # Import necessary models
+from mlcbakery.models import Dataset
 import argparse
-import json
+
 from dotenv import load_dotenv
 
 # Import from shared search module
-from mlcbakery.search import ts_client, TYPESENSE_HOST, TYPESENSE_PORT, TYPESENSE_COLLECTION_NAME, TYPESENSE_API_KEY # Use shared client and constants
+from mlcbakery.search import get_typesense_client, TYPESENSE_HOST, TYPESENSE_PORT, TYPESENSE_COLLECTION_NAME # Use shared client and constants
 
 load_dotenv() # Keep load_dotenv for DATABASE_URL
 
 # --- Configuration ---
 # REMOVE Typesense specific constants, they are now imported
-# TYPESENSE_HOST = ...
-# TYPESENSE_PORT = ...
-# TYPESENSE_PROTOCOL = ...
-# TYPESENSE_API_KEY = ...
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # Use imported constant
 COLLECTION_NAME = TYPESENSE_COLLECTION_NAME
 
 # --- Typesense Client ---
-# REMOVE client initialization, it's now imported
-# ts_client = typesense.Client({...})
+
 
 # --- Database Setup (Async using SQLAlchemy) ---
-engine = create_async_engine(DATABASE_URL, echo=False) # Set echo=True for debugging SQL
+# Add connect_args to disable prepared statement caching for pgbouncer compatibility
+engine = create_async_engine(DATABASE_URL, echo=False, connect_args={"statement_cache_size": 0})
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -49,14 +46,9 @@ schema = {
         {'name': 'collection_name', 'type': 'string', 'facet': True},
         {'name': 'dataset_name', 'type': 'string', 'facet': True},
         {'name': 'full_name', 'type': 'string'}, 
-        # Adding authors and other fields from the model if needed/available
-        # {'name': 'authors', 'type': 'string[]', 'optional': True}, 
         {'name': 'long_description', 'type': 'string', 'optional': True},
         {'name': 'metadata', 'type': 'object', 'optional': True}, 
-        # Add created_at as timestamp for potential sorting
         {'name': 'created_at_timestamp', 'type': 'int64', 'optional': True, 'sort': True}, 
-        # Consider adding updated_at if available and useful for sorting
-        # {'name': 'updated_at_timestamp', 'type': 'int64', 'optional': True, 'sort': True}, 
     ],
 }
 
@@ -79,6 +71,7 @@ async def get_all_datasets(db: AsyncSession):
 async def build_index():
     """Flushes and rebuilds the Typesense index with data from the database."""
     # Use imported client instance
+    ts_client = get_typesense_client()
     if not ts_client:
         print("Typesense client is not initialized (check search.py and environment variables). Exiting.")
         return
@@ -86,7 +79,7 @@ async def build_index():
     print(f"Connecting to Typesense at {TYPESENSE_HOST}:{TYPESENSE_PORT}...")
     try:
         # Use the client directly, health check is optional here
-        health = ts_client.health.retrieve() 
+        health = ts_client.operations.is_healthy()
         print(f"Typesense health: {health}")
     except Exception as e:
         print(f"Error connecting to Typesense: {e}")
@@ -140,7 +133,7 @@ async def build_index():
                     'dataset_name': dataset.name,
                     'full_name': doc_id, # Redundant but matches API query_by
                     'long_description': dataset.long_description,
-                    'metadata': dataset.dataset_metadata or {}, # Ensure it's an object, not None
+                    'metadata': dataset.dataset_metadata or None, # Ensure it's an object, not None
                     'created_at_timestamp': int(dataset.created_at.timestamp()) if dataset.created_at else None,
                     # Add other fields as needed based on the schema
                 }

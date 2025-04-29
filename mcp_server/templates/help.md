@@ -29,6 +29,17 @@ To download and view a preview of a specific dataset:
     print(df.head())
     ```
 
+### Example code:
+```
+import pandas as pd
+import requests
+import io
+response = requests.get('{_BAKERY_HOST}/datasets/{collection}/{dataset}/preview')
+if response.status_code == 200:
+    df = pd.read_parquet(io.BytesIO(response.content))
+print(df.head())
+```
+
 *Relevant Tool: Get a download URL for a dataset preview (`mlcbakery://datasets-preview-url/{collection}/{dataset}`)*
 
 ## 3. Reviewing Dataset Metadata
@@ -52,3 +63,16 @@ files = {'file': ('metadata.json', json_file, 'application/json')}
 response = self._request("POST", endpoint, files=files, headers={})
 report = response.json()
 ```
+
+## 5. Creating MLCommons Croissant Files
+
+MLCommons Croissant ([https://arxiv.org/html/2403.19546v2](https://arxiv.org/html/2403.19546v2)) is a metadata format for ML datasets. While using the [online editor](https://huggingface.co/spaces/MLCommons/croissant-editor) is recommended, you can also create the JSON-LD file manually:
+
+1.  **Basic Setup:** Create a JSON file with `@context` pointing to the Croissant vocabulary and `@type` set to `sc:Dataset`.
+2.  **Dataset Metadata:** Add top-level keys for `name`, `description`, `license`, `url`, etc.
+3.  **Resources (`distribution`):** Define each data file (URL or path) using the `distribution` array. Specify `contentUrl`, `encodingFormat`, `sha256`, etc., for each file object.
+4.  **Structure (`recordSet`):** Define one or more `recordSet`s. Each `recordSet` contains `field`s (columns/attributes).
+5.  **Fields (`field`):** For each `field`, define its `name`, `description`, `dataType` (e.g., `sc:Text`, `sc:ImageObject`). Link it to the data using `source`, specifying the `distribution` and extraction method (e.g., `extract.column` for CSVs).
+6.  **Semantics:** Add semantic meaning to fields where applicable.
+
+Refer to the official Croissant specification ([https://mlcommons.org/croissant/1.0](https://mlcommons.org/croissant/1.0)) for full details on available properties and structure.

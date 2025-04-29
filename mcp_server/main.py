@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict
 import httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -18,6 +18,7 @@ import os
 from fastapi import HTTPException, Query, UploadFile, File
 import json
 import requests
+from mlcbakery import croissant_validation
 
 _BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL")
 _AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
@@ -46,27 +47,6 @@ def get_config() -> str:
     return "{}"
 
 
-@mcp.resource("bake://collections/{pattern}", description="Search for collections")
-async def search_collections(pattern: str = "") -> list[str]:
-    """Search Collection
-    """
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
-    collections = client.get_collections()
-    return [collection.name for collection in collections if pattern.lower() in collection.name.lower()]
-
-@mcp.tool("datasets/", description="list all datasets by collection")
-async def list_datasets() -> list[str]:
-    """List all datasets
-    """
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
-    collections = client.get_collections()
-    dataset_list = []
-    for collection in collections:
-        datasets = client.get_datasets_by_collection(collection.name)
-        for dataset in datasets:
-            dataset_list.append(f"{collection.name}/{dataset.name}")
-    return dataset_list
-
 
 @mcp.tool("datasets-preview-url/{collection}/{dataset}", description="get a download url for a dataset preview")
 async def get_dataset_preview_url(collection: str, dataset: str) -> str:
@@ -94,7 +74,7 @@ async def search_datasets_tool(query: str = Query(..., description="The search t
         # Log the exception if the client method raises one unexpectedly
         print(f"MCP Tool: Error calling client.search_datasets: {exc}")
         return [] # Return empty list on any error from the client call
-    
+
 @mcp.tool("help", description="Get help for the MLC Bakery API")
 async def get_help() -> str:
     """Get help for the MLC Bakery API
@@ -112,6 +92,25 @@ async def get_dataset_metadata(collection: str, dataset: str) -> object | None:
     if dataset is None:
         return None
     return dataset.metadata.jsonld
+
+@mcp.tool("validate-croissant", description="Validate a Croissant metadata file")
+async def validate_croissant(metadata_json: dict[str, Any]) -> dict:
+    """Validate a Croissant metadata.
+
+    Args:
+        metadata_json: send the JSON data as a dictionary without escaping or quoting.
+
+    Returns:
+        A dictionary indicating passed status (true or false)
+        and any error message if invalid.
+    """
+    try:
+        
+        result = croissant_validation.validate_croissant(metadata_json)
+        return dataclasses.asdict(result)
+    except Exception as e:
+        return {"passed": False, "message": f"Croissant validation failed: {e}"}
+
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:
