@@ -56,7 +56,7 @@ def validate_records(json_data: dict) -> ValidationResult:
         for record_set in record_sets:
             try:
                 records = dataset.records(record_set=record_set.uuid)
-                _ = func_timeout(_WAIT_TIME, lambda: next(iter(records)))
+                _ = func_timeout.func_timeout(_WAIT_TIME, lambda: next(iter(records)))
                 results.append(f"Record set '{record_set.uuid}' passed validation.")
             except func_timeout.exceptions.FunctionTimedOut:
                 error_message = f"Record set '{record_set.uuid}' generation took too long (>{_WAIT_TIME}s)"

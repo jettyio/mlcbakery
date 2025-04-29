@@ -107,34 +107,23 @@ class TestCroissantValidation(unittest.TestCase):
         self.assertTrue("Unexpected error during validation: Unexpected issue" in result.message)
         self.assertIsNotNone(result.details)
 
-    @patch('func_timeout.func_timeout')
     @patch('mlcroissant.Dataset')
-    def test_validate_records_valid(self, mock_dataset_cls, mock_func_timeout):
+    def test_validate_records_valid(self, mock_dataset_cls):
         # Mock dataset and record generation
         mock_dataset_instance = MagicMock()
         mock_record_set = MagicMock(uuid="rs1")
         mock_dataset_instance.metadata.record_sets = [mock_record_set]
-        mock_records_iterator = iter([{"col1": "val1"}]) # Simulate one record
+        # Simulate an iterator that yields one record then stops
+        mock_records_iterator = iter([{"col1": "val1"}])
         mock_dataset_instance.records.return_value = mock_records_iterator
         mock_dataset_cls.return_value = mock_dataset_instance
 
-        # Ensure func_timeout doesn't actually time out
-        mock_func_timeout.return_value = {"col1": "val1"} # Return value of the lambda
-
         result = validate_records(self.valid_json_data)
 
-        self.assertTrue(result.passed)
+        self.assertTrue(result.passed, f"Validation failed unexpectedly: {result.message}")
         self.assertTrue("Record set 'rs1' passed validation." in result.message)
         mock_dataset_cls.assert_called_once_with(jsonld=self.valid_json_data)
         mock_dataset_instance.records.assert_called_once_with(record_set="rs1")
-        mock_func_timeout.assert_called_once()
-        # Check the lambda passed to func_timeout implicitly by checking args
-        args, kwargs = mock_func_timeout.call_args
-        self.assertAlmostEqual(args[0], _WAIT_TIME) # Check timeout duration
-        # Execute the lambda to ensure it works as expected
-        lambda_result = args[1]()
-        self.assertEqual(lambda_result, {"col1": "val1"})
-
 
     @patch('mlcroissant.Dataset')
     def test_validate_records_no_record_sets(self, mock_dataset_cls):
@@ -147,38 +136,54 @@ class TestCroissantValidation(unittest.TestCase):
         self.assertEqual(result.message, "No record sets found to validate.")
         mock_dataset_cls.assert_called_once_with(jsonld=self.valid_json_data)
 
-    @patch('func_timeout.func_timeout')
+    @patch('func_timeout.func_timeout', side_effect=func_timeout.exceptions.FunctionTimedOut("Timed out"))
     @patch('mlcroissant.Dataset')
-    def test_validate_records_timeout(self, mock_dataset_cls, mock_func_timeout):
+    def test_validate_records_timeout(self, mock_dataset_cls, mock_func_timeout_call):
         mock_dataset_instance = MagicMock()
         mock_record_set = MagicMock(uuid="rs_timeout")
         mock_dataset_instance.metadata.record_sets = [mock_record_set]
-        mock_dataset_instance.records.return_value = iter([]) # Doesn't matter for timeout
+        # Mock records to return an iterator that would hang or take too long
+        # For the test, making it empty might suffice if func_timeout doesn't optimize for it,
+        # but let's make it a generator that never yields to be safe.
+        def hanging_iterator():
+            while True: yield # Should never yield, causing timeout
+            # Or simpler: raise StopIteration immediately, relying on func_timeout mock
+            # return iter([])
+
+        # Let's try mocking the lambda directly within func_timeout
+        # We still need dataset.records to be called though.
+        mock_dataset_instance.records.return_value = iter([]) # Needs to be iterable
+
+        # The func_timeout mock will raise the exception when called
         mock_dataset_cls.return_value = mock_dataset_instance
 
-        # Simulate timeout
-        mock_func_timeout.side_effect = func_timeout.exceptions.FunctionTimedOut("Timed out")
-
         result = validate_records(self.valid_json_data)
-        self.assertFalse(result.passed)
-        self.assertTrue("Record set 'rs_timeout' generation took too long" in result.message)
-        self.assertTrue(f"(>{_WAIT_TIME}s)" in result.message)
 
-    @patch('func_timeout.func_timeout')
+        self.assertFalse(result.passed)
+        self.assertTrue("Record set 'rs_timeout' generation took too long" in result.message, f"Unexpected message: {result.message}")
+        self.assertTrue(f"(>{_WAIT_TIME}s)" in result.message)
+        mock_func_timeout_call.assert_called_once() # Verify func_timeout was called
+
     @patch('mlcroissant.Dataset')
-    def test_validate_records_generation_error(self, mock_dataset_cls, mock_func_timeout):
+    def test_validate_records_generation_error(self, mock_dataset_cls):
         mock_dataset_instance = MagicMock()
         mock_record_set = MagicMock(uuid="rs_error")
         mock_dataset_instance.metadata.record_sets = [mock_record_set]
-        mock_dataset_instance.records.return_value = iter([]) # Doesn't matter for error
+
+        # Create an iterator that raises an error when next() is called
+        def error_iterator():
+            raise ValueError("Record generation failed")
+            yield # Never reached
+
+        mock_dataset_instance.records.return_value = error_iterator()
         mock_dataset_cls.return_value = mock_dataset_instance
 
-        # Simulate error during next(iter(records)) inside the lambda
-        mock_func_timeout.side_effect = ValueError("Record generation failed")
-
         result = validate_records(self.valid_json_data)
+
         self.assertFalse(result.passed)
-        self.assertTrue("Record set 'rs_error' failed: Record generation failed" in result.message)
+        # Check the exact error message format from the validate_records function
+        expected_msg = "Record set 'rs_error' failed: Record generation failed"
+        self.assertTrue(expected_msg in result.message, f"Expected substring '{expected_msg}' not found in '{result.message}'")
         self.assertIsNotNone(result.details) # Check traceback details are included
 
     @patch('mlcroissant.Dataset')
