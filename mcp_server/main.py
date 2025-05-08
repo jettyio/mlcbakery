@@ -41,14 +41,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 mcp = FastMCP("MLC-Bakery-MPC", lifespan=app_lifespan)
 
 
-@mcp.resource("config://app", description="App configuration")
-def get_config() -> str:
-    """Static configuration data"""
-    return "{}"
-
-
-
-@mcp.tool("datasets-preview-url/{collection}/{dataset}", description="get a download url for a dataset preview")
+@mcp.tool("datasets-preview-url", description="get a download url for a dataset preview")
 async def get_dataset_preview_url(collection: str, dataset: str) -> str:
     """Get a download url for a dataset preview. To read the preview, use pandas.read_parquet({url}).
     """
@@ -83,7 +76,7 @@ async def get_help() -> str:
     with open(os.path.join(os.path.dirname(__file__), "templates/help.md"), "r") as f:
         return f.read().replace("{_BAKERY_HOST}", _BAKERY_HOST)
 
-@mcp.tool("dataset/{collection}/{dataset}/mlcroissant", description="Get the Croissant dataset template")
+@mcp.tool("dataset/mlcroissant", description="Get the Croissant dataset template")
 async def get_dataset_metadata(collection: str, dataset: str) -> object | None:
     """Get the Croissant dataset metadata
     """

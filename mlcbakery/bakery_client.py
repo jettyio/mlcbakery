@@ -173,8 +173,8 @@ class Client:
             )
             json_response = response.json()
             return BakeryCollection(
-                id=json_response["id"],
-                name=json_response["name"],
+                id=json_response.get("id", ""),
+                name=json_response.get("name", ""),
                 description=json_response.get("description", ""),
             )
         except Exception as e:
