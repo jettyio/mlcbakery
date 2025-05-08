@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class CollectionBase(BaseModel):
@@ -8,11 +8,20 @@ class CollectionBase(BaseModel):
 
 
 class CollectionCreate(CollectionBase):
-    pass
+    storage_info: Optional[Dict[str, Any]] = None
+    storage_provider: Optional[str] = None
 
 
 class CollectionResponse(CollectionBase):
     id: int
+
+    class Config:
+        from_attributes = True
+
+
+class CollectionStorageResponse(CollectionResponse):
+    storage_info: Optional[Dict[str, Any]] = None
+    storage_provider: Optional[str] = None
 
     class Config:
         from_attributes = True

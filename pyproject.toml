@@ -41,7 +41,7 @@ include = '\.pyi?$'
 name = "mlcbakery"
 version = "0.1.0"
 description = "A machine learning data and model management system with provenance tracking"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Jonathan Lebensold <jon@jetty.io>"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -54,6 +54,7 @@ python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
 python-multipart = "^0.0.20"
 mcp = {extras = ["cli"], version = "^1.6.0"}
+google-cloud-storage = "^2.14.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -69,6 +70,11 @@ mcp = "^1.6.0"
 streamlit = "^1.32.0"
 pandas = "^2.2.0"
 mlcroissant = "^1.0.15"
+
+[tool.uv.workspace]
+members = [
+    "venv",
+]
 
 [build-system]
 requires = ["poetry-core"]

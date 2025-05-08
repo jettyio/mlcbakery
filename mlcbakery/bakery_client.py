@@ -29,6 +29,8 @@ class BakeryCollection:
     id: str
     name: str
     description: str
+    storage_info: Optional[Dict[str, Any]] = None
+    storage_provider: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -510,6 +512,91 @@ class Client:
             raise
 
 
+    def get_collection_storage_info(self, collection_name: str) -> BakeryCollection:
+        """Get a collection's storage information.
+        
+        This endpoint requires valid authentication token.
+        
+        Args:
+            collection_name: The name of the collection to retrieve storage info for.
+            
+        Returns:
+            A BakeryCollection object with storage_info and storage_provider populated.
+            
+        Raises:
+            requests.exceptions.RequestException: If the API request fails or authentication is invalid.
+            ValueError: If the collection is not found.
+        """
+        endpoint = f"/collections/{collection_name}/storage"
+        try:
+            response = self._request("GET", endpoint)
+            collection_data = response.json()
+            return BakeryCollection(
+                id=collection_data["id"],
+                name=collection_data["name"],
+                description=collection_data.get("description", ""),
+                storage_info=collection_data.get("storage_info"),
+                storage_provider=collection_data.get("storage_provider")
+            )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise ValueError(f"Collection '{collection_name}' not found.")
+            else:
+                _LOGGER.error(f"HTTP error fetching storage info for collection '{collection_name}': {e}")
+                raise
+        except Exception as e:
+            _LOGGER.error(f"Error fetching storage info for collection '{collection_name}': {e}")
+            raise
+            
+    def update_collection_storage_info(self, collection_name: str, storage_info: Optional[Dict[str, Any]] = None, storage_provider: Optional[str] = None) -> BakeryCollection:
+        """Update a collection's storage information.
+        
+        This endpoint requires valid authentication token.
+        
+        Args:
+            collection_name: The name of the collection to update.
+            storage_info: Dictionary containing storage credentials and location information.
+            storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
+            
+        Returns:
+            The updated BakeryCollection object with storage_info and storage_provider populated.
+            
+        Raises:
+            requests.exceptions.RequestException: If the API request fails or authentication is invalid.
+            ValueError: If the collection is not found.
+        """
+        endpoint = f"/collections/{collection_name}/storage"
+        
+        # Build the request payload, only including fields that are provided
+        storage_data = {}
+        if storage_info is not None:
+            storage_data["storage_info"] = storage_info
+        if storage_provider is not None:
+            storage_data["storage_provider"] = storage_provider
+            
+        if not storage_data:
+            raise ValueError("At least one of storage_info or storage_provider must be provided.")
+        
+        try:
+            response = self._request("PATCH", endpoint, json_data=storage_data)
+            collection_data = response.json()
+            return BakeryCollection(
+                id=collection_data["id"],
+                name=collection_data["name"],
+                description=collection_data.get("description", ""),
+                storage_info=collection_data.get("storage_info"),
+                storage_provider=collection_data.get("storage_provider")
+            )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise ValueError(f"Collection '{collection_name}' not found.")
+            else:
+                _LOGGER.error(f"HTTP error updating storage info for collection '{collection_name}': {e}")
+                raise
+        except Exception as e:
+            _LOGGER.error(f"Error updating storage info for collection '{collection_name}': {e}")
+            raise
+    
     def get_collections(self) -> list[BakeryCollection]:
         """List all available collections."""
         endpoint = "/collections"

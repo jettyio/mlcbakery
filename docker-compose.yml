@@ -9,7 +9,7 @@ services:
     user: "${UID}:${GID}"
     
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_DEV_URL}
       - PYTHONPATH=/app
     depends_on:
       - db
