@@ -27,12 +27,10 @@ services:
       - .:/app
     user: "${UID}:${GID}"
     environment:
-      - MLCBAKERY_API_BASE_URL=http://api:8000
-      - MLCBAKERY_HOST=https://bakerydev.jetty.io/api/v1
+      - MLCBAKERY_API_BASE_URL=http://bakery.jetty.io
+      - MLCBAKERY_HOST=https://bakery.jetty.io/api/v1
       - PYTHONPATH=/app
     command: ["python", "mcp_server/main.py", "--host", "0.0.0.0", "--port", "8001"]
-    depends_on:
-      - api
     networks:
       - caddy-network
 

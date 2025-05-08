@@ -5,7 +5,7 @@ from datasets import load_dataset
 import pandas as pd
 
 # 1. Load a sample dataset from Hugging Face
-dataset = load_dataset("ag_news")  # Example: AG News text classification dataset
+dataset = load_dataset("{data_path}")
 
 # The dataset has different splits (train, test)
 print(dataset)
@@ -23,14 +23,3 @@ print(df_train.head())
 # 4. Simple exploration
 print("\nBasic info:")
 print(df_train.info())
-
-print("\nClass distribution:")
-print(df_train['label'].value_counts())
-
-print("\nSample text:")
-print(df_train['text'].iloc[0])
-
-# 5. Optional: if you want to map label numbers to their actual names
-labels = dataset['train'].features['label'].names
-print("\nLabels:", labels)
-print("\nLabel of first example:", labels[df_train['label'].iloc[0]])
