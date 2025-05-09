@@ -97,6 +97,8 @@ class Collection(Base):
         id: The primary key for the collection.
         name: The name of the collection.
         description: A description of what the collection contains.
+        storage_info: JSON field containing storage credentials and location information.
+        storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
         entities: Relationship to associated entities (datasets and models).
     """
 
@@ -105,6 +107,8 @@ class Collection(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(Text)
+    storage_info = Column(JSON, nullable=True)
+    storage_provider = Column(String, nullable=True)
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")

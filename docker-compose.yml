@@ -1,7 +1,9 @@
 services:
   api:
     container_name: mlcbakery
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.bakery
     ports:
       - "8000:8000"
     volumes:
@@ -9,7 +11,7 @@ services:
     user: "${UID}:${GID}"
     
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_DEV_URL}
       - PYTHONPATH=/app
     depends_on:
       - db

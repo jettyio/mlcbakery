@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Literal
 
 
 class EntityBase(BaseModel):
@@ -12,25 +12,9 @@ class EntityResponse(EntityBase):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
-
-class DatasetBase(EntityBase):
-    data_path: Optional[str] = None
-    format: str
-    collection_id: Optional[int] = None
-    metadata_version: Optional[str] = None
-    dataset_metadata: Optional[dict] = None
-    preview_type: Optional[str] = None
-
-
-class DatasetResponse(DatasetBase):
-    id: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
 class TrainedModelBase(EntityBase):
@@ -42,5 +26,6 @@ class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )

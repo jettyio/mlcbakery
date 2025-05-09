@@ -81,9 +81,11 @@ jobs:
     - name: Run database migrations
       env:
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+        DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
       run: uv run alembic upgrade heads
 
     - name: Run tests
       env:
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+        DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
       run: uv run pytest 

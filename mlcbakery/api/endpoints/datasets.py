@@ -10,13 +10,10 @@ from fastapi import (
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, contains_eager, joinedload
-from typing import Annotated, List, Set, Tuple, Dict, Any
-import base64
-import binascii
+from sqlalchemy.orm import selectinload
+from typing import Set
 import os
 import typesense
-import json
 import tempfile
 
 from mlcbakery.models import Dataset, Collection, Activity, Entity
@@ -38,7 +35,6 @@ from mlcbakery.croissant_validation import (
     generate_validation_report,
     ValidationResult as CroissantValidationResult,  # Alias to avoid potential name conflicts
 )
-from pydantic import BaseModel, Field
 
 router = APIRouter()
 

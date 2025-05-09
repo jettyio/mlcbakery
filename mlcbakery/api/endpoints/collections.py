@@ -6,7 +6,7 @@ from typing import List
 from fastapi.security import HTTPAuthorizationCredentials
 
 from mlcbakery.models import Collection, Dataset, Entity, Activity
-from mlcbakery.schemas.collection import CollectionCreate, CollectionResponse
+from mlcbakery.schemas.collection import CollectionCreate, CollectionResponse, CollectionStorageResponse
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.database import get_async_db # Use async dependency
 from mlcbakery.api.dependencies import verify_admin_token # Add this import
@@ -23,7 +23,12 @@ async def create_collection(
     """
     Create a new collection (async).
     """
-    db_collection = Collection(name=collection.name, description=collection.description)
+    db_collection = Collection(
+        name=collection.name, 
+        description=collection.description,
+        storage_info=collection.storage_info,
+        storage_provider=collection.storage_provider
+    )
     db.add(db_collection)
     await db.commit()
     await db.refresh(db_collection)
@@ -46,6 +51,58 @@ async def list_collections(
     result = await db.execute(stmt)
     collections = result.scalars().all()
     return collections
+
+
+@router.get(
+    "/collections/{collection_name}/storage", response_model=CollectionStorageResponse
+)
+async def get_collection_storage_info(
+    collection_name: str,
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
+):
+    """Get storage information for a specific collection.
+    This endpoint requires admin authentication.
+    """
+    # First verify the collection exists
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    return collection
+
+
+@router.patch(
+    "/collections/{collection_name}/storage", response_model=CollectionStorageResponse
+)
+async def update_collection_storage_info(
+    collection_name: str,
+    storage_info: dict = fastapi.Body(...),
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
+):
+    """Update storage information for a specific collection.
+    This endpoint requires admin authentication.
+    """
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+    
+    if "storage_info" in storage_info:
+        collection.storage_info = storage_info["storage_info"]
+    if "storage_provider" in storage_info:
+        collection.storage_provider = storage_info["storage_provider"]
+    
+    await db.commit()
+    await db.refresh(collection)
+    
+    return collection
 
 
 @router.get(
