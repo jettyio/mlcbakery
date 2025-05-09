@@ -57,7 +57,7 @@ python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
 python-multipart = "^0.0.20"
 mcp = {extras = ["cli"], version = "^1.6.0"}
-google-cloud-storage = "^2.14.0"
+google-cloud-storage = "^3.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
