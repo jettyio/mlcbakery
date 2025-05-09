@@ -13,9 +13,9 @@ router = APIRouter()
 
 @router.post("/agents/", response_model=AgentResponse)
 async def create_agent(
-    agent: AgentCreate, 
+    agent: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Create a new agent (async)."""
     db_agent = Agent(**agent.model_dump())
@@ -29,7 +29,7 @@ async def create_agent(
 async def list_agents(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """List all agents (async)."""
     stmt = select(Agent).offset(skip).limit(limit)
@@ -51,10 +51,10 @@ async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db)):
 
 @router.put("/agents/{agent_id}", response_model=AgentResponse)
 async def update_agent(
-    agent_id: int, 
-    agent_update: AgentCreate, 
+    agent_id: int,
+    agent_update: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Update an agent (async)."""
     stmt_get = select(Agent).where(Agent.id == agent_id)
@@ -76,9 +76,9 @@ async def update_agent(
 
 @router.delete("/agents/{agent_id}", status_code=200)
 async def delete_agent(
-    agent_id: int, 
+    agent_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Delete an agent (async)."""
     stmt = select(Agent).where(Agent.id == agent_id)
@@ -86,7 +86,7 @@ async def delete_agent(
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    
+
     await db.delete(agent)
     await db.commit()
     return {"message": "Agent deleted successfully"}

@@ -1,14 +1,12 @@
 import pytest
-from datetime import datetime
-import asyncio
 import httpx
 
-from mlcbakery.models import Base, Dataset, Activity, Entity
 from mlcbakery.main import app
-from conftest import TEST_ADMIN_TOKEN # Import the test token
+from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
 # Define headers globally or pass them around
 AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+
 
 @pytest.mark.asyncio
 async def test_dataset_generation_from_another_dataset():
@@ -17,9 +15,16 @@ async def test_dataset_generation_from_another_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # 0. Create a Collection first
         collection_name = "Dataset Dependency Collection"
-        collection_data = {"name": collection_name, "description": "For dataset dependency test"}
-        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
-        assert coll_resp.status_code == 200, f"Failed to create collection: {coll_resp.text}"
+        collection_data = {
+            "name": collection_name,
+            "description": "For dataset dependency test",
+        }
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS
+        )
+        assert coll_resp.status_code == 200, (
+            f"Failed to create collection: {coll_resp.text}"
+        )
         collection_id = coll_resp.json()["id"]
 
         # 1. Create source dataset (add collection_id)
@@ -33,8 +38,12 @@ async def test_dataset_generation_from_another_dataset():
             "metadata_version": "1.0",
             "dataset_metadata": {"description": "Original source dataset via API"},
         }
-        source_resp = await ac.post("/api/v1/datasets/", json=source_dataset_data, headers=AUTH_HEADERS)
-        assert source_resp.status_code == 200, f"Failed to create source dataset: {source_resp.text}"
+        source_resp = await ac.post(
+            "/api/v1/datasets/", json=source_dataset_data, headers=AUTH_HEADERS
+        )
+        assert source_resp.status_code == 200, (
+            f"Failed to create source dataset: {source_resp.text}"
+        )
         source_dataset = source_resp.json()
         source_dataset_id = source_dataset["id"]
 
@@ -43,8 +52,12 @@ async def test_dataset_generation_from_another_dataset():
             "name": "Data Preprocessing API",
             "input_entity_ids": [source_dataset_id],
         }
-        activity_resp = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
-        assert activity_resp.status_code == 200, f"Failed to create activity: {activity_resp.text}"
+        activity_resp = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
+        assert activity_resp.status_code == 200, (
+            f"Failed to create activity: {activity_resp.text}"
+        )
         activity = activity_resp.json()
         activity_id = activity["id"]
 
@@ -63,26 +76,35 @@ async def test_dataset_generation_from_another_dataset():
                 "preprocessing_steps": ["normalization", "api-based generation"],
             },
         }
-        derived_resp = await ac.post("/api/v1/datasets/", json=derived_dataset_data, headers=AUTH_HEADERS)
-        assert derived_resp.status_code == 200, f"Failed to create derived dataset: {derived_resp.text}"
+        derived_resp = await ac.post(
+            "/api/v1/datasets/", json=derived_dataset_data, headers=AUTH_HEADERS
+        )
+        assert derived_resp.status_code == 200, (
+            f"Failed to create derived dataset: {derived_resp.text}"
+        )
         derived_dataset = derived_resp.json()
-        derived_dataset_id = derived_dataset["id"]
+        derived_dataset["id"]
 
         # 5. Verify relationships by fetching data via GET requests
         get_activity_resp = await ac.get(f"/api/v1/activities/{activity_id}")
         assert get_activity_resp.status_code == 200
         updated_activity = get_activity_resp.json()
 
-        get_source_resp = await ac.get(f"/api/v1/datasets/{collection_name}/{source_dataset_name}")
+        get_source_resp = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{source_dataset_name}"
+        )
         assert get_source_resp.status_code == 200
-        updated_source_dataset = get_source_resp.json()
+        get_source_resp.json()
 
-        get_derived_resp = await ac.get(f"/api/v1/datasets/{collection_name}/{derived_dataset_name}")
+        get_derived_resp = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{derived_dataset_name}"
+        )
         assert get_derived_resp.status_code == 200
         updated_derived_dataset = get_derived_resp.json()
 
         assert source_dataset_id in updated_activity.get("input_entity_ids", [])
 
         assert (
-            updated_derived_dataset["dataset_metadata"].get("source_dataset_id") == source_dataset_id
+            updated_derived_dataset["dataset_metadata"].get("source_dataset_id")
+            == source_dataset_id
         )

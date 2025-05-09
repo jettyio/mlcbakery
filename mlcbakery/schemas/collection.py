@@ -15,15 +15,11 @@ class CollectionCreate(CollectionBase):
 class CollectionResponse(CollectionBase):
     id: int
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CollectionStorageResponse(CollectionResponse):
     storage_info: Optional[Dict[str, Any]] = None
     storage_provider: Optional[str] = None
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)

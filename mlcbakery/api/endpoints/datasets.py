@@ -42,46 +42,62 @@ router = APIRouter()
 @router.get("/datasets/search")
 async def search_datasets(
     q: str = Query(..., min_length=1, description="Search query term"),
-    limit: int = Query(default=30, ge=1, le=100, description="Number of results to return"),
-    ts: typesense.Client = Depends(get_typesense_client)
+    limit: int = Query(
+        default=30, ge=1, le=100, description="Number of results to return"
+    ),
+    ts: typesense.Client = Depends(get_typesense_client),
 ):
     """Search datasets using Typesense based on query term."""
     search_parameters = {
-        'q': q,
-        'query_by': 'long_description, metadata, collection_name, dataset_name, full_name',
-        'per_page': limit,
-        'include_fields': 'collection_name, dataset_name, full_name',
+        "q": q,
+        "query_by": "long_description, metadata, collection_name, dataset_name, full_name",
+        "per_page": limit,
+        "include_fields": "collection_name, dataset_name, full_name",
     }
 
     try:
-        search_results = ts.collections[TYPESENSE_COLLECTION_NAME].documents.search(search_parameters)
-        return {"hits": search_results['hits']}
+        search_results = ts.collections[TYPESENSE_COLLECTION_NAME].documents.search(
+            search_parameters
+        )
+        return {"hits": search_results["hits"]}
     except typesense.exceptions.ObjectNotFound:
-        raise HTTPException(status_code=404, detail=f"Typesense collection '{TYPESENSE_COLLECTION_NAME}' not found. Please build the index first.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Typesense collection '{TYPESENSE_COLLECTION_NAME}' not found. Please build the index first.",
+        )
     except typesense.exceptions.TypesenseClientError as e:
         print(f"Typesense API error: {e}")
         raise HTTPException(status_code=500, detail=f"Typesense search failed: {e}")
     except Exception as e:
         print(f"Unexpected error during Typesense search: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred during search")
+        raise HTTPException(
+            status_code=500, detail="An unexpected error occurred during search"
+        )
 
 
 @router.post("/datasets/", response_model=DatasetResponse)
 async def create_dataset(
-    dataset: DatasetCreate, 
+    dataset: DatasetCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Create a new dataset (async)."""
     if dataset.collection_id:
         stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
         result_coll = await db.execute(stmt_coll)
         if not result_coll.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail=f"Collection with id {dataset.collection_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection with id {dataset.collection_id} not found",
+            )
     else:
         raise HTTPException(status_code=400, detail="Collection ID is required")
-    
-    stmt_check = select(Dataset).where(Dataset.name == dataset.name).where(Dataset.collection_id == dataset.collection_id)
+
+    stmt_check = (
+        select(Dataset)
+        .where(Dataset.name == dataset.name)
+        .where(Dataset.collection_id == dataset.collection_id)
+    )
     result_check = await db.execute(stmt_check)
     if result_check.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Dataset already exists")
@@ -90,7 +106,7 @@ async def create_dataset(
     db.add(db_dataset)
     await db.commit()
     await db.flush([db_dataset])
-    new_dataset_id = db_dataset.id 
+    new_dataset_id = db_dataset.id
 
     stmt_refresh = (
         select(Dataset)
@@ -98,21 +114,29 @@ async def create_dataset(
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
     )
     result_refresh = await db.execute(stmt_refresh)
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-    
+
     if not refreshed_dataset:
-         raise HTTPException(status_code=500, detail="Failed to reload dataset after creation")
+        raise HTTPException(
+            status_code=500, detail="Failed to reload dataset after creation"
+        )
 
     return refreshed_dataset
 
@@ -125,21 +149,29 @@ async def list_datasets(
 ):
     """Get a list of datasets with pagination (async)."""
     if skip < 0 or limit < 0:
-        raise HTTPException(status_code=400, detail="Offset and limit must be non-negative")
+        raise HTTPException(
+            status_code=400, detail="Offset and limit must be non-negative"
+        )
     stmt = (
         select(Dataset)
-        .where(Dataset.entity_type == 'dataset')
+        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
         .offset(skip)
         .limit(limit)
@@ -147,25 +179,32 @@ async def list_datasets(
     )
     result = await db.execute(stmt)
     datasets = result.scalars().unique().all()
-    return [DatasetListResponse(
-        id=dataset.id,
-        name=dataset.name,
-        data_path=dataset.data_path,
-        format=dataset.format,
-        collection_name=dataset.collection.name if dataset.collection else None
-    ) for dataset in datasets if dataset.collection and dataset.name]
-
+    return [
+        DatasetListResponse(
+            id=dataset.id,
+            name=dataset.name,
+            data_path=dataset.data_path,
+            format=dataset.format,
+            collection_name=dataset.collection.name if dataset.collection else None,
+        )
+        for dataset in datasets
+        if dataset.collection and dataset.name
+    ]
 
 
 @router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
 async def update_dataset(
-    dataset_id: int, 
-    dataset_update: DatasetUpdate, 
+    dataset_id: int,
+    dataset_update: DatasetUpdate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Update a dataset (async)."""
-    stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
+    stmt_get = (
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .where(Dataset.entity_type == "dataset")
+    )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
 
@@ -185,33 +224,45 @@ async def update_dataset(
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
     )
     result_refresh = await db.execute(stmt_refresh)
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-    
+
     if not refreshed_dataset:
-         raise HTTPException(status_code=500, detail="Failed to reload dataset after update")
-         
+        raise HTTPException(
+            status_code=500, detail="Failed to reload dataset after update"
+        )
+
     return refreshed_dataset
 
 
 @router.delete("/datasets/{dataset_id}", status_code=200)
 async def delete_dataset(
-    dataset_id: int, 
+    dataset_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Delete a dataset (async)."""
-    stmt = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
+    stmt = (
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .where(Dataset.entity_type == "dataset")
+    )
     result = await db.execute(stmt)
     db_dataset = result.scalar_one_or_none()
 
@@ -225,13 +276,17 @@ async def delete_dataset(
 
 @router.patch("/datasets/{dataset_id}/metadata", response_model=DatasetResponse)
 async def update_dataset_metadata(
-    dataset_id: int, 
-    metadata: dict, 
+    dataset_id: int,
+    metadata: dict,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Update just the metadata of a dataset (async)."""
-    stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
+    stmt_get = (
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .where(Dataset.entity_type == "dataset")
+    )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
 
@@ -248,21 +303,29 @@ async def update_dataset_metadata(
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
     )
     result_refresh = await db.execute(stmt_refresh)
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
-         raise HTTPException(status_code=500, detail="Failed to reload dataset after metadata update")
+        raise HTTPException(
+            status_code=500, detail="Failed to reload dataset after metadata update"
+        )
 
     return refreshed_dataset
 
@@ -272,10 +335,14 @@ async def update_dataset_preview(
     dataset_id: int,
     preview_update: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Update a dataset's preview (async) using file upload."""
-    stmt_get = select(Dataset).where(Dataset.id == dataset_id).where(Dataset.entity_type == 'dataset')
+    stmt_get = (
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .where(Dataset.entity_type == "dataset")
+    )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
 
@@ -298,32 +365,49 @@ async def update_dataset_preview(
         select(Dataset)
         .where(Dataset.id == dataset_id)
         .options(
-             selectinload(Dataset.collection),
-             selectinload(Dataset.output_activities).options(
-                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                 selectinload(Activity.agents)
-             ),
-             selectinload(Dataset.input_activities).options(
-                 selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                 selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                 selectinload(Activity.agents)
-            )
-         )
-     )
+            selectinload(Dataset.collection),
+            selectinload(Dataset.output_activities).options(
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
+            selectinload(Dataset.input_activities).options(
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
+        )
+    )
     result_refresh = await db.execute(stmt_refresh)
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
-         raise HTTPException(status_code=500, detail="Failed to reload dataset after preview update")
+        raise HTTPException(
+            status_code=500, detail="Failed to reload dataset after preview update"
+        )
 
     return refreshed_dataset
 
 
 @router.get("/datasets/{collection_name}/{dataset_name}/preview")
-async def get_dataset_preview(collection_name: str, dataset_name: str, db: AsyncSession = Depends(get_async_db)):
+async def get_dataset_preview(
+    collection_name: str, dataset_name: str, db: AsyncSession = Depends(get_async_db)
+):
     """Get a dataset's preview (async)."""
-    stmt = select(Dataset).join(Collection, Dataset.collection_id == Collection.id).where(Collection.name == collection_name).where(Dataset.name == dataset_name).where(Dataset.entity_type == 'dataset').options(
-        selectinload(Dataset.collection),
+    stmt = (
+        select(Dataset)
+        .join(Collection, Dataset.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(Dataset.name == dataset_name)
+        .where(Dataset.entity_type == "dataset")
+        .options(
+            selectinload(Dataset.collection),
+        )
     )
     result = await db.execute(stmt)
     dataset = result.scalars().unique().one_or_none()
@@ -331,7 +415,9 @@ async def get_dataset_preview(collection_name: str, dataset_name: str, db: Async
     preview_type = dataset.preview_type
 
     if not preview_data or not preview_type:
-        raise HTTPException(status_code=404, detail="Dataset preview not found or incomplete")
+        raise HTTPException(
+            status_code=404, detail="Dataset preview not found or incomplete"
+        )
 
     return Response(
         content=preview_data,
@@ -353,18 +439,24 @@ async def get_dataset_by_name(
         .join(Collection, Dataset.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == 'dataset')
+        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
     )
     result = await db.execute(stmt)
@@ -374,17 +466,23 @@ async def get_dataset_by_name(
     return dataset
 
 
-async def build_upstream_tree_async(entity_id: int, db: AsyncSession, visited: Set[int]) -> UpstreamEntityNode:
+async def build_upstream_tree_async(
+    entity_id: int, db: AsyncSession, visited: Set[int]
+) -> UpstreamEntityNode:
     if entity_id in visited:
-        return None 
+        return None
     visited.add(entity_id)
 
-    stmt = select(Entity).where(Entity.id == entity_id).options(
-        selectinload(Entity.collection),
-        selectinload(Entity.output_activities).options(
-            selectinload(Activity.input_entities).options(
-                 selectinload(Entity.collection)
-            )
+    stmt = (
+        select(Entity)
+        .where(Entity.id == entity_id)
+        .options(
+            selectinload(Entity.collection),
+            selectinload(Entity.output_activities).options(
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                )
+            ),
         )
     )
     result = await db.execute(stmt)
@@ -398,7 +496,7 @@ async def build_upstream_tree_async(entity_id: int, db: AsyncSession, visited: S
         name=entity.name,
         collection_name=entity.collection.name if entity.collection else "N/A",
         entity_type=entity.entity_type,
-        children=[]
+        children=[],
     )
 
     if entity.output_activities:
@@ -429,7 +527,7 @@ async def get_dataset_upstream_tree(
         .join(Collection, Dataset.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == 'dataset')
+        .where(Dataset.entity_type == "dataset")
     )
     result_start = await db.execute(stmt_start)
     dataset_id = result_start.scalar_one_or_none()
@@ -439,13 +537,15 @@ async def get_dataset_upstream_tree(
 
     tree = await build_upstream_tree_async(dataset_id, db, set())
     if not tree:
-         raise HTTPException(status_code=500, detail="Failed to build upstream tree")
+        raise HTTPException(status_code=500, detail="Failed to build upstream tree")
     return tree
 
 
 @router.post("/datasets/mlcroissant-validation", response_model=dict)
 async def validate_mlcroissant_file(
-    file: UploadFile = File(..., description="Croissant JSON-LD metadata file to validate")
+    file: UploadFile = File(
+        ..., description="Croissant JSON-LD metadata file to validate"
+    ),
 ):
     """
     Validate an uploaded Croissant metadata file.
@@ -473,23 +573,36 @@ async def validate_mlcroissant_file(
 
         if json_validation_result.passed and json_validation_result.valid_json_data:
             # 2. Validate Croissant Schema
-            croissant_validation_result = validate_croissant(json_validation_result.valid_json_data)
+            croissant_validation_result = validate_croissant(
+                json_validation_result.valid_json_data
+            )
             results.append(("Croissant Schema Validation", croissant_validation_result))
 
             if croissant_validation_result.passed:
                 # 3. Validate Records Generation
-                records_validation_result = validate_records(json_validation_result.valid_json_data)
-                results.append(("Records Generation Validation", records_validation_result))
+                records_validation_result = validate_records(
+                    json_validation_result.valid_json_data
+                )
+                results.append(
+                    ("Records Generation Validation", records_validation_result)
+                )
 
         # Generate the structured report (now returns a dict)
-        report = generate_validation_report(file.filename or "uploaded_file", json_validation_result.valid_json_data, results)
+        report = generate_validation_report(
+            file.filename or "uploaded_file",
+            json_validation_result.valid_json_data,
+            results,
+        )
 
         # Return the structured report directly
         return report
 
     except Exception as e:
         # Catch any unexpected errors during the process
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during validation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred during validation: {str(e)}",
+        )
     finally:
         # Clean up the temporary file
         if temp_file_path and os.path.exists(temp_file_path):
@@ -508,17 +621,17 @@ async def get_dataset_mlcroissant(
         .join(Collection, Dataset.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == 'dataset')
+        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
         )
     )
     result = await db.execute(stmt)
     dataset = result.scalars().unique().one_or_none()
-    
+
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
+
     if not dataset.dataset_metadata:
         raise HTTPException(status_code=404, detail="Dataset has no Croissant metadata")
 

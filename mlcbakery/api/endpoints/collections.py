@@ -1,33 +1,37 @@
 import fastapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload # For eager loading entities
+from sqlalchemy.orm import selectinload  # For eager loading entities
 from typing import List
 from fastapi.security import HTTPAuthorizationCredentials
 
 from mlcbakery.models import Collection, Dataset, Entity, Activity
-from mlcbakery.schemas.collection import CollectionCreate, CollectionResponse, CollectionStorageResponse
+from mlcbakery.schemas.collection import (
+    CollectionCreate,
+    CollectionResponse,
+    CollectionStorageResponse,
+)
 from mlcbakery.schemas.dataset import DatasetResponse
-from mlcbakery.database import get_async_db # Use async dependency
-from mlcbakery.api.dependencies import verify_admin_token # Add this import
+from mlcbakery.database import get_async_db  # Use async dependency
+from mlcbakery.api.dependencies import verify_admin_token  # Add this import
 
 router = fastapi.APIRouter()
 
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
-    collection: CollectionCreate, 
+    collection: CollectionCreate,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
 ):
     """
     Create a new collection (async).
     """
     db_collection = Collection(
-        name=collection.name, 
+        name=collection.name,
         description=collection.description,
         storage_info=collection.storage_info,
-        storage_provider=collection.storage_provider
+        storage_provider=collection.storage_provider,
     )
     db.add(db_collection)
     await db.commit()
@@ -59,7 +63,7 @@ async def list_collections(
 async def get_collection_storage_info(
     collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
 ):
     """Get storage information for a specific collection.
     This endpoint requires admin authentication.
@@ -82,7 +86,7 @@ async def update_collection_storage_info(
     collection_name: str,
     storage_info: dict = fastapi.Body(...),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
 ):
     """Update storage information for a specific collection.
     This endpoint requires admin authentication.
@@ -93,15 +97,15 @@ async def update_collection_storage_info(
 
     if not collection:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
-    
+
     if "storage_info" in storage_info:
         collection.storage_info = storage_info["storage_info"]
     if "storage_provider" in storage_info:
         collection.storage_provider = storage_info["storage_provider"]
-    
+
     await db.commit()
     await db.refresh(collection)
-    
+
     return collection
 
 
@@ -111,7 +115,9 @@ async def update_collection_storage_info(
 async def list_datasets_by_collection(
     collection_name: str,
     skip: int = fastapi.Query(default=0, description="Number of records to skip"),
-    limit: int = fastapi.Query(default=100, description="Maximum number of records to return"),
+    limit: int = fastapi.Query(
+        default=100, description="Maximum number of records to return"
+    ),
     db: AsyncSession = fastapi.Depends(get_async_db),
 ):
     """Get a list of datasets for a specific collection with pagination (async)."""
@@ -127,18 +133,24 @@ async def list_datasets_by_collection(
     stmt_datasets = (
         select(Dataset)
         .where(Dataset.collection_id == collection.id)
-        .where(Dataset.entity_type == 'dataset')  # Explicitly filter for datasets
+        .where(Dataset.entity_type == "dataset")  # Explicitly filter for datasets
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.output_entity).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
             ),
             selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
-                selectinload(Activity.agents)
-            )
+                selectinload(Activity.input_entities).options(
+                    selectinload(Entity.collection)
+                ),
+                selectinload(Activity.agents),
+            ),
         )
         .offset(skip)
         .limit(limit)

@@ -1,16 +1,14 @@
-import os # Import os module
-import asyncio # Import asyncio
+import os  # Import os module
+import asyncio  # Import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import create_async_engine # Import async engine creator
+from sqlalchemy.ext.asyncio import create_async_engine  # Import async engine creator
 
 from alembic import context
 
 # Import your models here
 from mlcbakery.database import Base
-from mlcbakery.models import Entity, TrainedModel, Activity, Dataset
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -18,10 +16,10 @@ config = context.config
 
 # Set the database URL from the environment variable
 # This overrides the value in alembic.ini if it exists
-db_url = os.environ.get('DATABASE_URL')
+db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     raise ValueError("DATABASE_URL environment variable not set for Alembic")
-config.set_main_option('sqlalchemy.url', db_url)
+config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -73,7 +71,7 @@ def run_migrations_online() -> None:
     # config object already has the URL set from environment variable
     url = config.get_main_option("sqlalchemy.url")
     if not url:
-         raise ValueError("Database URL not found in Alembic config or environment.")
+        raise ValueError("Database URL not found in Alembic config or environment.")
 
     # Create an async engine
     connectable = create_async_engine(url, poolclass=pool.NullPool)
