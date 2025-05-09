@@ -31,6 +31,5 @@ class TrainedModelResponse(TrainedModelBase):
     output_activities: List[ActivityResponse] = []
 
     model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
+        from_attributes=True
     )

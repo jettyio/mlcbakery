@@ -13,25 +13,25 @@ from mlcbakery.database import get_async_db
 router = fastapi.APIRouter()
 
 
-@router.get("/entities/", response_model=List[EntityResponse])
-async def list_entities(
-    skip: int = fastapi.Query(default=0, description="Number of records to skip"), 
-    limit: int = fastapi.Query(default=100, description="Maximum number of records to return"), 
-    db: AsyncSession = fastapi.Depends(get_async_db)
-):
-    """
-    Get all entities from the database with pagination (async).
-    Includes Datasets and TrainedModels.
-    """
-    if skip < 0 or limit < 0:
-        raise fastapi.HTTPException(
-            status_code=422, detail="Invalid pagination parameters"
-        )
-    # Eager load collection for all entities
-    stmt = select(Entity).offset(skip).limit(limit).options(selectinload(Entity.collection))
-    result = await db.execute(stmt)
-    entities = result.scalars().all()
-    return entities
+# @router.get("/entities/", response_model=List[EntityResponse])
+# async def list_entities(
+#     skip: int = fastapi.Query(default=0, description="Number of records to skip"), 
+#     limit: int = fastapi.Query(default=100, description="Maximum number of records to return"), 
+#     db: AsyncSession = fastapi.Depends(get_async_db)
+# ):
+#     """
+#     Get all entities from the database with pagination (async).
+#     Includes Datasets and TrainedModels.
+#     """
+#     if skip < 0 or limit < 0:
+#         raise fastapi.HTTPException(
+#             status_code=422, detail="Invalid pagination parameters"
+#         )
+#     # Eager load collection for all entities
+#     stmt = select(Entity).offset(skip).limit(limit).options(selectinload(Entity.collection))
+#     result = await db.execute(stmt)
+#     entities = result.scalars().all()
+#     return entities
 
 # Note: The following list_datasets and list_trained_models might be redundant
 # if they are already covered by endpoints in datasets.py and trained_models.py

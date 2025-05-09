@@ -775,7 +775,7 @@ class Client:
             ValueError: If collection or dataset doesn't exist
             requests.exceptions.RequestException: If the API request fails
         """
-        endpoint = f"/datasets/{collection_name}/{dataset_name}/data/latest"
+        endpoint = f"/datasets/data/latest/{collection_name}/{dataset_name}"
         
         try:
             # Stream the download to avoid loading large files into memory

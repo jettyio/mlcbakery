@@ -19,6 +19,8 @@ from mlcbakery.storage.gcp import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_BASE_DIR = "mlcbakery"
+
 router = APIRouter()
 
 @router.post(
@@ -109,7 +111,7 @@ async def upload_dataset_data(
         bucket_name, path_prefix = extract_bucket_info(collection.storage_info)
         
         # 6. Construct the file path
-        base_path = os.path.join(path_prefix, "mlcbakery", collection_name, dataset_name).strip("/")
+        base_path = os.path.join(path_prefix, _BASE_DIR, collection_name, dataset_name).strip("/")
         
         # 7. Determine the next file number
         file_number = get_next_file_number(bucket_name, base_path, gcs_client)
@@ -231,7 +233,7 @@ async def get_dataset_data_download_url(
         bucket_name, path_prefix = extract_bucket_info(collection.storage_info)
         
         # 6. Construct the file path
-        base_path = os.path.join(path_prefix, "jetty", collection_name, dataset_name).strip("/")
+        base_path = os.path.join(path_prefix, _BASE_DIR, collection_name, dataset_name).strip("/")
         file_name = f"data.{file_number:06d}.tar.gz"
         file_path = f"{base_path}/{file_name}"
         
@@ -254,14 +256,14 @@ async def get_dataset_data_download_url(
         raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
 
 @router.get(
-    "/datasets/{collection_name}/{dataset_name}/data/latest"
+    "/datasets/data/latest/{collection_name}/{dataset_name}"
 )
 async def download_latest_dataset_data(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
-):
+) -> Response:
     """Download the latest data file for a dataset directly.
     
     Args:
@@ -271,45 +273,18 @@ async def download_latest_dataset_data(
     Returns:
         The data file as an attachment
     """
-    # 1. Verify collection and dataset exist
-    collection_stmt = select(Collection).where(Collection.name == collection_name).limit(1)
-    collection_result = await db.execute(collection_stmt)
-    collection = collection_result.scalars().one_or_none()
-    
-    if not collection:
-        raise HTTPException(status_code=404, detail=f"Collection '{collection_name}' not found")
     
     # Find the dataset by name and collection ID
-    entity_stmt = (
-        select(Entity)
-        .where(Entity.name == dataset_name)
-        .where(Entity.collection_id == collection.id)
-        .where(Entity.entity_type == 'dataset')
+    stmt = select(Dataset).join(Collection, Dataset.collection_id == Collection.id).where(Collection.name == collection_name).where(Dataset.name == dataset_name).where(Dataset.entity_type == 'dataset').options(
+        selectinload(Dataset.collection),
     )
-    entity_result = await db.execute(entity_stmt)
-    entity = entity_result.scalars().one_or_none()
+    result = await db.execute(stmt)
+    entity = result.scalars().unique().one_or_none()
     
     if not entity:
         raise HTTPException(status_code=404, detail=f"Dataset '{dataset_name}' not found in collection '{collection_name}'")
     
-    # Now fetch the dataset by ID
-    dataset_stmt = select(Dataset).where(Dataset.id == entity.id)
-    dataset_result = await db.execute(dataset_stmt)
-    dataset = dataset_result.scalars().one_or_none()
-    
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset entity exists but dataset details not found")
-        
-    # Set collection relationship manually since we didn't use selectinload
-    dataset.collection = collection
-    
-    # 2. Verify storage provider and info exist
-    if not collection.storage_provider or not collection.storage_info:
-        raise HTTPException(
-            status_code=400, 
-            detail="Collection does not have storage_provider or storage_info defined"
-        )
-    
+    collection = entity.collection
     # 3. Verify storage provider is 'gcp'
     if collection.storage_provider != "gcp":
         raise HTTPException(
@@ -325,7 +300,7 @@ async def download_latest_dataset_data(
         bucket_name, path_prefix = extract_bucket_info(collection.storage_info)
         
         # 6. Construct the base path
-        base_path = os.path.join(path_prefix, "jetty", collection_name, dataset_name).strip("/")
+        base_path = os.path.join(path_prefix, _BASE_DIR, collection_name, dataset_name).strip("/")
         
         # 7. Find the latest file number
         latest_file_number = get_next_file_number(bucket_name, base_path, gcs_client) - 1

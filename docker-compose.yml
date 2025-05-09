@@ -1,7 +1,9 @@
 services:
   api:
     container_name: mlcbakery
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.bakery
     ports:
       - "8000:8000"
     volumes:

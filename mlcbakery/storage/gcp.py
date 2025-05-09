@@ -58,7 +58,7 @@ def get_next_file_number(bucket_name: str, prefix: str,
     
     Args:
         bucket_name: Name of the GCS bucket
-        prefix: Prefix path (e.g., 'jetty/{collection}/{dataset}/')
+        prefix: Prefix path (e.g., 'mlcbakery/{collection}/{dataset}/')
         client: GCS client instance
         
     Returns:

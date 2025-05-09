@@ -1,11 +1,13 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, Dict, Any, List, ForwardRef
 from datetime import datetime
 from .entity import EntityBase
 from .activity import ActivityResponse
 from .collection import CollectionResponse
 import base64
 
+# Create a forward reference for UpstreamEntityNode
+UpstreamEntityNodeRef = ForwardRef('UpstreamEntityNode')
 
 class DatasetBase(EntityBase):
     name: str
@@ -28,11 +30,10 @@ class UpstreamEntityNode(BaseModel):
     entity_type: str
     activity_id: Optional[int] = None
     activity_name: Optional[str] = None
-    children: List["UpstreamEntityNode"] = []
+    children: List[UpstreamEntityNodeRef] = Field(default_factory=list)
 
     model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
+        from_attributes=True
     )
 
 
@@ -61,8 +62,7 @@ class DatasetResponse(DatasetBase):
     input_activities: List[ActivityResponse] = []
     output_activities: List[ActivityResponse] = []
     model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
+        from_attributes=True
     )
 
 
@@ -71,9 +71,8 @@ class DatasetPreviewResponse(DatasetResponse):
     preview_type: Optional[str] = None
 
     model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"json_encoders": {
-            datetime: lambda v: v.isoformat(),
-            bytes: lambda v: base64.b64encode(v).decode("utf-8") if v else None,
-        }}
+        from_attributes=True
     )
+
+# Update the forward reference
+UpstreamEntityNode.update_forward_refs()
