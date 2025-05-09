@@ -15,9 +15,9 @@ router = APIRouter()
 
 @router.post("/activities/", response_model=ActivityResponse)
 async def create_activity(
-    activity: ActivityCreate, 
+    activity: ActivityCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Create a new activity with relationships (async)."""
     # Verify input entities exist
@@ -59,10 +59,14 @@ async def create_activity(
     await db.commit()
     await db.refresh(db_activity)
     # Eager load relationships for the response
-    stmt_refresh = select(Activity).where(Activity.id == db_activity.id).options(
-        selectinload(Activity.input_entities),
-        selectinload(Activity.output_entity),
-        selectinload(Activity.agents)
+    stmt_refresh = (
+        select(Activity)
+        .where(Activity.id == db_activity.id)
+        .options(
+            selectinload(Activity.input_entities),
+            selectinload(Activity.output_entity),
+            selectinload(Activity.agents),
+        )
     )
     result_refresh = await db.execute(stmt_refresh)
     refreshed_activity = result_refresh.scalar_one()
@@ -76,10 +80,15 @@ async def list_activities(
     db: AsyncSession = Depends(get_async_db),
 ):
     """List all activities with pagination (async)."""
-    stmt = select(Activity).offset(skip).limit(limit).options(
-        selectinload(Activity.input_entities),
-        selectinload(Activity.output_entity),
-        selectinload(Activity.agents)
+    stmt = (
+        select(Activity)
+        .offset(skip)
+        .limit(limit)
+        .options(
+            selectinload(Activity.input_entities),
+            selectinload(Activity.output_entity),
+            selectinload(Activity.agents),
+        )
     )
     result = await db.execute(stmt)
     activities = result.scalars().all()
@@ -89,10 +98,14 @@ async def list_activities(
 @router.get("/activities/{activity_id}", response_model=ActivityResponse)
 async def get_activity(activity_id: int, db: AsyncSession = Depends(get_async_db)):
     """Get a specific activity by ID (async)."""
-    stmt = select(Activity).where(Activity.id == activity_id).options(
-        selectinload(Activity.input_entities),
-        selectinload(Activity.output_entity),
-        selectinload(Activity.agents)
+    stmt = (
+        select(Activity)
+        .where(Activity.id == activity_id)
+        .options(
+            selectinload(Activity.input_entities),
+            selectinload(Activity.output_entity),
+            selectinload(Activity.agents),
+        )
     )
     result = await db.execute(stmt)
     activity = result.scalar_one_or_none()
@@ -103,9 +116,9 @@ async def get_activity(activity_id: int, db: AsyncSession = Depends(get_async_db
 
 @router.delete("/activities/{activity_id}", status_code=200)
 async def delete_activity(
-    activity_id: int, 
+    activity_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token)
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Delete an activity (async)."""
     # First get the activity to ensure it exists
@@ -114,7 +127,7 @@ async def delete_activity(
     activity = result.scalar_one_or_none()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     await db.delete(activity)
     await db.commit()
     return {"message": "Activity deleted successfully"}

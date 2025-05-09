@@ -12,9 +12,7 @@ class EntityResponse(EntityBase):
     id: int
     created_at: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TrainedModelBase(EntityBase):
@@ -26,6 +24,4 @@ class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)

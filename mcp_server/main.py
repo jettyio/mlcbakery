@@ -1,5 +1,5 @@
 import argparse
-    
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts import base
 
@@ -7,6 +7,7 @@ import tools
 
 
 mcp = FastMCP("MLC-Bakery-MPC")
+
 
 @mcp.prompt()
 def debug_error(error: str) -> list[base.Message]:
@@ -16,22 +17,30 @@ def debug_error(error: str) -> list[base.Message]:
         base.AssistantMessage("I'll help debug that. What have you tried so far?"),
     ]
 
-mcp.tool("validate-croissant", description="Validate a Croissant metadata file")(tools.validate_croissant)
+
+mcp.tool("validate-croissant", description="Validate a Croissant metadata file")(
+    tools.validate_croissant
+)
 mcp.tool("download-dataset", description="download a dataset")(tools.download_dataset)
-mcp.tool("datasets-preview-url", description="get a download url for a dataset preview")(tools.get_dataset_preview_url)
-mcp.tool("search-datasets", description="Search for datasets using a query string")(tools.search_datasets_tool)
+mcp.tool(
+    "datasets-preview-url", description="get a download url for a dataset preview"
+)(tools.get_dataset_preview_url)
+mcp.tool("search-datasets", description="Search for datasets using a query string")(
+    tools.search_datasets_tool
+)
 mcp.tool("help", description="Get help for the MLC Bakery API")(tools.get_help)
-mcp.tool("dataset/mlcroissant", description="Get the Croissant dataset template")(tools.get_dataset_metadata)
+mcp.tool("dataset/mlcroissant", description="Get the Croissant dataset template")(
+    tools.get_dataset_metadata
+)
 
 if __name__ == "__main__":
     mcp_server = mcp._mcp_server  # noqa: WPS437
 
-    
-    parser = argparse.ArgumentParser(description='Run MCP SSE-based server')
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=8080, help='Port to listen on')
+    parser = argparse.ArgumentParser(description="Run MCP SSE-based server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
     args = parser.parse_args()
 
     mcp.settings.port = args.port
     mcp.settings.host = args.host
-    mcp.run(transport='sse')
+    mcp.run(transport="sse")

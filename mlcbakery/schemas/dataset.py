@@ -5,7 +5,8 @@ from .entity import EntityBase
 from .activity import ActivityResponse
 
 # Create a forward reference for UpstreamEntityNode
-UpstreamEntityNodeRef = ForwardRef('UpstreamEntityNode')
+UpstreamEntityNodeRef = ForwardRef("UpstreamEntityNode")
+
 
 class DatasetBase(EntityBase):
     name: str
@@ -19,6 +20,7 @@ class DatasetBase(EntityBase):
     long_description: Optional[str] = None
     asset_origin: Optional[str] = None
 
+
 class UpstreamEntityNode(BaseModel):
     """Represents a node in the upstream entity tree."""
 
@@ -30,9 +32,7 @@ class UpstreamEntityNode(BaseModel):
     activity_name: Optional[str] = None
     children: List[UpstreamEntityNodeRef] = Field(default_factory=list)
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DatasetCreate(DatasetBase):
@@ -49,28 +49,27 @@ class DatasetUpdate(DatasetBase):
     preview_type: Optional[str] = None
     long_description: Optional[str] = None
 
+
 class DatasetListResponse(DatasetBase):
     id: int
     name: Optional[str] = None
     collection_name: Optional[str] = None
-    
+
+
 class DatasetResponse(DatasetBase):
     id: int
     created_at: datetime
     input_activities: List[ActivityResponse] = []
     output_activities: List[ActivityResponse] = []
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DatasetPreviewResponse(DatasetResponse):
     preview: Optional[bytes] = None
     preview_type: Optional[str] = None
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
+
 
 # Update the forward reference
 UpstreamEntityNode.update_forward_refs()

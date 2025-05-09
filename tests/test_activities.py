@@ -1,12 +1,10 @@
 # sqlalchemy imports, engine, sessionmaker, override_get_db, and setup_test_db fixture are now handled by conftest.py
 # Keep necessary imports:
-from datetime import datetime
 import pytest
-import asyncio # Needed for pytest.mark.asyncio
-import httpx # Add httpx
+import httpx  # Add httpx
 
-from mlcbakery.main import app # Keep app import if needed for client
-from conftest import TEST_ADMIN_TOKEN # Import the test token
+from mlcbakery.main import app  # Keep app import if needed for client
+from conftest import TEST_ADMIN_TOKEN  # Import the test token
 # Model imports might still be needed if tests reference them directly
 # from mlcbakery.models import ...
 
@@ -19,13 +17,27 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
     """Creates a collection, two datasets, a model, and an agent."""
     # Collection
     coll_data = {"name": f"{prefix} Collection", "description": f"{prefix} Desc"}
-    coll_resp = await ac.post("/api/v1/collections/", json=coll_data, headers=AUTH_HEADERS)
+    coll_resp = await ac.post(
+        "/api/v1/collections/", json=coll_data, headers=AUTH_HEADERS
+    )
     assert coll_resp.status_code == 200
     collection_id = coll_resp.json()["id"]
 
     # Datasets
-    ds1_data = {"name": f"{prefix} Dataset 1", "data_path": "/path/ds1.csv", "format": "csv", "collection_id": collection_id, "entity_type": "dataset"}
-    ds2_data = {"name": f"{prefix} Dataset 2", "data_path": "/path/ds2.csv", "format": "csv", "collection_id": collection_id, "entity_type": "dataset"}
+    ds1_data = {
+        "name": f"{prefix} Dataset 1",
+        "data_path": "/path/ds1.csv",
+        "format": "csv",
+        "collection_id": collection_id,
+        "entity_type": "dataset",
+    }
+    ds2_data = {
+        "name": f"{prefix} Dataset 2",
+        "data_path": "/path/ds2.csv",
+        "format": "csv",
+        "collection_id": collection_id,
+        "entity_type": "dataset",
+    }
     ds1_resp = await ac.post("/api/v1/datasets/", json=ds1_data, headers=AUTH_HEADERS)
     ds2_resp = await ac.post("/api/v1/datasets/", json=ds2_data, headers=AUTH_HEADERS)
     assert ds1_resp.status_code == 200
@@ -33,8 +45,16 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
     dataset_ids = [ds1_resp.json()["id"], ds2_resp.json()["id"]]
 
     # Model
-    model_data = {"name": f"{prefix} Model", "model_path": "/path/model.pkl", "framework": "sklearn", "collection_id": collection_id, "entity_type": "trained_model"}
-    model_resp = await ac.post("/api/v1/trained_models/", json=model_data, headers=AUTH_HEADERS)
+    model_data = {
+        "name": f"{prefix} Model",
+        "model_path": "/path/model.pkl",
+        "framework": "sklearn",
+        "collection_id": collection_id,
+        "entity_type": "trained_model",
+    }
+    model_resp = await ac.post(
+        "/api/v1/trained_models/", json=model_data, headers=AUTH_HEADERS
+    )
     assert model_resp.status_code == 200
     model_id = model_resp.json()["id"]
 
@@ -45,6 +65,7 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
     agent_id = agent_resp.json()["id"]
 
     return {"dataset_ids": dataset_ids, "model_id": model_id, "agent_id": agent_id}
+
 
 # Tests remain marked as async
 @pytest.mark.asyncio
@@ -64,8 +85,12 @@ async def test_create_activity():
             "output_entity_id": model_id,
             "agent_ids": [agent_id],
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
-        assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
+        response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200, (
+            f"Failed with {response.status_code}: {response.text}"
+        )
         data = response.json()
         assert data["name"] == activity_data["name"]
         assert set(data["input_entity_ids"]) == set(dataset_ids)
@@ -73,6 +98,7 @@ async def test_create_activity():
         assert set(data["agent_ids"]) == set([agent_id])
         assert "id" in data
         assert "created_at" in data
+
 
 @pytest.mark.asyncio
 async def test_create_activity_without_optional_relationships():
@@ -88,8 +114,12 @@ async def test_create_activity_without_optional_relationships():
             "input_entity_ids": dataset_ids,
             # output_entity_id and agent_ids omitted
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
-        assert response.status_code == 200, f"Failed with {response.status_code}: {response.text}"
+        response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200, (
+            f"Failed with {response.status_code}: {response.text}"
+        )
         data = response.json()
         assert data["name"] == activity_data["name"]
         assert set(data["input_entity_ids"]) == set(dataset_ids)
@@ -97,6 +127,7 @@ async def test_create_activity_without_optional_relationships():
         assert data["agent_ids"] == []
         assert "id" in data
         assert "created_at" in data
+
 
 @pytest.mark.asyncio
 async def test_create_activity_with_nonexistent_entities():
@@ -110,9 +141,12 @@ async def test_create_activity_with_nonexistent_entities():
             "output_entity_id": 99999,
             "agent_ids": [99997],
         }
-        response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
+        response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
+
 
 @pytest.mark.asyncio
 async def test_list_activities():
@@ -127,7 +161,9 @@ async def test_list_activities():
             "name": "Activity For Listing",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
+        create_response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
         assert create_response.status_code == 200
         created_activity_id = create_response.json()["id"]
 
@@ -138,6 +174,7 @@ async def test_list_activities():
         found = any(item["id"] == created_activity_id for item in data)
         assert found, f"Activity {created_activity_id} not found in list"
         assert len(data) >= 1
+
 
 @pytest.mark.asyncio
 async def test_list_activities_pagination():
@@ -157,10 +194,12 @@ async def test_list_activities_pagination():
         # Create multiple test activities
         created_ids = []
         activity_names = {}
-        for i in range(5): # Create 5 activities for pagination test
+        for i in range(5):  # Create 5 activities for pagination test
             name = f"Paginated Activity {i}"
             activity_data = {"name": name, "input_entity_ids": dataset_ids}
-            resp = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
+            resp = await ac.post(
+                "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+            )
             assert resp.status_code == 200
             activity_id = resp.json()["id"]
             created_ids.append(activity_id)
@@ -171,10 +210,12 @@ async def test_list_activities_pagination():
         response_all = await ac.get("/api/v1/activities/?limit=1000")
         assert response_all.status_code == 200
         total_count = len(response_all.json())
-        assert total_count >= initial_count + 5 # Check it increased by at least 5
+        assert total_count >= initial_count + 5  # Check it increased by at least 5
 
         # Fetch page 2 (e.g., skip 2, limit 2)
-        response_page = await ac.get(f"/api/v1/activities/?skip={initial_count + 2}&limit=2")
+        response_page = await ac.get(
+            f"/api/v1/activities/?skip={initial_count + 2}&limit=2"
+        )
         assert response_page.status_code == 200
         data = response_page.json()
         assert len(data) == 2
@@ -184,9 +225,12 @@ async def test_list_activities_pagination():
         # More robust tests might check IDs against created_ids[2:4]
         page_ids = {item["id"] for item in data}
         expected_ids_on_page = set(created_ids[2:4])
-        assert page_ids == expected_ids_on_page, f"Expected IDs {expected_ids_on_page}, got {page_ids}"
+        assert page_ids == expected_ids_on_page, (
+            f"Expected IDs {expected_ids_on_page}, got {page_ids}"
+        )
         assert data[0]["name"] == activity_names[created_ids[2]]
         assert data[1]["name"] == activity_names[created_ids[3]]
+
 
 @pytest.mark.asyncio
 async def test_get_activity():
@@ -201,7 +245,9 @@ async def test_get_activity():
             "name": "Activity To Get",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
+        create_response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
         assert create_response.status_code == 200
         activity_id = create_response.json()["id"]
 
@@ -213,6 +259,7 @@ async def test_get_activity():
         assert data["name"] == "Activity To Get"
         assert set(data["input_entity_ids"]) == set(dataset_ids)
 
+
 @pytest.mark.asyncio
 async def test_get_nonexistent_activity():
     """Test getting an activity that doesn't exist."""
@@ -221,6 +268,7 @@ async def test_get_nonexistent_activity():
         response = await ac.get("/api/v1/activities/99999")
         assert response.status_code == 404
         assert response.json()["detail"] == "Activity not found"
+
 
 @pytest.mark.asyncio
 async def test_delete_activity():
@@ -235,18 +283,23 @@ async def test_delete_activity():
             "name": "Activity To Delete",
             "input_entity_ids": dataset_ids,
         }
-        create_response = await ac.post("/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS)
+        create_response = await ac.post(
+            "/api/v1/activities/", json=activity_data, headers=AUTH_HEADERS
+        )
         assert create_response.status_code == 200
         activity_id = create_response.json()["id"]
 
         # Delete the activity
-        delete_response = await ac.delete(f"/api/v1/activities/{activity_id}", headers=AUTH_HEADERS)
+        delete_response = await ac.delete(
+            f"/api/v1/activities/{activity_id}", headers=AUTH_HEADERS
+        )
         assert delete_response.status_code == 200
         assert delete_response.json()["message"] == "Activity deleted successfully"
 
         # Verify it's deleted
         get_response = await ac.get(f"/api/v1/activities/{activity_id}")
         assert get_response.status_code == 404
+
 
 @pytest.mark.asyncio
 async def test_delete_nonexistent_activity():

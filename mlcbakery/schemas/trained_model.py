@@ -30,6 +30,4 @@ class TrainedModelResponse(TrainedModelBase):
     input_activities: List[ActivityResponse] = []
     output_activities: List[ActivityResponse] = []
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)

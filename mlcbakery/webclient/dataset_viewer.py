@@ -6,6 +6,8 @@ import os
 _HOST = "https://bakery.jetty.io"
 _ALL_DATASETS = []
 _AUTH_TOKEN = os.getenv("BAKERY_AUTH_TOKEN")
+
+
 def parse_url_path():
     """Parse the URL path to extract collection and dataset names."""
     query_params = st._get_query_params()
@@ -16,6 +18,7 @@ def parse_url_path():
 def _get_all_datasets(bakery_client: bc.Client):
     response = bakery_client._request("GET", "/datasets/")
     return [f"{item['collection_name']}/{item['name']}" for item in response.json()]
+
 
 def main():
     global _ALL_DATASETS
@@ -39,7 +42,6 @@ def main():
         # st.rerun()
     st.title("MLC Bakery")
 
-    
     st.title(f"Dataset: {collection_name}/{dataset_name}")
 
     bakery_dataset = bakery_client.get_dataset_by_name(collection_name, dataset_name)
@@ -53,7 +55,7 @@ def main():
     created_at = dt.datetime.strptime(
         bakery_dataset.created_at.split(".")[0], "%Y-%m-%dT%H:%M:%S"
     )
-    
+
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Name", bakery_dataset.name)
@@ -79,6 +81,7 @@ def main():
         st.write(bakery_dataset.preview.head())
 
     st.write(bakery_dataset.long_description)
+
 
 if __name__ == "__main__":
     main()
