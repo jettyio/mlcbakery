@@ -20,6 +20,7 @@ from mlcbakery.storage.gcp import (
 
 _LOGGER = logging.getLogger(__name__)
 _BASE_DIR = "mlcbakery"
+_MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024 # 1GB
 
 router = APIRouter()
 
@@ -45,6 +46,25 @@ async def upload_dataset_data(
     Returns:
         Information about the uploaded file
     """
+    # Check file size first to avoid unnecessary processing
+    file_size = 0
+    chunk_size = 1024 * 1024  # 1MB chunks for reading
+    
+    # Read the file in chunks to calculate size without loading entire file into memory
+    content = await data_file.read(chunk_size)
+    while content:
+        file_size += len(content)
+        if file_size > _MAX_FILE_SIZE:
+            await data_file.seek(0)  # Reset file pointer
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum allowed size is {_MAX_FILE_SIZE/(1024*1024*1024):.1f}GB"
+            )
+        content = await data_file.read(chunk_size)
+    
+    # Reset file pointer for later reading
+    await data_file.seek(0)
+    
     # 1. Verify collection and dataset exist
     collection_stmt = select(Collection).where(Collection.name == collection_name).limit(1)
     collection_result = await db.execute(collection_stmt)
