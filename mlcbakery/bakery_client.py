@@ -9,14 +9,6 @@ import requests
 import mlcroissant as mlc
 import pandas as pd
 
-# Import validation functions and result class
-# from .croissant_validation import (
-#     validate_croissant,
-#     validate_records,
-#     generate_validation_report,
-#     ValidationResult,
-# )
-
 _LOGGER = logging.getLogger(__name__)
 # Configure basic logging if not already configured
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

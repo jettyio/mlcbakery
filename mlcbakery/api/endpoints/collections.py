@@ -87,7 +87,6 @@ async def update_collection_storage_info(
     """Update storage information for a specific collection.
     This endpoint requires admin authentication.
     """
-    # First verify the collection exists
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
@@ -95,7 +94,6 @@ async def update_collection_storage_info(
     if not collection:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
     
-    # Update only the storage-related fields
     if "storage_info" in storage_info:
         collection.storage_info = storage_info["storage_info"]
     if "storage_provider" in storage_info:

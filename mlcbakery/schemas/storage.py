@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
 
 class DataUploadResponse(BaseModel):
     """Response model for data upload endpoint"""

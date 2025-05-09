@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, Dict, Any, List
+from pydantic import ConfigDict
+from typing import Optional, List
 from datetime import datetime
 
 from .entity import EntityBase
