@@ -32,7 +32,7 @@ class UpstreamEntityNode(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
-        json_encoders={datetime: lambda v: v.isoformat()},
+        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
     )
 
 
@@ -62,7 +62,7 @@ class DatasetResponse(DatasetBase):
     output_activities: List[ActivityResponse] = []
     model_config = ConfigDict(
         from_attributes=True,
-        json_encoders={datetime: lambda v: v.isoformat()},
+        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
     )
 
 
@@ -72,8 +72,8 @@ class DatasetPreviewResponse(DatasetResponse):
 
     model_config = ConfigDict(
         from_attributes=True,
-        json_encoders={
+        json_schema_extra={"json_encoders": {
             datetime: lambda v: v.isoformat(),
             bytes: lambda v: base64.b64encode(v).decode("utf-8") if v else None,
-        },
+        }}
     )

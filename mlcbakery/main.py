@@ -7,6 +7,7 @@ from mlcbakery.api.endpoints import (
     trained_models,
     activities,
     agents,
+    storage,
 )
 
 
@@ -24,3 +25,4 @@ app.include_router(collections.router, prefix="/api/v1")
 app.include_router(trained_models.router, prefix="/api/v1")
 app.include_router(activities.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
+app.include_router(storage.router, prefix="/api/v1")

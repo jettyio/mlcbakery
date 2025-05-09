@@ -72,6 +72,7 @@ class Client:
         json_data: Optional[dict[str, Any]] = None,
         files: Optional[dict[str, Any]] = None,
         headers: Optional[dict[str, Any]] = None, # Defaulting to None, will be set below
+        stream: bool = False,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
         # Initialize headers if None or provide default
@@ -94,6 +95,7 @@ class Client:
                 files=files,
                 headers=headers,
                 verify=True, # Keep verify=True for HTTPS
+                stream=stream,
             )
             response.raise_for_status()  # Let this raise HTTPError for bad responses
             return response
@@ -194,8 +196,12 @@ class Client:
         asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
+        data_file_path: str | None = None,
     ) -> BakeryDataset:
-        """Push a dataset to the bakery."""
+        """Push a dataset to the bakery.
+        
+        If data_file_path is provided, the file will be uploaded to storage after dataset creation/update.
+        """
         if "/" not in dataset_path:
             raise ValueError("dataset_path must be in the format 'collection_name/dataset_name'")
         collection_name, dataset_name = dataset_path.split("/", 1)
@@ -243,6 +249,15 @@ class Client:
         # Update the preview regardless of create/update
         if preview:
             self.save_preview(dataset.id, preview)
+            
+        # Upload data file if provided
+        if data_file_path:
+            try:
+                _LOGGER.info(f"Uploading data file for dataset {dataset_name} in collection {collection_name}")
+                self.upload_dataset_data(collection_name, dataset_name, data_file_path)
+            except Exception as e:
+                _LOGGER.error(f"Failed to upload data file: {e}")
+                # Continue even if data upload fails, as the dataset was created/updated successfully
 
         # Fetch the final state of the dataset after creation/update and preview save
         return self.get_dataset_by_name(collection_name, dataset_name)
@@ -641,3 +656,160 @@ class Client:
         except Exception as e:
             _LOGGER.error(f"Unexpected error searching datasets: {e}")
             return []
+            
+    def upload_dataset_data(self, collection_name: str, dataset_name: str, data_file_path: str) -> dict:
+        """Upload a dataset's data as a tar.gz file.
+        
+        This method requires a valid authentication token to be set in the client.
+        
+        Args:
+            collection_name: Name of the collection
+            dataset_name: Name of the dataset
+            data_file_path: Path to the tar.gz file to upload
+            
+        Returns:
+            Dictionary with information about the uploaded file
+            
+        Raises:
+            ValueError: If collection or dataset doesn't exist, or if collection 
+                        doesn't have storage configuration
+            requests.exceptions.RequestException: If the API request fails
+        """
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/data"
+        
+        # Prepare the file for upload
+        with open(data_file_path, 'rb') as file:
+            files = {"data_file": (os.path.basename(data_file_path), file, "application/gzip")}
+            headers = {} # Let _request handle auth
+            
+            try:
+                response = self._request("POST", endpoint, files=files, headers=headers)
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    raise ValueError(f"Dataset '{collection_name}/{dataset_name}' not found.")
+                elif e.response.status_code == 400:
+                    raise ValueError(f"Collection doesn't have required storage configuration.")
+                else:
+                    _LOGGER.error(f"HTTP error uploading dataset data: {e}")
+                    raise
+            except Exception as e:
+                _LOGGER.error(f"Error uploading dataset data: {e}")
+                raise
+    
+    def get_dataset_data_download_url(self, collection_name: str, dataset_name: str, file_number: int) -> str:
+        """Get a temporary download URL for a dataset's data file.
+        
+        This method requires a valid authentication token to be set in the client.
+        
+        Args:
+            collection_name: Name of the collection
+            dataset_name: Name of the dataset
+            file_number: The enumerated file number to download
+            
+        Returns:
+            A signed URL to download the data file
+            
+        Raises:
+            ValueError: If collection or dataset doesn't exist
+            requests.exceptions.RequestException: If the API request fails
+        """
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/data/{file_number}"
+        
+        try:
+            response = self._request("GET", endpoint)
+            result = response.json()
+            return result.get("download_url")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise ValueError(f"Dataset '{collection_name}/{dataset_name}' not found.")
+            elif e.response.status_code == 400:
+                raise ValueError(f"Collection doesn't have required storage configuration.")
+            else:
+                _LOGGER.error(f"HTTP error getting download URL: {e}")
+                raise
+        except Exception as e:
+            _LOGGER.error(f"Error getting download URL: {e}")
+            raise
+    
+    def update_dataset_data(self, collection_name: str, dataset_name: str, data_file_path: str) -> dict:
+        """Update a dataset with a new data file.
+        
+        This is a convenience method that uploads a new data file for an existing dataset.
+        It requires the dataset to exist and the collection to have storage configuration.
+        
+        Args:
+            collection_name: Name of the collection
+            dataset_name: Name of the dataset
+            data_file_path: Path to the tar.gz file to upload
+            
+        Returns:
+            Dictionary with information about the uploaded file
+            
+        Raises:
+            ValueError: If dataset doesn't exist
+            requests.exceptions.RequestException: If the API request fails
+        """
+        # First verify the dataset exists
+        dataset = self.get_dataset_by_name(collection_name, dataset_name)
+        if not dataset:
+            raise ValueError(f"Dataset '{collection_name}/{dataset_name}' not found.")
+            
+        # Upload the data file
+        return self.upload_dataset_data(collection_name, dataset_name, data_file_path)
+    
+    def download_dataset_data(self, collection_name: str, dataset_name: str, output_path: str = None) -> str:
+        """Download the latest dataset data file.
+        
+        This method requires a valid authentication token to be set in the client.
+        
+        Args:
+            collection_name: Name of the collection
+            dataset_name: Name of the dataset
+            output_path: Path where to save the downloaded file. If None, a temporary path is used.
+            
+        Returns:
+            Path to the downloaded file
+            
+        Raises:
+            ValueError: If collection or dataset doesn't exist
+            requests.exceptions.RequestException: If the API request fails
+        """
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/data/latest"
+        
+        try:
+            # Stream the download to avoid loading large files into memory
+            headers = {"Accept": "application/gzip"}
+            response = self._request("GET", endpoint, headers=headers, stream=True)
+            response.raise_for_status()
+            
+            # Get the filename from the Content-Disposition header
+            content_disposition = response.headers.get('Content-Disposition', '')
+            filename = None
+            if 'filename=' in content_disposition:
+                filename = content_disposition.split('filename=')[1].strip('"')
+            else:
+                filename = f"data_{collection_name}_{dataset_name}.tar.gz"
+            
+            # Determine the output path
+            file_path = output_path if output_path else os.path.join('/tmp', filename)
+            
+            # Save the file
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            return file_path
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise ValueError(f"Dataset '{collection_name}/{dataset_name}' not found or has no data files.")
+            elif e.response.status_code == 400:
+                raise ValueError(f"Collection doesn't have required storage configuration.")
+            else:
+                _LOGGER.error(f"HTTP error downloading dataset data: {e}")
+                raise
+        except Exception as e:
+            _LOGGER.error(f"Error downloading dataset data: {e}")
+            raise

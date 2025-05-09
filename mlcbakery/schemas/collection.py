@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 
 
@@ -15,13 +15,15 @@ class CollectionCreate(CollectionBase):
 class CollectionResponse(CollectionBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
 class CollectionStorageResponse(CollectionResponse):
     storage_info: Optional[Dict[str, Any]] = None
     storage_provider: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )

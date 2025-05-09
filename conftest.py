@@ -6,9 +6,12 @@ from sqlalchemy.pool import NullPool
 
 from sqlalchemy.orm import sessionmaker
 import httpx
+from unittest import mock
+import pytest_asyncio # Import pytest_asyncio
 
 # Assuming models.py and database.py are importable from the root
 # Adjust the import path if your structure is different
+from mlcbakery import models # Add this import
 from mlcbakery.database import get_async_db # Import the dependency getter
 from mlcbakery.main import app # Import the FastAPI app
 
@@ -18,10 +21,10 @@ TEST_ADMIN_TOKEN = "test-super-secret-token" # Define a constant for the test to
 # --- Global Test Database Setup ---
 
 # Create async test database connection URL (ensure this matches your test DB)
-SQLALCHEMY_TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+SQLALCHEMY_TEST_DATABASE_URL = os.environ.get("DATABASE_TEST_URL")
 
 # Create global async engine
-engine = create_async_engine(SQLALCHEMY_TEST_DATABASE_URL, echo=False, poolclass=NullPool) # Echo can be noisy globally
+engine = create_async_engine(SQLALCHEMY_TEST_DATABASE_URL, echo=True, poolclass=NullPool) # Change echo to True
 
 # Create global async session factory
 TestingSessionLocal = sessionmaker(
@@ -64,21 +67,21 @@ def set_admin_token_env():
 # This fixture needs to run *after* the env var is set, 
 # if the app initialization depends on it (unlikely here, but good practice)
 # Since set_admin_token_env is session-scoped and autouse, it runs first.
-@pytest.fixture(scope="function", autouse=True)
+@pytest_asyncio.fixture(scope="function", autouse=True)
 async def setup_test_db():
     """Auto-running fixture to set up and tear down the test database for each function."""
     # Ensure Base is imported if not already available globally
     # This might need adjustment depending on where Base is defined.
     # If it's in models.py:
-    from mlcbakery.models import Base # Assuming Base is defined here
+    # from mlcbakery.models import Base # Remove this line
 
     # Use engine.begin() for explicit transaction management during DDL
     async with engine.begin() as conn: # Use engine.begin()
         try:
             print("\n--- Global Fixture: Dropping tables... ---")
-            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(models.Base.metadata.drop_all) # Use models.Base
             print("--- Global Fixture: Creating tables... ---")
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(models.Base.metadata.create_all) # Use models.Base
             # Commit is handled implicitly by engine.begin() context manager on success
             print("--- Global Fixture: Tables created (Transaction Committing). ---")
         except Exception as e:
@@ -110,7 +113,7 @@ async def setup_test_db():
     async with engine.begin() as conn: # Use engine.begin()
         try:
             print("--- Global Fixture: Dropping tables (teardown)... ---")
-            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(models.Base.metadata.drop_all) # Use models.Base
             # Commit is handled implicitly by engine.begin() context manager on success
             print("--- Global Fixture: Tables dropped (Teardown Transaction Committing). ---")
         except Exception as e:
@@ -121,8 +124,49 @@ async def setup_test_db():
 
 # --- Add Async Test Client Fixture ---
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def async_client(): # REMOVED setup_test_db dependency here
     """Provides an asynchronous test client for making requests to the app."""
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
-        yield client 
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+
+@pytest.fixture(scope="function")
+def auth_headers():
+    """Returns headers with admin authentication token."""
+    return {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+
+@pytest_asyncio.fixture(scope="function")
+async def test_client():
+    """Provides an asynchronous test client for making requests to the app."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session():
+    """Provides a database session for tests."""
+    async with TestingSessionLocal() as session:
+        yield session
+
+@pytest.fixture(scope="function")
+def mocked_gcs(mocker):
+    """Mock Google Cloud Storage client for testing."""
+    # Mock GCS client creation
+    mock_client = mocker.MagicMock()
+    mock_bucket = mocker.MagicMock()
+    mock_blob = mocker.MagicMock()
+    
+    # Setup the mock chain
+    mock_client.bucket.return_value = mock_bucket
+    mock_bucket.blob.return_value = mock_blob
+    mock_bucket.list_blobs.return_value = []
+    
+    # Mock specific methods
+    mock_blob.upload_from_string.return_value = None
+    mock_blob.name = "test_path"
+    mock_blob.generate_signed_url.return_value = "https://example.com/signed-url"
+    mock_blob.download_as_bytes.return_value = b"test content"
+    
+    # Patch the create_gcs_client function
+    mocker.patch("mlcbakery.storage.gcp.create_gcs_client", return_value=mock_client)
+    
+    return mock_client

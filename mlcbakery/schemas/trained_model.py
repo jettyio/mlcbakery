@@ -32,5 +32,5 @@ class TrainedModelResponse(TrainedModelBase):
 
     model_config = ConfigDict(
         from_attributes=True,
-        json_encoders={datetime: lambda v: v.isoformat()},
+        json_schema_extra={"json_encoders": {datetime: lambda v: v.isoformat()}}
     )
