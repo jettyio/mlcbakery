@@ -1,10 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Dict, Any, List, ForwardRef
+from typing import Optional, List, ForwardRef
 from datetime import datetime
 from .entity import EntityBase
 from .activity import ActivityResponse
-from .collection import CollectionResponse
-import base64
 
 # Create a forward reference for UpstreamEntityNode
 UpstreamEntityNodeRef = ForwardRef('UpstreamEntityNode')

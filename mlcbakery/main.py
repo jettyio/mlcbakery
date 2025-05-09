@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
 from mlcbakery.api.endpoints import (
-    entities,
     datasets,
     collections,
     trained_models,
