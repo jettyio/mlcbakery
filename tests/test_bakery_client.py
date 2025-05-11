@@ -212,6 +212,16 @@ class TestBakeryClientAuth(unittest.TestCase):
             elif "/preview" in url:
                 print("  -> Responding for GET preview")
                 return mock_get_preview_resp
+            elif method == "POST" and url == f"{API_URL}/collections":
+                print("  -> Responding for POST /collections")
+                # Return a mock response for collection creation
+                mock_create_collection_resp = Mock(spec=requests.Response)
+                mock_create_collection_resp.json.return_value = {
+                    "id": SAMPLE_COLLECTION_ID,
+                    "name": SAMPLE_COLLECTION_NAME,
+                    "description": "",
+                }
+                return mock_create_collection_resp
             # Add other endpoints if needed by push_dataset internal logic (e.g., PATCH metadata?)
             else:
                 print(f"  -> Unexpected HTTP request: {method} {url}")

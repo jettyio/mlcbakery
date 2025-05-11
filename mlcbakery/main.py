@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from mlcbakery.api.endpoints import (
     datasets,
     collections,
-    trained_models,
     activities,
     agents,
     storage,
@@ -21,7 +20,6 @@ async def health_check():
 
 app.include_router(datasets.router, prefix="/api/v1")
 app.include_router(collections.router, prefix="/api/v1")
-app.include_router(trained_models.router, prefix="/api/v1")
 app.include_router(activities.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(storage.router, prefix="/api/v1")

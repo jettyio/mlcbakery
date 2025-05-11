@@ -44,27 +44,13 @@ async def create_test_prerequisites(ac: httpx.AsyncClient, prefix: str):
     assert ds2_resp.status_code == 200
     dataset_ids = [ds1_resp.json()["id"], ds2_resp.json()["id"]]
 
-    # Model
-    model_data = {
-        "name": f"{prefix} Model",
-        "model_path": "/path/model.pkl",
-        "framework": "sklearn",
-        "collection_id": collection_id,
-        "entity_type": "trained_model",
-    }
-    model_resp = await ac.post(
-        "/api/v1/trained_models/", json=model_data, headers=AUTH_HEADERS
-    )
-    assert model_resp.status_code == 200
-    model_id = model_resp.json()["id"]
-
     # Agent
     agent_data = {"name": f"{prefix} Agent", "type": "user"}
     agent_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert agent_resp.status_code == 200
     agent_id = agent_resp.json()["id"]
 
-    return {"dataset_ids": dataset_ids, "model_id": model_id, "agent_id": agent_id}
+    return {"dataset_ids": dataset_ids, "agent_id": agent_id}
 
 
 # Tests remain marked as async
@@ -75,14 +61,12 @@ async def test_create_activity():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         prereqs = await create_test_prerequisites(ac, "CreateAct")
         dataset_ids = prereqs["dataset_ids"]
-        model_id = prereqs["model_id"]
         agent_id = prereqs["agent_id"]
 
         # Create activity
         activity_data = {
             "name": "Test Activity Create",
             "input_entity_ids": dataset_ids,
-            "output_entity_id": model_id,
             "agent_ids": [agent_id],
         }
         response = await ac.post(
@@ -94,7 +78,7 @@ async def test_create_activity():
         data = response.json()
         assert data["name"] == activity_data["name"]
         assert set(data["input_entity_ids"]) == set(dataset_ids)
-        assert data["output_entity_id"] == model_id
+        assert data["output_entity_id"] is None
         assert set(data["agent_ids"]) == set([agent_id])
         assert "id" in data
         assert "created_at" in data
