@@ -3,7 +3,11 @@ import io
 import json
 import logging
 import os
-from typing import Any, Tuple, Optional, Union, Dict
+import shutil
+import tarfile
+import tempfile
+from pathlib import Path
+from typing import Any, Tuple, Optional, Union, Dict, List
 
 import requests
 import mlcroissant as mlc
@@ -157,25 +161,22 @@ class Client:
         self, collection_name: str
     ) -> BakeryCollection:
         """Get a collection by collection name and create it if it doesn't exist."""
+        # TODO: check if the collection already exists
         try:
-            response = self._request("GET", "/collections")
-            collections_data = response.json()
+            response = self._request("GET", f"/collections/{collection_name}")
+            c = response.json()
+            return BakeryCollection(
+                    id=c["id"], name=c["name"], description=c.get("description", "")
+                )
         except Exception as e:
             # If GET fails (e.g., 404 if no collections yet), proceed to create
             _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
-            collections_data = []
-
-        for c in collections_data:
-            if c.get("name") == collection_name:
-                return BakeryCollection(
-                    id=c["id"], name=c["name"], description=c.get("description", "")
-                )
 
         # If collection doesn't exist, create it
         try:
             response = self._request(
                 "POST",
-                "/collections/",
+                "/collections",
                 json_data={"name": collection_name, "description": ""},
             )
             json_response = response.json()
@@ -194,7 +195,7 @@ class Client:
         dataset_path: str,
         data_path: str,
         format: str,
-        metadata: mlc.Dataset,
+        metadata: dict[str, Any],
         preview: bytes | None = None,
         asset_origin: str | None = None,
         long_description: str | None = None,
@@ -829,6 +830,250 @@ class Client:
 
         # Upload the data file
         return self.upload_dataset_data(collection_name, dataset_name, data_file_path)
+
+    def prepare_dataset(self, dataset_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepares a dataset folder for the bakery by creating a .bakery.json file.
+
+        Args:
+            dataset_path: Path to the dataset folder
+            params: Dictionary with dataset parameters including:
+                - properties: Basic dataset properties
+                - parents: Provenance information
+                - assets: References to dataset assets
+
+        Returns:
+            The created bakery metadata as a dictionary
+
+        Raises:
+            ValueError: If dataset path doesn't exist
+            IOError: If unable to write the .bakery.json file
+        """
+        dataset_dir = Path(dataset_path)
+        if not dataset_dir.exists():
+            raise ValueError(f"Dataset path '{dataset_path}' doesn't exist")
+        
+        if not dataset_dir.is_dir():
+            raise ValueError(f"Dataset path '{dataset_path}' is not a directory")
+
+        # Create .bakery.json file with the provided parameters
+        bakery_json_path = dataset_dir / ".bakery.json"
+        
+        try:
+            with open(bakery_json_path, "w") as f:
+                json.dump(params, f, indent=2)
+            _LOGGER.info(f"Created .bakery.json in '{dataset_path}'")
+            return params
+        except Exception as e:
+            raise IOError(f"Failed to write .bakery.json: {e}") from e
+    
+    def duplicate_dataset(self, source_path: str, dest_path: str, params: Dict[str, Any], attributed_to: str) -> Dict[str, Any]:
+        """Duplicates a dataset to a new folder and updates the bakery metadata.
+
+        Args:
+            source_path: Path to the source dataset folder
+            dest_path: Path where to create the duplicated dataset folder
+            params: Dictionary with updated parameters for the duplicated dataset
+            attributed_to: Person or entity to attribute the duplication to
+
+        Returns:
+            The updated bakery metadata as a dictionary
+
+        Raises:
+            ValueError: If source doesn't exist or destination already exists
+            IOError: If unable to copy files or write the .bakery.json file
+        """
+        source_dir = Path(source_path)
+        dest_dir = Path(dest_path)
+        
+        # Validation
+        if not source_dir.exists():
+            raise ValueError(f"Source dataset '{source_path}' doesn't exist")
+        
+        if not source_dir.is_dir():
+            raise ValueError(f"Source dataset '{source_path}' is not a directory")
+        
+        if dest_dir.exists():
+            raise ValueError(f"Destination '{dest_path}' already exists")
+        
+        # Read the source .bakery.json file
+        source_bakery_path = source_dir / ".bakery.json"
+        if not source_bakery_path.exists():
+            raise ValueError(f"Source dataset '{source_path}' has no .bakery.json file")
+        
+        try:
+            with open(source_bakery_path, "r") as f:
+                bakery_data = json.load(f)
+        except Exception as e:
+            raise IOError(f"Failed to read source .bakery.json: {e}") from e
+        
+        # Copy the dataset folder
+        try:
+            shutil.copytree(source_dir, dest_dir)
+            _LOGGER.info(f"Copied dataset from '{source_path}' to '{dest_path}'")
+        except Exception as e:
+            raise IOError(f"Failed to copy dataset: {e}") from e
+        
+        # First capture the source dataset name before any modifications
+        source_dataset_name = bakery_data.get("properties", {}).get("name")
+        
+        # Update the bakery data with new parameters
+        # Handle properties update
+        if "properties" in params:
+            if "properties" not in bakery_data:
+                bakery_data["properties"] = {}
+            bakery_data["properties"].update(params["properties"])
+        
+        # Replace parents with a new lineage entry pointing to the source dataset
+        parent_record = {
+            "generated_by": source_dataset_name,
+            "attributed_to": attributed_to
+        }
+        bakery_data["parents"] = [parent_record]
+        
+        # Update other sections if provided
+        for key in ["assets"]:
+            if key in params and key not in bakery_data:
+                bakery_data[key] = params[key]
+            elif key in params:
+                bakery_data[key].update(params[key])
+        
+        # Write the updated .bakery.json to the destination
+        dest_bakery_path = dest_dir / ".bakery.json"
+        try:
+            with open(dest_bakery_path, "w") as f:
+                json.dump(bakery_data, f, indent=2)
+            _LOGGER.info(f"Updated .bakery.json in '{dest_path}'")
+            return bakery_data
+        except Exception as e:
+            raise IOError(f"Failed to write updated .bakery.json: {e}") from e
+    
+    def save_to_bakery(self, dataset_path: str, upload_data: bool = False) -> BakeryDataset:
+        """Saves a local dataset to the bakery API.
+
+        Reads the .bakery.json file from the dataset folder and pushes the dataset to the bakery API.
+        If upload_data is True and a data folder exists, it will be compressed and uploaded.)
+
+        Args:
+            dataset_path: Path to the dataset folder
+            upload_data: Whether to upload the data folder as a tar.gz file
+
+        Returns:
+            The BakeryDataset object from the API
+
+        Raises:
+            ValueError: If dataset path doesn't exist or has no .bakery.json
+            IOError: If unable to read files or create tar.gz
+        """
+        dataset_dir = Path(dataset_path)
+        
+        # Validation
+        if not dataset_dir.exists() or not dataset_dir.is_dir():
+            raise ValueError(f"Dataset path '{dataset_path}' doesn't exist or is not a directory")
+        
+        bakery_json_path = dataset_dir / ".bakery.json"
+        if not bakery_json_path.exists():
+            raise ValueError(f"Dataset '{dataset_path}' has no .bakery.json file")
+        
+        # Read the .bakery.json file
+        try:
+            with open(bakery_json_path, "r") as f:
+                bakery_data = json.load(f)
+        except Exception as e:
+            raise IOError(f"Failed to read .bakery.json: {e}") from e
+        
+        # Check if the required fields are present
+        if "properties" not in bakery_data:
+            raise ValueError("Missing 'properties' in .bakery.json")
+        
+        properties = bakery_data["properties"]
+        if "name" not in properties or "collection_name" not in properties:
+            raise ValueError("Missing required properties 'name' or 'collection_name' in .bakery.json")
+        
+        dataset_name = properties["name"]
+        collection_name = properties["collection_name"]
+        dataset_path_arg = f"{collection_name}/{dataset_name}"
+        
+        # Read the Croissant metadata file if it exists
+        metadata_file = None
+        if "assets" in bakery_data and "metadata" in bakery_data["assets"]:
+            metadata_file = dataset_dir / bakery_data["assets"]["metadata"]
+        else:
+            metadata_file = dataset_dir / "metadata.json"
+        
+        if not metadata_file.exists():
+            raise ValueError(f"Metadata file {metadata_file} not found")
+        
+        try:
+            # test if the file is json:
+            metadata = mlc.Dataset(jsonld=str(metadata_file))
+            # load as json:
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+        except Exception as e:
+            raise ValueError(f"Failed to parse Croissant metadata: {e}") from e
+        
+        # Read the long description if it exists
+        long_description = None
+        if "assets" in bakery_data and "long_description" in bakery_data["assets"]:
+            long_desc_file = dataset_dir / bakery_data["assets"]["long_description"]
+            if long_desc_file.exists():
+                try:
+                    with open(long_desc_file, "r") as f:
+                        long_description = f.read()
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to read long description: {e}")
+        
+        # Create a tar.gz of the data folder if requested and it exists
+        data_file_path = None
+        if upload_data:
+            data_dir = dataset_dir / "data"
+            if data_dir.exists() and data_dir.is_dir():
+                try:
+                    # Create a temporary file for the tar.gz
+                    with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp_file:
+                        data_file_path = tmp_file.name
+                    
+                    # Create the tar.gz
+                    with tarfile.open(data_file_path, "w:gz") as tar:
+                        tar.add(data_dir, arcname="data")
+                    
+                    _LOGGER.info(f"Created tar.gz of data folder at {data_file_path}")
+                except Exception as e:
+                    if data_file_path and os.path.exists(data_file_path):
+                        os.unlink(data_file_path)
+                    raise IOError(f"Failed to create tar.gz of data folder: {e}") from e
+        
+        # Generate a preview if possible (implement as needed)
+        preview = None
+        
+        # Infer format from the dataset contents
+        format_type = "csv"  # Default, can be improved by actually checking the data files
+        
+        # Push the dataset to the Bakery API
+        _LOGGER.info(f"Pushing dataset '{dataset_path_arg}' to Bakery API")
+        try:
+            result = self.push_dataset(
+                dataset_path=dataset_path_arg,
+                data_path=str(dataset_dir / "data") if (dataset_dir / "data").exists() else None,
+                format=format_type,
+                metadata=metadata,
+                preview=preview,
+                asset_origin=properties.get("origin"),
+                long_description=long_description,
+                metadata_version=properties.get("metadata_version", "1.0.0"),
+                data_file_path=data_file_path if upload_data else None
+            )
+            
+            # Clean up the temporary data file if created
+            if data_file_path and os.path.exists(data_file_path):
+                os.unlink(data_file_path)
+                
+            return result
+        except Exception as e:
+            # Clean up the temporary data file if created
+            if data_file_path and os.path.exists(data_file_path):
+                os.unlink(data_file_path)
+            raise Exception(f"Failed to push dataset to Bakery API: {e}") from e
 
     def download_dataset_data(
         self, collection_name: str, dataset_name: str, output_path: str = None
