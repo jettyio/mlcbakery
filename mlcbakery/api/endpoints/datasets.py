@@ -107,6 +107,18 @@ async def create_dataset(
     await db.commit()
     await db.flush([db_dataset])
     new_dataset_id = db_dataset.id
+    
+    # Create a "created" activity for the dataset
+    from mlcbakery.schemas.activity import ActivityCreate
+    from mlcbakery.api.endpoints.activities import create_activity
+    
+    activity_data = ActivityCreate(
+        name="created",
+        output_entity_id=new_dataset_id,
+        input_entity_ids=dataset.input_entity_ids,
+        agent_ids=dataset.agent_ids
+    )
+    await create_activity(activity=activity_data, db=db)
 
     stmt_refresh = (
         select(Dataset)

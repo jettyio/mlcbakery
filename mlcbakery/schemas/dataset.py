@@ -36,7 +36,8 @@ class UpstreamEntityNode(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    pass
+    input_entity_ids: Optional[List[str]] = None
+    agent_ids: Optional[List[int]] = None
 
 
 class DatasetUpdate(DatasetBase):

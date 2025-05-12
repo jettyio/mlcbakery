@@ -20,14 +20,16 @@ async def create_activity(
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Create a new activity with relationships (async)."""
-    # Verify input entities exist
-    stmt_entities = select(Entity).where(Entity.id.in_(activity.input_entity_ids))
-    result_entities = await db.execute(stmt_entities)
-    input_entities: Sequence[Entity] = result_entities.scalars().all()
-    if len(input_entities) != len(activity.input_entity_ids):
-        raise HTTPException(
-            status_code=404, detail="One or more input entities not found"
-        )
+    # Verify input entities exist if specified
+    input_entities: Sequence[Entity] = []
+    if activity.input_entity_ids:
+        stmt_entities = select(Entity).where(Entity.id.in_(activity.input_entity_ids))
+        result_entities = await db.execute(stmt_entities)
+        input_entities = result_entities.scalars().all()
+        if len(input_entities) != len(activity.input_entity_ids):
+            raise HTTPException(
+                status_code=404, detail="One or more input entities not found"
+            )
 
     # Verify output entity exists if specified
     output_entity = None

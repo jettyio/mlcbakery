@@ -41,6 +41,8 @@ class Entity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     asset_origin = Column(String, nullable=True)
     collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
+    input_entity_ids = None
+    agent_ids = None
 
     # Relationships
     collection = relationship("Collection", back_populates="entities")
@@ -54,6 +56,8 @@ class Entity(Base):
         back_populates="output_entity",
         foreign_keys="Activity.output_entity_id",
     )
+
+
 
     __mapper_args__ = {"polymorphic_on": entity_type, "polymorphic_identity": "entity"}
 

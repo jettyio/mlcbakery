@@ -10,7 +10,7 @@ class ActivityBase(BaseModel):
 
 
 class ActivityCreate(ActivityBase):
-    input_entity_ids: List[int]
+    input_entity_ids: Optional[List[int]] = None
     output_entity_id: Optional[int] = None
     agent_ids: Optional[List[int]] = None
 
