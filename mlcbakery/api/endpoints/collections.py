@@ -27,6 +27,14 @@ async def create_collection(
     """
     Create a new collection (async).
     """
+
+    # check if the collection already exists
+    stmt_coll = select(Collection).where(Collection.name == collection.name)
+    result_coll = await db.execute(stmt_coll)
+    existing_collection = result_coll.scalar_one_or_none()
+    if existing_collection:
+        raise fastapi.HTTPException(status_code=400, detail="Collection already exists")
+
     db_collection = Collection(
         name=collection.name,
         description=collection.description,
@@ -37,6 +45,19 @@ async def create_collection(
     await db.commit()
     await db.refresh(db_collection)
     return db_collection
+
+
+@router.get("/collections/{collection_name}", response_model=CollectionResponse)
+async def get_collection(
+    collection_name: str, db: AsyncSession = fastapi.Depends(get_async_db)
+):
+    """Get a collection by name (async)."""
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+    return collection
 
 
 @router.get("/collections/", response_model=List[CollectionResponse])

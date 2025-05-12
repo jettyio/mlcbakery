@@ -13,6 +13,7 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_DEV_URL}
       - PYTHONPATH=/app
+      - ADMIN_AUTH_TOKEN=${ADMIN_AUTH_TOKEN}
     depends_on:
       - db
     networks:
