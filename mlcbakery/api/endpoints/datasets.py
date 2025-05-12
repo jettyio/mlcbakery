@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from typing import Set
+from typing import Set, List
 import os
 import typesense
 import tempfile
@@ -111,12 +111,29 @@ async def create_dataset(
     # Create a "created" activity for the dataset
     from mlcbakery.schemas.activity import ActivityCreate
     from mlcbakery.api.endpoints.activities import create_activity
+    from mlcbakery.models import Agent
+    
+    # Fetch the collection for this dataset
+    stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+    
+    # Find the default agent for this collection
+    agent_name = f"{collection.name} Owner"
+    stmt_agent = select(Agent).where(Agent.name == agent_name)
+    result_agent = await db.execute(stmt_agent)
+    default_agent = result_agent.scalar_one_or_none()
+    
+    # Use the provided agent_ids, or if not provided, use the default agent
+    agent_ids = dataset.agent_ids or []
+    if default_agent and not agent_ids:
+        agent_ids = [default_agent.id]
     
     activity_data = ActivityCreate(
         name="created",
         output_entity_id=new_dataset_id,
         input_entity_ids=dataset.input_entity_ids,
-        agent_ids=dataset.agent_ids
+        agent_ids=agent_ids
     )
     await create_activity(activity=activity_data, db=db)
 

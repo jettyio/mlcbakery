@@ -200,7 +200,7 @@ class Client:
         asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
-        data_file_path: str | None = None,
+        data_file_path: str | None = None
     ) -> BakeryDataset:
         """Push a dataset to the bakery.
 

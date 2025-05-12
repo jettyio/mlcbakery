@@ -6,6 +6,7 @@ from datetime import datetime
 class AgentBase(BaseModel):
     name: str
     type: Optional[str] = None
+    collection_id: Optional[int] = None
 
 
 class AgentCreate(AgentBase):

@@ -5,13 +5,14 @@ from sqlalchemy.orm import selectinload  # For eager loading entities
 from typing import List
 from fastapi.security import HTTPAuthorizationCredentials
 
-from mlcbakery.models import Collection, Dataset, Entity, Activity
+from mlcbakery.models import Collection, Dataset, Entity, Activity, Agent
 from mlcbakery.schemas.collection import (
     CollectionCreate,
     CollectionResponse,
     CollectionStorageResponse,
 )
 from mlcbakery.schemas.dataset import DatasetResponse
+from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
 from mlcbakery.api.dependencies import verify_admin_token  # Add this import
 
@@ -44,6 +45,17 @@ async def create_collection(
     db.add(db_collection)
     await db.commit()
     await db.refresh(db_collection)
+    
+    # Create a default agent for the collection
+    default_agent = Agent(
+        name=f"{collection.name} Owner",
+        type="owner",
+        collection_id=db_collection.id  # Associate the agent with this collection
+    )
+    db.add(default_agent)
+    await db.commit()
+    await db.refresh(default_agent)
+    
     return db_collection
 
 
@@ -180,3 +192,36 @@ async def list_datasets_by_collection(
     result_datasets = await db.execute(stmt_datasets)
     datasets = result_datasets.scalars().unique().all()
     return datasets
+
+
+@router.get(
+    "/collections/{collection_name}/agents/", response_model=List[AgentResponse]
+)
+async def list_agents_by_collection(
+    collection_name: str,
+    skip: int = fastapi.Query(default=0, description="Number of records to skip"),
+    limit: int = fastapi.Query(
+        default=100, description="Maximum number of records to return"
+    ),
+    db: AsyncSession = fastapi.Depends(get_async_db),
+):
+    """Get a list of agents for a specific collection with pagination (async)."""
+    # First verify the collection exists
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    # Query agents associated with the collection ID
+    stmt_agents = (
+        select(Agent)
+        .where(Agent.collection_id == collection.id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Agent.id)  # Add consistent ordering
+    )
+    result_agents = await db.execute(stmt_agents)
+    agents = result_agents.scalars().all()
+    return agents

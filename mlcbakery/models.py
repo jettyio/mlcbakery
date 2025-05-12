@@ -104,6 +104,7 @@ class Collection(Base):
         storage_info: JSON field containing storage credentials and location information.
         storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
         entities: Relationship to associated entities (datasets and models).
+        agents: Relationship to associated agents.
     """
 
     __tablename__ = "collections"
@@ -116,6 +117,7 @@ class Collection(Base):
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")
+    agents = relationship("Agent", back_populates="collection")
 
 
 class Activity(Base):
@@ -155,8 +157,10 @@ class Agent(Base):
     name = Column(String, nullable=False)
     type = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
 
     # Relationships
+    collection = relationship("Collection", back_populates="agents")
     activities = relationship(
         "Activity",
         secondary=was_associated_with,
