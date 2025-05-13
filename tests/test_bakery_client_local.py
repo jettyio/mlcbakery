@@ -109,13 +109,11 @@ class TestBakeryClientLocal(unittest.TestCase):
                 "name": "duplicate_dataset"
             }
         }
-        attributed_to = "duplicator@example.com"
         
         result = self.client.duplicate_dataset(
             self.source_dataset_path, 
             dest_dataset_path, 
-            update_params, 
-            attributed_to
+            update_params
         )
         
         # Check that destination was created
@@ -138,7 +136,6 @@ class TestBakeryClientLocal(unittest.TestCase):
         # Check that the parent record was added correctly
         self.assertEqual(len(content["parents"]), 1)
         self.assertEqual(content["parents"][0]["generated_by"], "dataset/test_collection/source_dataset")
-        self.assertEqual(content["parents"][0]["attributed_to"], "duplicator@example.com")
 
     @patch("mlcbakery.bakery_client.Client.push_dataset")
     def test_save_to_bakery_without_data_upload(self, mock_push_dataset):

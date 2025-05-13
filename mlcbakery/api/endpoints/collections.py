@@ -15,6 +15,7 @@ from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
 from mlcbakery.api.dependencies import verify_admin_token  # Add this import
+from mlcbakery.schemas.activity import ActivityResponse
 
 router = fastapi.APIRouter()
 
@@ -225,3 +226,49 @@ async def list_agents_by_collection(
     result_agents = await db.execute(stmt_agents)
     agents = result_agents.scalars().all()
     return agents
+
+
+@router.get(
+    "/collections/{collection_name}/activities/", response_model=List[ActivityResponse]
+)
+async def list_activities_by_collection(
+    collection_name: str,
+    skip: int = fastapi.Query(default=0, description="Number of records to skip"),
+    limit: int = fastapi.Query(default=100, description="Maximum number of records to return"),
+    db: AsyncSession = fastapi.Depends(get_async_db),
+):
+    """Get a list of activities for a specific collection (input or output entities in the collection)."""
+    # First verify the collection exists
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    # Find all entity IDs in this collection
+    stmt_entities = select(Entity.id).where(Entity.collection_id == collection.id)
+    result_entities = await db.execute(stmt_entities)
+    entity_ids = [row[0] for row in result_entities.fetchall()]
+    if not entity_ids:
+        return []
+
+    # Find all activities where any input or output entity is in this collection
+    stmt_activities = (
+        select(Activity)
+        .where(
+            (Activity.input_entities.any(Entity.id.in_(entity_ids))) |
+            (Activity.output_entity_id.in_(entity_ids))
+        )
+        .options(
+            selectinload(Activity.input_entities).options(selectinload(Entity.collection)),
+            selectinload(Activity.output_entity).options(selectinload(Entity.collection)),
+            selectinload(Activity.agents),
+        )
+        .offset(skip)
+        .limit(limit)
+        .order_by(Activity.id)
+    )
+    result_activities = await db.execute(stmt_activities)
+    activities = result_activities.scalars().unique().all()
+    return activities

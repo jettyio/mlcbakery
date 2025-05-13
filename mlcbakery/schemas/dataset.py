@@ -36,9 +36,7 @@ class UpstreamEntityNode(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    input_entity_ids: Optional[List[str]] = None
-    agent_ids: Optional[List[int]] = None
-
+    pass
 
 class DatasetUpdate(DatasetBase):
     name: Optional[str] = None
@@ -60,8 +58,6 @@ class DatasetListResponse(DatasetBase):
 class DatasetResponse(DatasetBase):
     id: int
     created_at: datetime
-    input_activities: List[ActivityResponse] = []
-    output_activities: List[ActivityResponse] = []
     model_config = ConfigDict(from_attributes=True)
 
 
