@@ -35,11 +35,14 @@ def upgrade() -> None:
 
     # Fetch all collections
     collections = conn.execute(sa.select(collections_table.c.id, collections_table.c.name)).fetchall()
-
+    agent_names = set()
     agents_to_insert = []
     for collection_id, collection_name in collections:
         # Define the expected name for the default owner agent
         owner_agent_name = f"{collection_name} Owner"
+        if owner_agent_name in agent_names:
+            continue
+        agent_names.add(owner_agent_name)
 
         # Check if an agent with the specific name and collection_id already exists
         # We check specifically for the name "{Collection.name} Owner" and the collection_id
@@ -59,7 +62,6 @@ def upgrade() -> None:
                 {
                     'name': owner_agent_name,
                     'type': 'owner',  # Assuming 'owner' is the correct type string
-                    'created_at': sa.func.now(), # Use database's current time
                     'collection_id': collection_id
                 }
             )
