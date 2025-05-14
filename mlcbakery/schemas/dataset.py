@@ -28,7 +28,6 @@ class ProvenanceEntityNode(BaseModel):
     name: str
     collection_name: str
     entity_type: str
-    activity_id: Optional[int] = None
     activity_name: Optional[str] = None
     upstream_entities: List[ProvenanceEntityNodeRef] = Field(default_factory=list)
     downstream_entities: List[ProvenanceEntityNodeRef] = Field(default_factory=list)

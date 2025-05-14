@@ -1097,14 +1097,25 @@ class Client:
                 os.unlink(data_file_path)
                 
             parents = bakery_data.get("parents", [])
-            generated_by = None
             if parents:
                 for parent in parents:
-                    if "generated_by" in parent and parent["generated_by"]:
-                        generated_by = parent["generated_by"]
-                        # get the entity id from the bakery
-                        
-                        break
+                    source_entity_str = parent.get("generated_by")
+                    if source_entity_str:
+                        try:
+                            target_entity_str = f"dataset/{collection_name}/{dataset_name}"
+                            _LOGGER.info(
+                                f"Creating entity relationship: {source_entity_str} -> generated_by -> {target_entity_str}"
+                            )
+                            self.create_entity_relationship(
+                                target_entity_str=target_entity_str,
+                                activity_name="generated_by",
+                                source_entity_str=source_entity_str,
+                            )
+                        except Exception as e:
+                            _LOGGER.warning(
+                                f"Failed to create entity relationship for parent {source_entity_str}: {e}"
+                            )
+                            # Continue even if one relationship fails
             
             return result
         except Exception as e:

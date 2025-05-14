@@ -439,7 +439,7 @@ async def get_dataset_by_name(
     return dataset
 
 async def build_upstream_tree_async(
-    entity: Entity | None, db: AsyncSession, visited: Set[int]
+    entity: Entity | None, link: EntityRelationship | None, db: AsyncSession, visited: Set[int]
 ) -> ProvenanceEntityNode | None:
     """Build the upstream entity tree for a dataset (async)."""
     if entity is None:
@@ -458,17 +458,18 @@ async def build_upstream_tree_async(
         name=entity.name,
         collection_name=entity.collection.name if entity.collection else "N/A",
         entity_type=entity.entity_type,
+        activity_name=link.activity_name if link else None,
     )
 
     if entity.upstream_links:
         for link in entity.upstream_links:
-            child_node = await build_upstream_tree_async(link.source_entity, db, visited)
+            child_node = await build_upstream_tree_async(link.source_entity, link, db, visited)
             if child_node:
                 current_node.upstream_entities.append(child_node)
 
     if entity.downstream_links:
         for link in entity.downstream_links:
-            child_node = await build_upstream_tree_async(link.target_entity, db, visited)
+            child_node = await build_upstream_tree_async(link.target_entity, link, db, visited)
             if child_node:
                 current_node.downstream_entities.append(child_node)
 
@@ -488,7 +489,7 @@ async def get_dataset_upstream_tree(
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    return await build_upstream_tree_async(dataset, db, set())
+    return await build_upstream_tree_async(dataset, None, db, set())
 
 
 @router.post("/datasets/mlcroissant-validation", response_model=dict)
