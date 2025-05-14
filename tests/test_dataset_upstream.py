@@ -1,12 +1,8 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import MagicMock, AsyncMock, patch
-from sqlalchemy import inspect
-from sqlalchemy.orm.attributes import set_attribute
 
-from mlcbakery.models import Dataset, Collection, Activity, Entity, EntityRelationship
+from mlcbakery.models import Dataset, Collection, Activity, EntityRelationship
 from mlcbakery.api.endpoints.datasets import build_upstream_tree_async
-from mlcbakery.schemas.dataset import ProvenanceEntityNode
 
 
 @pytest.mark.asyncio
@@ -44,7 +40,7 @@ async def test_build_upstream_tree_single_parent(db_session: AsyncSession):
     await db_session.refresh(child_ds)
 
     # Test the function
-    result = await build_upstream_tree_async(child_ds, db_session, set())
+    result = await build_upstream_tree_async(child_ds, None, db_session, set())
     assert result is not None
     assert len(result.upstream_entities) == 1
     assert result.upstream_entities[0].id == parent_ds.id
