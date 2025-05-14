@@ -10,14 +10,8 @@ class EntityRelationshipResponse(BaseModel):
     id: int
     source_entity_id: Optional[int] = None
     target_entity_id: Optional[int] = None
-    activity_id: int
+    activity_name: str
     agent_id: Optional[int] = None
-
-    # Optionally, include full objects if the API needs to return them directly within a link
-    # source_entity: Optional[EntityResponse] = None 
-    # target_entity: Optional[EntityResponse] = None
-    # agent: Optional[AgentResponse] = None
-
     model_config = ConfigDict(from_attributes=True)
 
 

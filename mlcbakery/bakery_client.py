@@ -190,6 +190,56 @@ class Client:
                 f"Failed to create collection {collection_name}: {e}"
             ) from e
 
+    def create_entity_relationship(
+        self,
+        target_entity_str: str,
+        activity_name: str,
+        source_entity_str: Optional[str] = None,
+    ) -> dict:
+        """
+        Creates an entity relationship in the MLC Bakery.
+
+        Args:
+            target_entity_str: The string identifier for the target entity (e.g., "dataset/collection_name/dataset_name").
+            activity_name: The name of the activity that generated this relationship.
+            source_entity_str: Optional. The string identifier for the source entity.
+
+        Returns:
+            A dictionary representing the created entity relationship.
+
+        Raises:
+            requests.exceptions.RequestException: If the API request fails.
+        """
+        _LOGGER.info(
+            f"Requesting creation of entity relationship for target '{target_entity_str}' "
+            f"with activity '{activity_name}' and source '{source_entity_str if source_entity_str else 'None'}'."
+        )
+        endpoint = "/entity-relationships/"
+        payload = {
+            "target_entity_str": target_entity_str,
+            "activity_name": activity_name,
+        }
+        if source_entity_str:
+            payload["source_entity_str"] = source_entity_str
+
+        try:
+            response = self._request("POST", endpoint, json_data=payload)
+            relationship_data = response.json()
+            _LOGGER.info(
+                f"Successfully created entity relationship with ID: {relationship_data.get('id')}"
+            )
+            return relationship_data
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"API request for creating entity relationship failed: {e}")
+            raise
+        except json.JSONDecodeError as e:
+            _LOGGER.error(
+                f"Failed to decode JSON response from entity relationship API: {e}"
+            )
+            raise ValueError(
+                "Invalid JSON response received from entity relationship API."
+            ) from e
+
     def push_dataset(
         self,
         dataset_path: str,
@@ -925,8 +975,6 @@ class Client:
             _LOGGER.warning(f"Could not fetch default agent for collection {collection_name}: {e}")
             return None
 
-
-
     def save_to_bakery(self, dataset_path: str, upload_data: bool = False) -> BakeryDataset:
         """Saves a local dataset to the bakery API.
 
@@ -1054,6 +1102,8 @@ class Client:
                 for parent in parents:
                     if "generated_by" in parent and parent["generated_by"]:
                         generated_by = parent["generated_by"]
+                        # get the entity id from the bakery
+                        
                         break
             
             return result

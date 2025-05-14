@@ -37,13 +37,12 @@ class EntityRelationship(Base):
     id = Column(Integer, primary_key=True, index=True)
     source_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
     target_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
-    activity_id = Column(Integer, ForeignKey("activities.id"), nullable=False, index=True)
+    activity_name = Column(String, nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True, index=True)
 
     # Relationships to the actual objects
     source_entity = relationship("Entity", foreign_keys=[source_entity_id], back_populates="downstream_links")
     target_entity = relationship("Entity", foreign_keys=[target_entity_id], back_populates="upstream_links")
-    activity = relationship("Activity", backref=backref("involved_in_links", lazy="dynamic"))
     agent = relationship("Agent", backref=backref("performed_links", lazy="dynamic"))
 
 
@@ -158,40 +157,6 @@ class Activity(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    # output_entity_id = Column(Integer, ForeignKey("entities.id"), nullable=True) # REMOVE THIS
-
-    # Relationships
-    # input_entities = relationship( # REMOVE THIS
-    #     "Entity",
-    #     secondary=activity_entities,
-    #     back_populates="input_activities",
-    # )
-    # output_entity = relationship( # REMOVE THIS
-    #     "Entity",
-    #     back_populates="output_activities",
-    #     foreign_keys=[output_entity_id],
-    # )
-    # agents = relationship( # REMOVE THIS
-    #     "Agent",
-    #     secondary=was_associated_with,
-    #     back_populates="activities",
-    # )
-    # involved_in_links is now available via backref from EntityRelationship
-
-    # Example accessor (add this or similar to your Activity class for convenience)
-    def get_involved_entities_agents(self):
-        involved = {"sources": [], "targets": [], "agents": set()}
-        # Assuming involved_in_links is dynamically loaded or use .all() if needed
-        for link in self.involved_in_links: # EntityRelationship objects
-            if link.source_entity:
-                involved["sources"].append(link.source_entity)
-            if link.target_entity:
-                involved["targets"].append(link.target_entity)
-            if link.agent:
-                involved["agents"].add(link.agent)
-        involved["sources"] = list(set(involved["sources"])) # Unique
-        involved["targets"] = list(set(involved["targets"])) # Unique
-        return involved
 
 
 class Agent(Base):

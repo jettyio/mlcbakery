@@ -109,8 +109,6 @@ async def test_create_entity_link_success(db_session: AsyncSession):
     assert source_entity_db is not None
     assert target_entity_db is not None
 
-    
-
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
         payload = {
             "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
@@ -123,18 +121,18 @@ async def test_create_entity_link_success(db_session: AsyncSession):
     data = response.json()
     assert data["source_entity_id"] is not None
     assert data["target_entity_id"] is not None
+    assert data["activity_name"] == ACTIVITY_NAME_GENERATED
 
-    activity_db = (await db_session.execute(select(Activity).where(Activity.name == ACTIVITY_NAME_GENERATED))).scalar_one()
     link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == data["id"]))).scalar_one()
-    assert activity_db is not None
     assert link.source_entity_id == source_entity_db.id
     assert link.target_entity_id == target_entity_db.id
-    assert link.activity_id == activity_db.id
+    assert link.activity_name == ACTIVITY_NAME_GENERATED
 
 
 async def test_create_entity_link_no_source_success(db_session: AsyncSession):
     """Test successful creation of an entity link with only a target (e.g., initial creation)."""
-    await _setup_test_data_entities(db_session, *(await _setup_test_data_collections(db_session)))
+    coll1, coll2 = await _setup_test_data_collections(db_session) # Ensure collections are created
+    await _setup_test_data_entities(db_session, coll1, coll2)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
         payload = {
@@ -148,43 +146,62 @@ async def test_create_entity_link_no_source_success(db_session: AsyncSession):
     data = response.json()
     assert data["source_entity_id"] is None
     assert data["target_entity_id"] is not None
+    assert data["activity_name"] == ACTIVITY_NAME_INGESTED # Added assertion for activity_name in response
 
     target_entity_db = (await db_session.execute(select(Dataset).where(Dataset.name == TARGET_ENTITY_NAME_2))).scalar_one()
-    activity_db = (await db_session.execute(select(Activity).where(Activity.name == ACTIVITY_NAME_INGESTED))).scalar_one()
+    # Activity record is no longer created by this endpoint, so removed activity_db fetch
+    # activity_db = (await db_session.execute(select(Activity).where(Activity.name == ACTIVITY_NAME_INGESTED))).scalar_one()
 
     link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == data["id"]))).scalar_one()
     assert link.target_entity_id == target_entity_db.id
-    assert link.activity_id == activity_db.id
+    assert link.activity_name == ACTIVITY_NAME_INGESTED # Changed from activity_id to activity_name
 
 
 async def test_create_entity_link_reuse_activity(db_session: AsyncSession):
-    """Test that an existing activity is reused if the name matches."""
-    # First, create a link which will create the activity
-    await _setup_test_data_entities(db_session, *(await _setup_test_data_collections(db_session)))
+    """Test that multiple entity links can be created with the same activity name."""
+    # Setup initial data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    activity_to_reuse = "reused_activity_name_test"
+
+    # First, create a link
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
         payload1 = {
             "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
-            "activity_name": "reused_activity"
+            "activity_name": activity_to_reuse
         }
         response1 = await ac.post("/api/v1/entity-relationships/", json=payload1, headers=AUTH_HEADERS)
         assert response1.status_code == 201
-        activity_id_1 = response1.json()["activity_id"]
+        response1_data = response1.json()
+        assert response1_data["activity_name"] == activity_to_reuse
+        link1_id = response1_data["id"]
 
     # Second, create another link with the same activity name
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
         payload2 = {
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
-            "activity_name": "reused_activity" # Same activity name
+            "activity_name": activity_to_reuse # Same activity name
         }
         response2 = await ac.post("/api/v1/entity-relationships/", json=payload2, headers=AUTH_HEADERS)
         assert response2.status_code == 201
-        activity_id_2 = response2.json()["activity_id"]
+        response2_data = response2.json()
+        assert response2_data["activity_name"] == activity_to_reuse
+        link2_id = response2_data["id"]
 
-    assert activity_id_1 == activity_id_2
-    
-    activities_count = (await db_session.execute(select(Activity).where(Activity.name == "reused_activity"))).scalars().all()
-    assert len(activities_count) == 1
+    # Verify in the database that both links have the same activity name
+    link1_db = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link1_id))).scalar_one_or_none()
+    link2_db = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link2_id))).scalar_one_or_none()
+
+    assert link1_db is not None
+    assert link2_db is not None
+    assert link1_db.activity_name == activity_to_reuse
+    assert link2_db.activity_name == activity_to_reuse
+
+    # The part about checking Activity table count is removed as the endpoint no longer manages Activity records.
+    # activities_count = (await db_session.execute(select(Activity).where(Activity.name == activity_to_reuse))).scalars().all()
+    # assert len(activities_count) == 1 # This is no longer guaranteed by the endpoint.
 
 async def test_create_entity_link_target_not_found(db_session: AsyncSession):
     """Test error when target entity is not found."""

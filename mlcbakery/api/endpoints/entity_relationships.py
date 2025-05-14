@@ -61,10 +61,10 @@ async def create_entity_link(
     # Admin token dependency is now at the router level
 ):
     """
-    Create a new relationship (link) between two entities via an activity.
+    Create a new relationship (link) between two entities via an activity name.
     - Source and target entities are identified by a string: {entity_type}/{collection_name}/{entity_name}.
     - Target entity is required. Source entity is optional.
-    - An activity record will be found by activity_name or created if it doesn't exist.
+    - The activity_name is taken directly from the request.
     - Agent ID is set to NULL for now.
     """
     source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source")
@@ -74,26 +74,10 @@ async def create_entity_link(
     if not target_entity: # Should be caught by _resolve, but as a safeguard.
         raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
 
-    # Find or create activity
-    activity_stmt = select(Activity).where(Activity.name == link_request.activity_name)
-    activity = (await db.execute(activity_stmt)).scalar_one_or_none()
-
-    if not activity:
-        activity = Activity(name=link_request.activity_name)
-        db.add(activity)
-        # Committing here to get activity.id for the relationship if it's new.
-        # This makes the activity creation part of this transaction unit.
-        # If this overall operation fails later, this new activity might still exist.
-        # Alternatively, don't commit here and let the final commit handle it, 
-        # but then a flush might be needed if activity.id is accessed before commit.
-        # For simplicity now, committing the activity if new.
-        await db.commit() 
-        await db.refresh(activity)
-
     db_entity_relationship = EntityRelationship(
         source_entity_id=source_entity.id if source_entity else None,
         target_entity_id=target_entity.id, # target_entity is guaranteed to be not None here
-        activity_id=activity.id, # activity is guaranteed to be not None here
+        activity_name=link_request.activity_name, # Use activity_name directly
         agent_id=None  # As per requirement
     )
     db.add(db_entity_relationship)

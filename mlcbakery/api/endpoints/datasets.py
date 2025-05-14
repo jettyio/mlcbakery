@@ -249,6 +249,22 @@ async def _find_dataset_by_name(collection_name: str, dataset_name: str, db: Asy
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
+async def _find_entity_by_id(entity_id: int, db: AsyncSession) -> Entity:
+    stmt = select(Entity).where(Entity.id == entity_id).options(
+        selectinload(Entity.collection),
+        selectinload(Entity.upstream_links).options(
+            selectinload(EntityRelationship.source_entity).options(
+                selectinload(Entity.collection)
+            ),
+        ),
+        selectinload(Entity.downstream_links).options(
+            selectinload(EntityRelationship.target_entity).options(
+                selectinload(Entity.collection)
+            ),
+        ),
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
 
 @router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
 async def update_dataset(
@@ -423,11 +439,17 @@ async def get_dataset_by_name(
     return dataset
 
 async def build_upstream_tree_async(
-    entity: Entity, db: AsyncSession, visited: Set[int]
-) -> ProvenanceEntityNode:
+    entity: Entity | None, db: AsyncSession, visited: Set[int]
+) -> ProvenanceEntityNode | None:
     """Build the upstream entity tree for a dataset (async)."""
+    if entity is None:
+        return None
+
     if entity.id in visited:
         return None
+    
+    # refresh the entity to get the latest data
+    entity = await _find_entity_by_id(entity.id, db)
 
     visited.add(entity.id)
 

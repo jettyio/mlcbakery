@@ -34,7 +34,7 @@ async def test_build_upstream_tree_single_parent(db_session: AsyncSession):
 
 
     # Create the relationship
-    relationship = EntityRelationship(id=1, source_entity_id=parent_ds.id, target_entity_id=child_ds.id, activity_id=activity.id)
+    relationship = EntityRelationship(id=1, source_entity_id=parent_ds.id, target_entity_id=child_ds.id, activity_name=activity.name)
 
     # Add to session and commit
     db_session.add(relationship)
