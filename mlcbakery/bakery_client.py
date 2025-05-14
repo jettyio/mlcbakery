@@ -190,6 +190,56 @@ class Client:
                 f"Failed to create collection {collection_name}: {e}"
             ) from e
 
+    def create_entity_relationship(
+        self,
+        target_entity_str: str,
+        activity_name: str,
+        source_entity_str: Optional[str] = None,
+    ) -> dict:
+        """
+        Creates an entity relationship in the MLC Bakery.
+
+        Args:
+            target_entity_str: The string identifier for the target entity (e.g., "dataset/collection_name/dataset_name").
+            activity_name: The name of the activity that generated this relationship.
+            source_entity_str: Optional. The string identifier for the source entity.
+
+        Returns:
+            A dictionary representing the created entity relationship.
+
+        Raises:
+            requests.exceptions.RequestException: If the API request fails.
+        """
+        _LOGGER.info(
+            f"Requesting creation of entity relationship for target '{target_entity_str}' "
+            f"with activity '{activity_name}' and source '{source_entity_str if source_entity_str else 'None'}'."
+        )
+        endpoint = "/entity-relationships/"
+        payload = {
+            "target_entity_str": target_entity_str,
+            "activity_name": activity_name,
+        }
+        if source_entity_str:
+            payload["source_entity_str"] = source_entity_str
+
+        try:
+            response = self._request("POST", endpoint, json_data=payload)
+            relationship_data = response.json()
+            _LOGGER.info(
+                f"Successfully created entity relationship with ID: {relationship_data.get('id')}"
+            )
+            return relationship_data
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"API request for creating entity relationship failed: {e}")
+            raise
+        except json.JSONDecodeError as e:
+            _LOGGER.error(
+                f"Failed to decode JSON response from entity relationship API: {e}"
+            )
+            raise ValueError(
+                "Invalid JSON response received from entity relationship API."
+            ) from e
+
     def push_dataset(
         self,
         dataset_path: str,
@@ -200,7 +250,7 @@ class Client:
         asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
-        data_file_path: str | None = None,
+        data_file_path: str | None = None
     ) -> BakeryDataset:
         """Push a dataset to the bakery.
 
@@ -228,7 +278,7 @@ class Client:
             "long_description": str(long_description),
             "metadata_version": metadata_version,
         }
-
+        
         # Filter out None values from payload to avoid overwriting existing fields with null
         entity_payload = {k: v for k, v in entity_payload.items() if v is not None}
 
@@ -452,48 +502,6 @@ class Client:
             raise Exception(
                 f"Failed to save preview to dataset {dataset_id}: {e}"
             ) from e
-
-    def fork_dataset(
-        self,
-        origin: BakeryDataset,
-        destination_path: str,  # Changed from 'destination' to 'destination_path' for clarity
-        data_path: str,
-        format: str,
-        metadata: mlc.Dataset,
-        preview: bytes,
-        long_description: str | None = None,  # Added long_description
-    ) -> BakeryDataset:
-        """Fork a dataset by pushing it to a new destination."""
-        # Push acts like create or update, handles finding/creating collection
-        forked_dataset = self.push_dataset(
-            destination_path, data_path, format, metadata, preview, long_description
-        )
-
-        # Define an activity recording the fork
-        activity_endpoint = "/activities"
-        activity_payload = {
-            "name": f"Forked dataset {origin.name} to {forked_dataset.name}",  # More descriptive name
-            "description": f"Forked from {origin.collection_id}/{origin.name} (ID: {origin.id}) to {forked_dataset.collection_id}/{forked_dataset.name} (ID: {forked_dataset.id})",
-            "activity_type": "fork",  # Added activity type for clarity
-            "input_entity_ids": [origin.id],
-            "output_entity_id": forked_dataset.id,
-            # Add other relevant context if needed
-            # "context": {"user": "...", "reason": "..."}
-        }
-
-        try:
-            response = self._request(
-                "POST", activity_endpoint, json_data=activity_payload
-            )
-            activity_response = response.json()
-            _LOGGER.info(f"Fork activity recorded: {activity_response.get('id')}")
-        except Exception as e:
-            # Log error but don't fail the whole fork operation if activity logging fails
-            _LOGGER.error(
-                f"Failed to record fork activity for dataset {forked_dataset.id} from {origin.id}: {e}"
-            )
-
-        return forked_dataset  # Return the newly created/updated dataset
 
     def get_upstream_entities(
         self, collection_name: str, dataset_name: str
@@ -832,7 +840,7 @@ class Client:
         return self.upload_dataset_data(collection_name, dataset_name, data_file_path)
 
     def prepare_dataset(self, dataset_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepares a dataset folder for the bakery by creating a .bakery.json file.
+        """Prepares a dataset folder for the bakery by creating a .manifest.json file.
 
         Args:
             dataset_path: Path to the dataset folder
@@ -846,7 +854,7 @@ class Client:
 
         Raises:
             ValueError: If dataset path doesn't exist
-            IOError: If unable to write the .bakery.json file
+            IOError: If unable to write the .manifest.json file
         """
         dataset_dir = Path(dataset_path)
         if not dataset_dir.exists():
@@ -854,19 +862,24 @@ class Client:
         
         if not dataset_dir.is_dir():
             raise ValueError(f"Dataset path '{dataset_path}' is not a directory")
-
-        # Create .bakery.json file with the provided parameters
-        bakery_json_path = dataset_dir / ".bakery.json"
+        
+        
+        # Store input_entity_ids in params for later use when creating the dataset
+        if "properties" not in params:
+            params["properties"] = {}
+            
+        # Create .manifest.json file with the provided parameters
+        bakery_json_path = dataset_dir / ".manifest.json"
         
         try:
             with open(bakery_json_path, "w") as f:
                 json.dump(params, f, indent=2)
-            _LOGGER.info(f"Created .bakery.json in '{dataset_path}'")
+            _LOGGER.info(f"Created .manifest.json in '{dataset_path}'")
             return params
         except Exception as e:
-            raise IOError(f"Failed to write .bakery.json: {e}") from e
+            raise IOError(f"Failed to write .manifest.json: {e}") from e
     
-    def duplicate_dataset(self, source_path: str, dest_path: str, params: Dict[str, Any], attributed_to: str) -> Dict[str, Any]:
+    def duplicate_dataset(self, source_path: str, dest_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Duplicates a dataset to a new folder and updates the bakery metadata.
 
         Args:
@@ -880,7 +893,7 @@ class Client:
 
         Raises:
             ValueError: If source doesn't exist or destination already exists
-            IOError: If unable to copy files or write the .bakery.json file
+            IOError: If unable to copy files or write the .manifest.json file
         """
         source_dir = Path(source_path)
         dest_dir = Path(dest_path)
@@ -895,16 +908,16 @@ class Client:
         if dest_dir.exists():
             raise ValueError(f"Destination '{dest_path}' already exists")
         
-        # Read the source .bakery.json file
-        source_bakery_path = source_dir / ".bakery.json"
+        # Read the source .manifest.json file
+        source_bakery_path = source_dir / ".manifest.json"
         if not source_bakery_path.exists():
-            raise ValueError(f"Source dataset '{source_path}' has no .bakery.json file")
+            raise ValueError(f"Source dataset '{source_path}' has no .manifest.json file")
         
         try:
             with open(source_bakery_path, "r") as f:
                 bakery_data = json.load(f)
         except Exception as e:
-            raise IOError(f"Failed to read source .bakery.json: {e}") from e
+            raise IOError(f"Failed to read source .manifest.json: {e}") from e
         
         # Copy the dataset folder
         try:
@@ -914,7 +927,9 @@ class Client:
             raise IOError(f"Failed to copy dataset: {e}") from e
         
         # First capture the source dataset name before any modifications
-        source_dataset_name = bakery_data.get("properties", {}).get("name")
+        source_entity_name = bakery_data.get("properties", {}).get("name")
+        source_collection_name = bakery_data.get("properties", {}).get("collection_name")
+        source_entity_type = bakery_data.get("properties", {}).get("type")
         
         # Update the bakery data with new parameters
         # Handle properties update
@@ -925,8 +940,7 @@ class Client:
         
         # Replace parents with a new lineage entry pointing to the source dataset
         parent_record = {
-            "generated_by": source_dataset_name,
-            "attributed_to": attributed_to
+            "generated_by": f"{source_entity_type}/{source_collection_name}/{source_entity_name}"
         }
         bakery_data["parents"] = [parent_record]
         
@@ -937,20 +951,34 @@ class Client:
             elif key in params:
                 bakery_data[key].update(params[key])
         
-        # Write the updated .bakery.json to the destination
-        dest_bakery_path = dest_dir / ".bakery.json"
+        # Write the updated .manifest.json to the destination
+        dest_bakery_path = dest_dir / ".manifest.json"
         try:
             with open(dest_bakery_path, "w") as f:
                 json.dump(bakery_data, f, indent=2)
-            _LOGGER.info(f"Updated .bakery.json in '{dest_path}'")
+            _LOGGER.info(f"Updated .manifest.json in '{dest_path}'")
             return bakery_data
         except Exception as e:
-            raise IOError(f"Failed to write updated .bakery.json: {e}") from e
+            raise IOError(f"Failed to write updated .manifest.json: {e}") from e
     
+    def _get_default_agent_id(self, collection_name: str) -> int | None:
+        """Get the default agent ID for a collection, if it exists."""
+        try:
+            endpoint = f"/collections/{collection_name}/agents/"
+            response = self._request("GET", endpoint)
+            agents = response.json()
+            for agent in agents:
+                if agent["name"] == f"{collection_name} Owner":
+                    return agent["id"]
+            return None
+        except Exception as e:
+            _LOGGER.warning(f"Could not fetch default agent for collection {collection_name}: {e}")
+            return None
+
     def save_to_bakery(self, dataset_path: str, upload_data: bool = False) -> BakeryDataset:
         """Saves a local dataset to the bakery API.
 
-        Reads the .bakery.json file from the dataset folder and pushes the dataset to the bakery API.
+        Reads the .manifest.json file from the dataset folder and pushes the dataset to the bakery API.
         If upload_data is True and a data folder exists, it will be compressed and uploaded.)
 
         Args:
@@ -961,7 +989,7 @@ class Client:
             The BakeryDataset object from the API
 
         Raises:
-            ValueError: If dataset path doesn't exist or has no .bakery.json
+            ValueError: If dataset path doesn't exist or has no .manifest.json
             IOError: If unable to read files or create tar.gz
         """
         dataset_dir = Path(dataset_path)
@@ -970,24 +998,24 @@ class Client:
         if not dataset_dir.exists() or not dataset_dir.is_dir():
             raise ValueError(f"Dataset path '{dataset_path}' doesn't exist or is not a directory")
         
-        bakery_json_path = dataset_dir / ".bakery.json"
+        bakery_json_path = dataset_dir / ".manifest.json"
         if not bakery_json_path.exists():
-            raise ValueError(f"Dataset '{dataset_path}' has no .bakery.json file")
+            raise ValueError(f"Dataset '{dataset_path}' has no .manifest.json file")
         
-        # Read the .bakery.json file
+        # Read the .manifest.json file
         try:
             with open(bakery_json_path, "r") as f:
                 bakery_data = json.load(f)
         except Exception as e:
-            raise IOError(f"Failed to read .bakery.json: {e}") from e
+            raise IOError(f"Failed to read .manifest.json: {e}") from e
         
         # Check if the required fields are present
         if "properties" not in bakery_data:
-            raise ValueError("Missing 'properties' in .bakery.json")
+            raise ValueError("Missing 'properties' in .manifest.json")
         
         properties = bakery_data["properties"]
         if "name" not in properties or "collection_name" not in properties:
-            raise ValueError("Missing required properties 'name' or 'collection_name' in .bakery.json")
+            raise ValueError("Missing required properties 'name' or 'collection_name' in .manifest.json")
         
         dataset_name = properties["name"]
         collection_name = properties["collection_name"]
@@ -1068,6 +1096,27 @@ class Client:
             if data_file_path and os.path.exists(data_file_path):
                 os.unlink(data_file_path)
                 
+            parents = bakery_data.get("parents", [])
+            if parents:
+                for parent in parents:
+                    source_entity_str = parent.get("generated_by")
+                    if source_entity_str:
+                        try:
+                            target_entity_str = f"dataset/{collection_name}/{dataset_name}"
+                            _LOGGER.info(
+                                f"Creating entity relationship: {source_entity_str} -> generated_by -> {target_entity_str}"
+                            )
+                            self.create_entity_relationship(
+                                target_entity_str=target_entity_str,
+                                activity_name="generated_by",
+                                source_entity_str=source_entity_str,
+                            )
+                        except Exception as e:
+                            _LOGGER.warning(
+                                f"Failed to create entity relationship for parent {source_entity_str}: {e}"
+                            )
+                            # Continue even if one relationship fails
+            
             return result
         except Exception as e:
             # Clean up the temporary data file if created

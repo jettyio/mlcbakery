@@ -23,8 +23,9 @@ from mlcbakery.schemas.dataset import (
     DatasetResponse,
     DatasetPreviewResponse,
     DatasetListResponse,
-    UpstreamEntityNode,
+    ProvenanceEntityNode,
 )
+from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
 from mlcbakery.search import get_typesense_client, TYPESENSE_COLLECTION_NAME
@@ -35,6 +36,11 @@ from mlcbakery.croissant_validation import (
     generate_validation_report,
     ValidationResult as CroissantValidationResult,  # Alias to avoid potential name conflicts
 )
+
+# Create a "created" activity for the dataset
+# from mlcbakery.schemas.activity import ActivityCreate
+# from mlcbakery.api.endpoints.activities import create_activity
+from mlcbakery.models import Agent
 
 router = APIRouter()
 
@@ -106,39 +112,63 @@ async def create_dataset(
     db.add(db_dataset)
     await db.commit()
     await db.flush([db_dataset])
-    new_dataset_id = db_dataset.id
+    # new_dataset_id = db_dataset.id
+    
 
-    stmt_refresh = (
-        select(Dataset)
-        .where(Dataset.id == new_dataset_id)
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-        )
-    )
-    result_refresh = await db.execute(stmt_refresh)
-    refreshed_dataset = result_refresh.scalars().unique().one_or_none()
+    
+    # # Fetch the collection for this dataset
+    # stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
+    # result_coll = await db.execute(stmt_coll)
+    # collection = result_coll.scalar_one_or_none()
+    
+    # # Find the default agent for this collection
+    # agent_name = f"{collection.name} Owner"
+    # stmt_agent = select(Agent).where(Agent.name == agent_name).where(Agent.collection_id == collection.id)
+    # result_agent = await db.execute(stmt_agent)
+    # default_agent = result_agent.scalar_one_or_none()
 
-    if not refreshed_dataset:
-        raise HTTPException(
-            status_code=500, detail="Failed to reload dataset after creation"
-        )
+    # TODO: Add activity creation back in
+    # activity_data = ActivityCreate(
+    #     name="created",
+    #     output_entity_id=new_dataset_id,
+    #     input_entity_ids=dataset.input_entity_ids,
+    #     agent_ids=[default_agent.id] if default_agent else []
+    # )
+    #
+    # await create_activity(activity=activity_data, db=db)
 
-    return refreshed_dataset
+    # stmt_refresh = (
+    #     select(Dataset)
+    #     .where(Dataset.id == new_dataset_id)
+    #     .options(
+    #         selectinload(Dataset.collection),
+    #         selectinload(Dataset.input_activities).options(
+    #             selectinload(Activity.input_entities).options(
+    #                 selectinload(Entity.collection)
+    #             ),
+    #             selectinload(Activity.output_entity).options(
+    #                 selectinload(Entity.collection)
+    #             ),
+    #             selectinload(Activity.agents),
+    #         ),
+    #         selectinload(Dataset.output_activities).options(
+    #             selectinload(Activity.input_entities).options(
+    #                 selectinload(Entity.collection)
+    #             ),
+    #             selectinload(Activity.agents),
+    #         ),
+    #     )
+    # )
+    # result_refresh = await db.execute(stmt_refresh)
+    # refreshed_dataset = result_refresh.scalars().unique().one_or_none()
+
+    # if not refreshed_dataset:
+    #     raise HTTPException(
+    #         status_code=500, detail="Failed to reload dataset after creation"
+    #     )
+
+    
+    return db_dataset
 
 
 @router.get("/datasets/", response_model=list[DatasetListResponse])
@@ -157,21 +187,7 @@ async def list_datasets(
         .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
+            
         )
         .offset(skip)
         .limit(limit)
@@ -191,6 +207,64 @@ async def list_datasets(
         if dataset.collection and dataset.name
     ]
 
+async def _refresh_dataset(dataset: Dataset) -> Dataset:
+    return (
+        select(Dataset)
+        .where(Dataset.id == dataset.id)
+        .options(
+            selectinload(Dataset.collection),
+            selectinload(Dataset.upstream_links).options(
+                selectinload(EntityRelationship.source_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+            selectinload(Dataset.downstream_links).options(
+                selectinload(EntityRelationship.target_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+        )
+    )
+async def _find_dataset_by_name(collection_name: str, dataset_name: str, db: AsyncSession) -> Dataset:
+    stmt = (
+        select(Dataset)
+        .join(Collection, Dataset.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(Dataset.name == dataset_name)
+        .where(Dataset.entity_type == "dataset")
+        .options(
+            selectinload(Dataset.collection),
+            selectinload(Dataset.upstream_links).options(
+                selectinload(EntityRelationship.source_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+            selectinload(Dataset.downstream_links).options(
+                selectinload(EntityRelationship.target_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+async def _find_entity_by_id(entity_id: int, db: AsyncSession) -> Entity:
+    stmt = select(Entity).where(Entity.id == entity_id).options(
+        selectinload(Entity.collection),
+        selectinload(Entity.upstream_links).options(
+            selectinload(EntityRelationship.source_entity).options(
+                selectinload(Entity.collection)
+            ),
+        ),
+        selectinload(Entity.downstream_links).options(
+            selectinload(EntityRelationship.target_entity).options(
+                selectinload(Entity.collection)
+            ),
+        ),
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
 
 @router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
 async def update_dataset(
@@ -218,29 +292,8 @@ async def update_dataset(
     db.add(db_dataset)
     await db.commit()
 
-    stmt_refresh = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-        )
-    )
-    result_refresh = await db.execute(stmt_refresh)
+    
+    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
@@ -297,29 +350,8 @@ async def update_dataset_metadata(
     db.add(db_dataset)
     await db.commit()
 
-    stmt_refresh = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-        )
-    )
-    result_refresh = await db.execute(stmt_refresh)
+   
+    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
@@ -361,29 +393,7 @@ async def update_dataset_preview(
     db.add(db_dataset)
     await db.commit()
 
-    stmt_refresh = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-        )
-    )
-    result_refresh = await db.execute(stmt_refresh)
+    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
 
     if not refreshed_dataset:
@@ -399,18 +409,7 @@ async def get_dataset_preview(
     collection_name: str, dataset_name: str, db: AsyncSession = Depends(get_async_db)
 ):
     """Get a dataset's preview (async)."""
-    stmt = (
-        select(Dataset)
-        .join(Collection, Dataset.collection_id == Collection.id)
-        .where(Collection.name == collection_name)
-        .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == "dataset")
-        .options(
-            selectinload(Dataset.collection),
-        )
-    )
-    result = await db.execute(stmt)
-    dataset = result.scalars().unique().one_or_none()
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
     preview_data = dataset.preview
     preview_type = dataset.preview_type
 
@@ -434,111 +433,63 @@ async def get_dataset_by_name(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Get a specific dataset by collection name and dataset name (async)."""
-    stmt = (
-        select(Dataset)
-        .join(Collection, Dataset.collection_id == Collection.id)
-        .where(Collection.name == collection_name)
-        .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == "dataset")
-        .options(
-            selectinload(Dataset.collection),
-            selectinload(Dataset.input_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.output_entity).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-            selectinload(Dataset.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                ),
-                selectinload(Activity.agents),
-            ),
-        )
-    )
-    result = await db.execute(stmt)
-    dataset = result.scalars().unique().one_or_none()
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return dataset
 
-
 async def build_upstream_tree_async(
-    entity_id: int, db: AsyncSession, visited: Set[int]
-) -> UpstreamEntityNode:
-    if entity_id in visited:
-        return None
-    visited.add(entity_id)
-
-    stmt = (
-        select(Entity)
-        .where(Entity.id == entity_id)
-        .options(
-            selectinload(Entity.collection),
-            selectinload(Entity.output_activities).options(
-                selectinload(Activity.input_entities).options(
-                    selectinload(Entity.collection)
-                )
-            ),
-        )
-    )
-    result = await db.execute(stmt)
-    entity = result.scalar_one_or_none()
-
-    if not entity:
+    entity: Entity | None, link: EntityRelationship | None, db: AsyncSession, visited: Set[int]
+) -> ProvenanceEntityNode | None:
+    """Build the upstream entity tree for a dataset (async)."""
+    if entity is None:
         return None
 
-    node = UpstreamEntityNode(
+    if entity.id in visited:
+        return None
+    
+    # refresh the entity to get the latest data
+    entity = await _find_entity_by_id(entity.id, db)
+
+    visited.add(entity.id)
+
+    current_node = ProvenanceEntityNode(
         id=entity.id,
         name=entity.name,
         collection_name=entity.collection.name if entity.collection else "N/A",
         entity_type=entity.entity_type,
-        children=[],
+        activity_name=link.activity_name if link else None,
     )
 
-    if entity.output_activities:
-        activity = entity.output_activities[0]
-        node.activity_id = activity.id
-        node.activity_name = activity.name
-
-        for input_entity in activity.input_entities:
-            child_node = await build_upstream_tree_async(input_entity.id, db, visited)
+    if entity.upstream_links:
+        for link in entity.upstream_links:
+            child_node = await build_upstream_tree_async(link.source_entity, link, db, visited)
             if child_node:
-                node.children.append(child_node)
+                current_node.upstream_entities.append(child_node)
 
-    return node
+    if entity.downstream_links:
+        for link in entity.downstream_links:
+            child_node = await build_upstream_tree_async(link.target_entity, link, db, visited)
+            if child_node:
+                current_node.downstream_entities.append(child_node)
+
+    return current_node
 
 
 @router.get(
     "/datasets/{collection_name}/{dataset_name}/upstream",
-    response_model=UpstreamEntityNode,
+    response_model=ProvenanceEntityNode,
 )
 async def get_dataset_upstream_tree(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-) -> UpstreamEntityNode:
+) -> ProvenanceEntityNode:
     """Get the upstream entity tree for a dataset (async)."""
-    stmt_start = (
-        select(Dataset.id)
-        .join(Collection, Dataset.collection_id == Collection.id)
-        .where(Collection.name == collection_name)
-        .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == "dataset")
-    )
-    result_start = await db.execute(stmt_start)
-    dataset_id = result_start.scalar_one_or_none()
-
-    if not dataset_id:
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
-    tree = await build_upstream_tree_async(dataset_id, db, set())
-    if not tree:
-        raise HTTPException(status_code=500, detail="Failed to build upstream tree")
-    return tree
+    return await build_upstream_tree_async(dataset, None, db, set())
 
 
 @router.post("/datasets/mlcroissant-validation", response_model=dict)

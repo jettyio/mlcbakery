@@ -10,24 +10,40 @@ from sqlalchemy import (
     LargeBinary,
 )
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from .database import Base
 
 
 # Association tables
-was_associated_with = Table(
-    "was_associated_with",
-    Base.metadata,
-    Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-    Column("agent_id", Integer, ForeignKey("agents.id"), primary_key=True),
-)
+# was_associated_with = Table(
+#     "was_associated_with",
+#     Base.metadata,
+#     Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
+#     Column("agent_id", Integer, ForeignKey("agents.id"), primary_key=True),
+# )
 
-activity_entities = Table(
-    "activity_entities",
-    Base.metadata,
-    Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-    Column("entity_id", Integer, ForeignKey("entities.id"), primary_key=True),
-)
+# activity_entities = Table(
+#     "activity_entities",
+#     Base.metadata,
+#     Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
+#     Column("entity_id", Integer, ForeignKey("entities.id"), primary_key=True),
+# )
+
+
+# NEW EntityRelationship class
+class EntityRelationship(Base):
+    __tablename__ = "entity_relationships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
+    target_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
+    activity_name = Column(String, nullable=False)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True, index=True)
+
+    # Relationships to the actual objects
+    source_entity = relationship("Entity", foreign_keys=[source_entity_id], back_populates="downstream_links")
+    target_entity = relationship("Entity", foreign_keys=[target_entity_id], back_populates="upstream_links")
+    agent = relationship("Agent", backref=backref("performed_links", lazy="dynamic"))
 
 
 class Entity(Base):
@@ -41,19 +57,36 @@ class Entity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     asset_origin = Column(String, nullable=True)
     collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
+    # input_entity_ids = None # This seems unused, can be removed if so
 
     # Relationships
     collection = relationship("Collection", back_populates="entities")
-    input_activities = relationship(
-        "Activity",
-        secondary=activity_entities,
-        back_populates="input_entities",
-    )
-    output_activities = relationship(
-        "Activity",
-        back_populates="output_entity",
-        foreign_keys="Activity.output_entity_id",
-    )
+    upstream_links = relationship("EntityRelationship", foreign_keys=[EntityRelationship.target_entity_id], back_populates="target_entity", lazy="selectin")
+    downstream_links = relationship("EntityRelationship", foreign_keys=[EntityRelationship.source_entity_id], back_populates="source_entity", lazy="selectin")
+
+    # upstream_links and downstream_links are now available via backrefs from EntityRelationship
+    # Example accessors (add these or similar to your Entity class for convenience)
+    def get_parent_entities_activities_agents(self):
+        parents = []
+        # Assuming upstream_links is dynamically loaded or use .all() if needed
+        for link in self.upstream_links: # These are EntityRelationship objects
+            parents.append({
+                "entity": link.source_entity,
+                "activity": link.activity,
+                "agent": link.agent
+            })
+        return parents
+
+    def get_child_entities_activities_agents(self):
+        children = []
+        # Assuming downstream_links is dynamically loaded or use .all() if needed
+        for link in self.downstream_links: # These are EntityRelationship objects
+            children.append({
+                "entity": link.target_entity,
+                "activity": link.activity,
+                "agent": link.agent
+            })
+        return children
 
     __mapper_args__ = {"polymorphic_on": entity_type, "polymorphic_identity": "entity"}
 
@@ -100,6 +133,7 @@ class Collection(Base):
         storage_info: JSON field containing storage credentials and location information.
         storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
         entities: Relationship to associated entities (datasets and models).
+        agents: Relationship to associated agents.
     """
 
     __tablename__ = "collections"
@@ -112,6 +146,7 @@ class Collection(Base):
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")
+    agents = relationship("Agent", back_populates="collection")
 
 
 class Activity(Base):
@@ -122,24 +157,6 @@ class Activity(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    output_entity_id = Column(Integer, ForeignKey("entities.id"), nullable=True)
-
-    # Relationships
-    input_entities = relationship(
-        "Entity",
-        secondary=activity_entities,
-        back_populates="input_activities",
-    )
-    output_entity = relationship(
-        "Entity",
-        back_populates="output_activities",
-        foreign_keys=[output_entity_id],
-    )
-    agents = relationship(
-        "Agent",
-        secondary=was_associated_with,
-        back_populates="activities",
-    )
 
 
 class Agent(Base):
@@ -151,10 +168,13 @@ class Agent(Base):
     name = Column(String, nullable=False)
     type = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    collection_id = Column(Integer, ForeignKey("collections.id"), nullable=True)
 
     # Relationships
-    activities = relationship(
-        "Activity",
-        secondary=was_associated_with,
-        back_populates="agents",
-    )
+    collection = relationship("Collection", back_populates="agents")
+    # activities = relationship( # REMOVE THIS
+    #     "Activity",
+    #     secondary=was_associated_with,
+    #     back_populates="agents",
+    # )
+    # performed_links is now available via backref from EntityRelationship

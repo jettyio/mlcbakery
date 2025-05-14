@@ -18,7 +18,18 @@ async def create_agent(
     _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
 ):
     """Create a new agent (async)."""
+    # Create the agent with all provided fields (including collection_id if present)
     db_agent = Agent(**agent.model_dump())
+    
+    # If collection_id is provided, validate it exists
+    if agent.collection_id is not None:
+        from mlcbakery.models import Collection
+        stmt = select(Collection).where(Collection.id == agent.collection_id)
+        result = await db.execute(stmt)
+        collection = result.scalar_one_or_none()
+        if not collection:
+            raise HTTPException(status_code=404, detail=f"Collection with id {agent.collection_id} not found")
+    
     db.add(db_agent)
     await db.commit()
     await db.refresh(db_agent)
@@ -63,6 +74,15 @@ async def update_agent(
 
     if not db_agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # If collection_id is being updated, validate it exists
+    if agent_update.collection_id is not None and agent_update.collection_id != db_agent.collection_id:
+        from mlcbakery.models import Collection
+        stmt = select(Collection).where(Collection.id == agent_update.collection_id)
+        result = await db.execute(stmt)
+        collection = result.scalar_one_or_none()
+        if not collection:
+            raise HTTPException(status_code=404, detail=f"Collection with id {agent_update.collection_id} not found")
 
     update_data = agent_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():

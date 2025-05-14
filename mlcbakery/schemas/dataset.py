@@ -5,7 +5,7 @@ from .entity import EntityBase
 from .activity import ActivityResponse
 
 # Create a forward reference for UpstreamEntityNode
-UpstreamEntityNodeRef = ForwardRef("UpstreamEntityNode")
+ProvenanceEntityNodeRef = ForwardRef("ProvenanceEntityNode")
 
 
 class DatasetBase(EntityBase):
@@ -21,23 +21,21 @@ class DatasetBase(EntityBase):
     asset_origin: Optional[str] = None
 
 
-class UpstreamEntityNode(BaseModel):
+class ProvenanceEntityNode(BaseModel):
     """Represents a node in the upstream entity tree."""
 
     id: int
     name: str
     collection_name: str
     entity_type: str
-    activity_id: Optional[int] = None
     activity_name: Optional[str] = None
-    children: List[UpstreamEntityNodeRef] = Field(default_factory=list)
-
+    upstream_entities: List[ProvenanceEntityNodeRef] = Field(default_factory=list)
+    downstream_entities: List[ProvenanceEntityNodeRef] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
 class DatasetCreate(DatasetBase):
     pass
-
 
 class DatasetUpdate(DatasetBase):
     name: Optional[str] = None
@@ -59,8 +57,6 @@ class DatasetListResponse(DatasetBase):
 class DatasetResponse(DatasetBase):
     id: int
     created_at: datetime
-    input_activities: List[ActivityResponse] = []
-    output_activities: List[ActivityResponse] = []
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -72,4 +68,4 @@ class DatasetPreviewResponse(DatasetResponse):
 
 
 # Update the forward reference
-UpstreamEntityNode.update_forward_refs()
+ProvenanceEntityNode.update_forward_refs()

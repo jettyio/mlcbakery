@@ -45,7 +45,7 @@ class TestBakeryClientLocal(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_prepare_dataset(self):
-        """Test creating a .bakery.json file for a dataset."""
+        """Test creating a .manifest.json file for a dataset."""
         params = {
             "properties": {
                 "type": "dataset",
@@ -68,8 +68,8 @@ class TestBakeryClientLocal(unittest.TestCase):
         
         result = self.client.prepare_dataset(self.source_dataset_path, params)
         
-        # Check that .bakery.json was created
-        bakery_file = os.path.join(self.source_dataset_path, ".bakery.json")
+        # Check that .manifest.json was created
+        bakery_file = os.path.join(self.source_dataset_path, ".manifest.json")
         self.assertTrue(os.path.exists(bakery_file))
         
         # Check that the content is correct
@@ -109,26 +109,24 @@ class TestBakeryClientLocal(unittest.TestCase):
                 "name": "duplicate_dataset"
             }
         }
-        attributed_to = "duplicator@example.com"
         
         result = self.client.duplicate_dataset(
             self.source_dataset_path, 
             dest_dataset_path, 
-            update_params, 
-            attributed_to
+            update_params
         )
         
         # Check that destination was created
         self.assertTrue(os.path.exists(dest_dataset_path))
         
-        # Check that .bakery.json exists in destination
-        dest_bakery_file = os.path.join(dest_dataset_path, ".bakery.json")
+        # Check that .manifest.json exists in destination
+        dest_bakery_file = os.path.join(dest_dataset_path, ".manifest.json")
         self.assertTrue(os.path.exists(dest_bakery_file))
         
         # Check that data file was copied
         self.assertTrue(os.path.exists(os.path.join(dest_dataset_path, "data", "data.csv")))
         
-        # Check the content of .bakery.json
+        # Check the content of .manifest.json
         with open(dest_bakery_file, "r") as f:
             content = json.load(f)
         
@@ -137,8 +135,7 @@ class TestBakeryClientLocal(unittest.TestCase):
         
         # Check that the parent record was added correctly
         self.assertEqual(len(content["parents"]), 1)
-        self.assertEqual(content["parents"][0]["generated_by"], "source_dataset")
-        self.assertEqual(content["parents"][0]["attributed_to"], attributed_to)
+        self.assertEqual(content["parents"][0]["generated_by"], "dataset/test_collection/source_dataset")
 
     @patch("mlcbakery.bakery_client.Client.push_dataset")
     def test_save_to_bakery_without_data_upload(self, mock_push_dataset):

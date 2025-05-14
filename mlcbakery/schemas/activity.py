@@ -1,8 +1,18 @@
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 from .entity import EntityResponse
 from .agent import AgentResponse
+
+
+# New Schema for EntityRelationship links
+class EntityRelationshipResponse(BaseModel):
+    id: int
+    source_entity_id: Optional[int] = None
+    target_entity_id: Optional[int] = None
+    activity_name: str
+    agent_id: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityBase(BaseModel):
@@ -10,31 +20,35 @@ class ActivityBase(BaseModel):
 
 
 class ActivityCreate(ActivityBase):
-    input_entity_ids: List[int]
-    output_entity_id: Optional[int] = None
-    agent_ids: Optional[List[int]] = None
+    # Removed: input_entity_ids, output_entity_id, agent_ids
+    # Relationships will be handled by creating EntityRelationship objects separately
+    # or through a more dedicated service layer logic if needed during creation.
+    pass # No other fields needed for basic activity creation based on new model
 
 
 class ActivityResponse(ActivityBase):
     id: int
     created_at: datetime
-    input_entities: List[EntityResponse]
-    output_entity: Optional[EntityResponse]
-    agents: List[AgentResponse]
+    
+    # Replaced old direct entity/agent lists with a list of relationships
+    involved_in_links: List[EntityRelationshipResponse] = []
+
+    # Removed input_entities, output_entity, agents
+    # Removed computed_fields: input_entity_ids, output_entity_id, agent_ids
 
     model_config = ConfigDict(
         from_attributes=True,
-        populate_by_name=True,
+        populate_by_name=True, # Keep if useful for your setup
     )
 
-    @computed_field
-    def input_entity_ids(self) -> List[int]:
-        return [entity.id for entity in self.input_entities]
-
-    @computed_field
-    def output_entity_id(self) -> Optional[int]:
-        return self.output_entity.id if self.output_entity else None
-
-    @computed_field
-    def agent_ids(self) -> Optional[List[int]]:
-        return [agent.id for agent in self.agents]
+# The old computed_fields are removed as their underlying direct relationships are gone.
+# If you need to expose aggregated IDs directly on ActivityResponse, 
+# you would iterate through involved_in_links in new computed_fields.
+# For example:
+#    @computed_field
+#    def source_entity_ids(self) -> List[int]:
+#        ids = set()
+#        for link in self.involved_in_links:
+#            if link.source_entity_id is not None:
+#                ids.add(link.source_entity_id)
+#        return list(ids)
