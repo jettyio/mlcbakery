@@ -7,50 +7,25 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
-    user: "${UID}:${GID}"
-    
+      - .:/app    
     environment:
-      - DATABASE_URL=${DATABASE_DEV_URL}
+      - DATABASE_URL=${DATABASE_URL}
       - PYTHONPATH=/app
       - ADMIN_AUTH_TOKEN=${ADMIN_AUTH_TOKEN}
     depends_on:
       - db
-    networks:
-      - caddy-network
 
-  mcp_server:
-    container_name: mcp_server
-    # use Dockerfile.mcp:
+  mcp:
+    container_name: mcp
     build:
       context: .
       dockerfile: Dockerfile.mcp
-
     volumes:
       - .:/app
-    user: "${UID}:${GID}"
     environment:
-      - MLCBAKERY_API_BASE_URL=http://bakery.jetty.io
-      - MLCBAKERY_HOST=https://bakery.jetty.io/api/v1
       - PYTHONPATH=/app
-    command: ["python", "mcp_server/main.py", "--host", "0.0.0.0", "--port", "8001"]
-    networks:
-      - caddy-network
+      - MLCBAKERY_API_BASE_URL=${MLCBAKERY_API_BASE_URL}
 
-  streamlit:
-    container_name: mlcbakery_streamlit
-    build: .
-    command: streamlit run mlcbakery/webclient/dataset_viewer.py --server.port 8000 --server.address 0.0.0.0
-    volumes:
-      - .:/app
-    user: "${UID}:${GID}"
-    environment:
-      - PYTHONPATH=/app
-      - MLCBAKERY_API_BASE_URL=http://api:8000
-    depends_on:
-      - api
-    networks:
-      - caddy-network
 
   db:
     image: postgres:16-alpine
@@ -63,8 +38,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    networks:
-      - caddy-network
 
   caddy:
     image: caddy:2.10.0-alpine
@@ -75,8 +48,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    networks:
-      - caddy-network
 
   search:
     image: typesense/typesense:0.25.2 # Use a specific version
@@ -90,15 +61,9 @@ services:
       - typesense_data:/data
     ports:
       - "8108:8108" # Default Typesense port
-    networks:
-      - caddy-network
 
 volumes:
   caddy_data:
   caddy_config:
   postgres_data:
   typesense_data: {} # Add volume definition
-
-networks:
-  caddy-network:
-    external: true

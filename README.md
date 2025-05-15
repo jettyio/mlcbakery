@@ -1,25 +1,44 @@
 # MLC Bakery
 
-A Python-based service for managing ML model provenance and lineage, built with FastAPI and SQLAlchemy.
+A Python-based service for managing ML model provenance and lineage, built with FastAPI and SQLAlchemy. Support for Croissant metadata validation.
 
 ## Features
 
 - Dataset management with collection support
 - Entity tracking
 - Activity logging
-- Agent management
 - Provenance relationships tracking
 - RESTful API endpoints
 
-## Development Setup
+## Running with Docker
+
+1.  **Set up Environment Variables:**
+    Create a `.env` file in the project root by copying the example:
+    ```bash
+    cp env.example .env
+    ```
+
+2. **Start docker containers:**
+    The bakery relies on a postgres database and Typesense for search. The MCP server makes REST calls to the API server, which then calls the persistence layer.
+    ```
+    docker compose up -d
+    ```
+
+3.  **Run Database Migrations:**
+    Apply the latest database schema using Alembic. `uv run` executes commands within the project's managed environment.
+    ```bash
+    docker compose exec db psql -U postgres -c "create DATABASE mlcbakery;"
+    docker compose exec api alembic upgrade head
+    ```
+
+## Running the Server (Locally)
 
 ### Prerequisites
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv) (Python package manager)
-- PostgreSQL (running locally or via Docker)
 
-### Local Development Setup
+### Development steps
 
 1.  **Clone the repository:**
     ```bash
@@ -30,30 +49,12 @@ A Python-based service for managing ML model provenance and lineage, built with 
 2.  **Install Dependencies:**
     `uv` uses `pyproject.toml` to manage dependencies. It will automatically create a virtual environment if one doesn't exist.
     ```bash
-    # Install main, dev, and webclient dependencies in editable mode
-    uv pip install -e .[dev,webclient]
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
-
-3.  **Set up Environment Variables:**
-    Create a `.env` file in the project root by copying the example:
-    ```bash
-    cp .env.example .env # Ensure .env.example exists and is up-to-date
     ```
-    Edit `.env` with your local PostgreSQL connection details. The key variable is `DATABASE_URL`. Example for a user 'devuser' with password 'devpass' connecting to database 'mlcbakery_dev':
-    ```env
-    # .env
-    DATABASE_URL=postgresql+asyncpg://devuser:devpass@localhost:5432/mlcbakery_dev
+    pip install poetry uvicorn
+    uv run poetry install --no-interaction --no-ansi --no-root --with mcp
     ```
-    *(Ensure your PostgreSQL server is running and the specified database exists and the user has permissions)*
-
-4.  **Run Database Migrations:**
-    Apply the latest database schema using Alembic. `uv run` executes commands within the project's managed environment.
-    ```bash
-    uv run alembic upgrade heads
-    ```
-
-### Running the Server (Locally)
-
 Start the FastAPI application using uvicorn:
 ```bash
 # Make sure your .env file is present for the DATABASE_URL
@@ -78,43 +79,14 @@ To run specific tests:
 uv run pytest tests/test_activities.py -v
 ```
 
-## Project Structure
-
-```
-mlcbakery/
-├── alembic/              # Database migrations (Alembic)
-├── .github/              # GitHub Actions workflows
-├── mlcbakery/           # Main application package
-│   ├── models/         # SQLAlchemy models
-│   ├── schemas/        # Pydantic schemas
-│   ├── api/            # API routes (FastAPI)
-│   └── main.py         # FastAPI application entrypoint
-├── tests/              # Test suite (pytest)
-├── .env.example        # Example environment variables
-├── alembic.ini         # Alembic configuration
-├── pyproject.toml      # Project metadata and dependencies (uv/Poetry)
-└── README.md           # This file
-```
-
-## Database Schema
-
-Managed by Alembic migrations in the `alembic/versions` directory. The main tables include:
-- `collections`
-- `entities` (polymorphic base for datasets, models, etc.)
-- `datasets`
-- `trained_models`
-- `activities`
-- `agents`
-- `activity_relationships` (tracks provenance)
-
 ## Resetting the database (Local Development)
 
 If using a local PostgreSQL instance, you can drop and recreate the database:
 ```bash
-# Example commands using psql
-# Connect as a superuser or the database owner
-dropdb mlcbakery_dev
-createdb mlcbakery_dev
+docker compose exec db psql -U postgres -c "drop DATABASE mlcbakery;"
+docker compose exec db psql -U postgres -c "create DATABASE mlcbakery;"
+```
+
 
 # Re-run migrations
 uv run alembic upgrade heads
@@ -139,12 +111,7 @@ MIT
 This project includes a `docker-compose.yml` file for easier deployment of the API, database, Streamlit viewer, and Caddy reverse proxy.
 
 ### Prerequisites
-
 - Docker and Docker Compose installed.
-- A Docker network named `caddy-network` created:
-  ```bash
-  docker network create caddy-network
-  ```
 
 ### Steps
 
@@ -192,16 +159,10 @@ docker-compose down -v
 
 -   **`ADMIN_AUTH_TOKEN`:** This token is required for any mutable API operations (POST, PUT, PATCH, DELETE). Include it in requests as a Bearer token in the `Authorization` header (e.g., `Authorization: Bearer your_secure_admin_token_here`).
 -   **`DATABASE_URL`:** Ensure the `api` and `streamlit` services can reach the database specified by `DATABASE_URL`. The default in `docker-compose.yml` assumes the `db` service within the same Docker network.
--   **`Caddyfile`:** Customize the `Caddyfile` for your specific domains and HTTPS setup. The provided file includes examples for local `.localhost` domains and placeholders like `bakery.jetty.io`. Remember to restart Caddy after changes.
--   **`caddy-network`:** The services rely on the external Docker network `caddy-network` for inter-service communication and Caddy proxying. Ensure this network exists.
 
 ### Some useful commands
 
 Add / drop the database:
-```
-docker compose exec db psql -U postgres -c "drop DATABASE mlcbakery;"
-docker compose exec db psql -U postgres -c "create DATABASE mlcbakery;"
-```
 
 Once the api server is running, migrate the schema:
 ```

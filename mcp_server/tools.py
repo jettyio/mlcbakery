@@ -7,7 +7,7 @@ from mlcbakery import croissant_validation
 
 _BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL")
 _AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
-_BAKERY_HOST = os.getenv("MLCBAKERY_HOST")
+_BAKERY_HOST = os.getenv("MLCBAKERY_API_BASE_URL") + "/api/v1"
 
 _templates = {}
 
