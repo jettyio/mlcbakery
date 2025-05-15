@@ -30,6 +30,11 @@ A Python-based service for managing ML model provenance and lineage, built with 
     docker compose exec db psql -U postgres -c "create DATABASE mlcbakery;"
     docker compose exec api alembic upgrade head
     ```
+## Access the bakery
+By default, the API will be available on localhost.
+-   Swagger UI: `http://bakery.localhost/docs`
+-   ReDoc: `http://bakery.localhost/redoc`
+-   MCP: `http://mcp.localhost/sse` (you may need to add this to your `/etc/hosts` for local development)
 
 ## Running the Server (Locally)
 
@@ -60,10 +65,6 @@ Start the FastAPI application using uvicorn:
 # Make sure your .env file is present for the DATABASE_URL
 uv run uvicorn mlcbakery.main:app --reload --host 0.0.0.0 --port 8000
 ```
-The API will be available at `http://localhost:8000` (or your machine's IP address).
-
--   Swagger UI: `http://localhost:8000/docs`
--   ReDoc: `http://localhost:8000/redoc`
 
 ### Running Tests
 

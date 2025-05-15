@@ -1,7 +1,7 @@
 # Caddyfile.example - Modify for your actual domain names and setup
 # Replace with your actual domain or subdomain
 http://bakery.localhost {
-    reverse_proxy api:8000
+    reverse_proxy api:8080
 }
 
 http://mcp.localhost {
