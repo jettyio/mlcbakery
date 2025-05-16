@@ -24,6 +24,7 @@ dependencies = [
     "sqlalchemy>=2.0.40",
     "starlette>=0.46.2",
     "typesense>=1.0.3",
+    "uvicorn>=0.34.2",
 ]
 
 [tool.pytest.ini_options]
