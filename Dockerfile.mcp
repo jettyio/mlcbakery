@@ -29,7 +29,7 @@ RUN pip install -e .
 # Set Python path
 ENV PYTHONPATH=/app
 
-ENV PORT 8080
+ENV PORT=8080
 
 # Command to run the mcp_server application
 # Uses sh -c to allow PORT environment variable expansion
