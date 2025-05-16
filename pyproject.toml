@@ -12,6 +12,7 @@ dependencies = [
     "func-timeout>=4.3.5",
     "google>=3.0.0",
     "google-cloud-storage>=3.1.0",
+    "greenlet>=3.2.1",
     "httpx>=0.28.1",
     "mlcroissant>=1.0.17",
     "pandas>=2.2.3",
@@ -24,6 +25,7 @@ dependencies = [
     "sqlalchemy>=2.0.40",
     "starlette>=0.46.2",
     "typesense>=1.0.3",
+    "uvicorn>=0.34.2",
 ]
 
 [tool.pytest.ini_options]
