@@ -59,7 +59,7 @@ pydantic = "^2.6.1"
 python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
 python-multipart = "^0.0.20"
-mcp = {extras = ["cli"], version = "^1.6.0"}
+fastmcp = {version = "^2.3.4"}
 google-cloud-storage = "^3.1.0"
 
 [tool.poetry.group.dev.dependencies]
@@ -71,7 +71,7 @@ httpx = "^0.28.0"
 mypy = "^1.8.0"
 
 [tool.poetry.group.mcp.dependencies]
-mcp = "^1.6.0"
+fastmcp = "^2.3.4"
 
 [tool.poetry.group.webclient.dependencies]
 streamlit = "^1.32.0"

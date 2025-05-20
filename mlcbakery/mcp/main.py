@@ -3,7 +3,7 @@ import argparse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts import base
 
-import tools
+from mlcbakery.mcp import tools
 
 
 from mcp.server.session import ServerSession
@@ -63,4 +63,5 @@ if __name__ == "__main__":
 
     mcp.settings.port = args.port
     mcp.settings.host = args.host
-    mcp.run(transport="sse")
+    # mcp.run(transport="sse")
+    mcp.run(transport="streamable-http")

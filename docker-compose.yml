@@ -22,11 +22,10 @@ services:
       dockerfile: Dockerfile.mcp
     volumes:
       - .:/app
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app
-      - MLCBAKERY_API_BASE_URL=${MLCBAKERY_API_BASE_URL}
-
-
   db:
     image: postgres:16-alpine
     container_name: mlcbakery_db
