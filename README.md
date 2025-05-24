@@ -40,7 +40,7 @@ By default, the API will be available on localhost.
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.12+
 - [uv](https://github.com/astral-sh/uv) (Python package manager)
 
 ### Development steps
