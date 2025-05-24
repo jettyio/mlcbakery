@@ -61,6 +61,10 @@ alembic = "^1.15.1"
 python-multipart = "^0.0.20"
 fastmcp = {version = "^2.3.4"}
 google-cloud-storage = "^3.1.0"
+opentelemetry-api = "^1.25.0"
+opentelemetry-sdk = "^1.25.0"
+opentelemetry-exporter-gcp-monitoring = "^1.25.0"
+opentelemetry-instrumentation-fastapi = "^0.46b0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
