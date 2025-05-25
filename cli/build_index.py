@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import typesense  # Keep for exception types
 
-from mlcbakery.models import Dataset
+from mlcbakery.models import Dataset, Entity, EntityRelationship
 import argparse
 
 from dotenv import load_dotenv
@@ -69,12 +69,19 @@ async def get_all_datasets(db: AsyncSession):
     """Fetches all datasets with their collections from the database."""
     stmt = (
         select(Dataset)
-        # Eager load the collection relationship to avoid separate queries per dataset
-        .options(selectinload(Dataset.collection))
-        # Eager load activities if you plan to index related info (e.g., agent names)
-        # .options(selectinload(Dataset.input_activities).selectinload(Activity.agents))
-        # .options(selectinload(Dataset.output_activities).selectinload(Activity.agents))
-        .where(Dataset.entity_type == "dataset")  # Ensure we only get Datasets
+        .options(
+            selectinload(Dataset.collection),
+            selectinload(Dataset.upstream_links).options(
+                selectinload(EntityRelationship.source_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+            selectinload(Dataset.downstream_links).options(
+                selectinload(EntityRelationship.target_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+        )
     )
     result = await db.execute(stmt)
     # Use unique() because eager loading might cause duplicate parent rows
