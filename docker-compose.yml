@@ -9,9 +9,14 @@ services:
     volumes:
       - .:/app    
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/mlcbakery
       - PYTHONPATH=/app
       - ADMIN_AUTH_TOKEN=${ADMIN_AUTH_TOKEN}
+      - TYPESENSE_HOST=search
+      - TYPESENSE_PORT=8108
+      - TYPESENSE_PROTOCOL=http
+      - TYPESENSE_API_KEY=thisisatestkey
+      - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
     depends_on:
       - db
 
@@ -55,6 +60,7 @@ services:
       - TYPESENSE_DATA_DIR=/data
       # Use a strong, randomly generated API key in production
       - TYPESENSE_API_KEY=thisisatestkey
+      - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
       - TYPESENSE_ENABLE_CORS=true # Allow CORS for easier development
     volumes:
       - typesense_data:/data

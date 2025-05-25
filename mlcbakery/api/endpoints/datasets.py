@@ -36,11 +36,24 @@ from mlcbakery.croissant_validation import (
     generate_validation_report,
     ValidationResult as CroissantValidationResult,  # Alias to avoid potential name conflicts
 )
+from opentelemetry import trace # Import for span manipulation
+from opentelemetry.metrics import get_meter
 
 # Create a "created" activity for the dataset
 # from mlcbakery.schemas.activity import ActivityCreate
 # from mlcbakery.api.endpoints.activities import create_activity
 from mlcbakery.models import Agent
+
+# Initialize a meter
+meter = get_meter("mlcbakery.meter")
+
+# Define a counter for search queries
+search_queries_counter = meter.create_counter(
+    name="mlcbakery.search.queries_total",
+    description="Counts the total number of search queries processed.",
+    unit="1"
+)
+
 
 router = APIRouter()
 
@@ -54,6 +67,14 @@ async def search_datasets(
     ts: typesense.Client = Depends(get_typesense_client),
 ):
     """Search datasets using Typesense based on query term."""
+    # Get the current span
+    current_span = trace.get_current_span()
+    # Add the search query as an attribute to the span
+    current_span.set_attribute("search.query", q)
+
+    # Increment the search queries counter
+    search_queries_counter.add(1)
+
     search_parameters = {
         "q": q,
         "query_by": "long_description, metadata, collection_name, dataset_name, full_name",
