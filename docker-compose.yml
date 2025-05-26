@@ -17,8 +17,8 @@ services:
       - TYPESENSE_PROTOCOL=http
       - TYPESENSE_API_KEY=thisisatestkey
       - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
-      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
-      - OTLP_SECURE=false
+      - OTLP_HTTP_ENDPOINT=http://otel-collector:4318
+      - IS_GCP_METRICS=false
     depends_on:
       db:
         condition: service_started

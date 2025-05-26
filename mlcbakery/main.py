@@ -4,13 +4,19 @@ from fastapi import FastAPI
 from opentelemetry import trace # type: ignore
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor # type: ignore
 from opentelemetry.sdk.metrics import MeterProvider # type: ignore
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader # type: ignore
 from opentelemetry.sdk.resources import Resource # type: ignore
 from opentelemetry import metrics
 import logging
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+# Use HTTP exporters instead of gRPC for Cloud Run compatibility
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
+# GCP direct exporters
+from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter # type: ignore
+from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter # type: ignore
 
 from mlcbakery.metrics import init_metrics
 
@@ -32,37 +38,59 @@ resource = Resource(attributes={
     "service.name": "mlcbakery",
 })
 
-OTLP_ENDPOINT = os.getenv("OTEL_COLLECTOR_ENDPOINT", "localhost:4317")
+# Check if we should use GCP direct exporters
+USE_GCP_METRICS = os.getenv("IS_GCP_METRICS", "false").lower() == "true"
 
-otlp_trace_exporter = None
-otlp_metric_exporter = None
+trace_exporter = None
+metric_exporter = None
 
-if os.getenv("OTLP_SECURE", "false").lower() == "true":
-    _LOGGER.info(f"OTLP_SECURE is set. Configuring OTLP exporters for secure: {OTLP_ENDPOINT}")
-    otlp_trace_exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=False)
-    otlp_metric_exporter = OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=False)
+if USE_GCP_METRICS:
+    _LOGGER.info("Using direct GCP exporters for metrics and traces")
+    # Use direct GCP exporters
+    trace_exporter = CloudTraceSpanExporter()
+    metric_exporter = CloudMonitoringMetricsExporter()
 else:
-    _LOGGER.info(f"OTLP_SECURE not set. Configuring OTLP exporters for insecure: {OTLP_ENDPOINT}")
-    otlp_trace_exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=True) # Local collector might not use TLS
-    otlp_metric_exporter = OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True) # Local collector might not use TLS
+    _LOGGER.info("Using OTLP exporters for metrics and traces")
+    # Use OTLP exporters to collector
+    OTLP_HTTP_ENDPOINT = os.getenv("OTLP_HTTP_ENDPOINT", "http://localhost:4318")
+    
+    # Cloud Run services communicate over HTTPS, so we use HTTP exporters
+    _LOGGER.info(f"Configuring OTLP HTTP exporters for: {OTLP_HTTP_ENDPOINT}")
+    trace_exporter = OTLPSpanExporter(
+        endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/traces",
+        headers={}  # Add any required headers here
+    )
+    metric_exporter = OTLPMetricExporter(
+        endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/metrics",
+        headers={}  # Add any required headers here
+    )
 
+# Configure metric readers
+metric_readers = []
+if metric_exporter:
+    metric_reader = PeriodicExportingMetricReader(
+        exporter=metric_exporter,
+        export_interval_millis=5000,
+    )
+    metric_readers.append(metric_reader)
+    _LOGGER.info("Metric Exporter configured.")
+
+# Configure tracer
 tracer_provider = TracerProvider(resource=resource)
-if otlp_trace_exporter:
-    span_processor = BatchSpanProcessor(otlp_trace_exporter)
+if trace_exporter:
+    span_processor = BatchSpanProcessor(trace_exporter)
     tracer_provider.add_span_processor(span_processor)
-    _LOGGER.info("OTLP Trace Exporter configured.")
+    _LOGGER.info("Trace Exporter configured.")
 else:
-    _LOGGER.warning("OTLP Trace Exporter not configured. Traces will not be exported via OTLP.")
+    _LOGGER.warning("Trace Exporter not configured.")
 
-meter_provider = MeterProvider(resource=resource)
+# Configure meter provider with readers
+meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
 metrics.set_meter_provider(meter_provider)
 
 init_metrics()
 
-
 FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_provider=meter_provider)
-
-
 
 @app.get("/api/v1/health")
 async def health_check():
