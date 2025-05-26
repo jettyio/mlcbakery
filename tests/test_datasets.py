@@ -3,6 +3,7 @@
 import pytest
 import base64
 import httpx
+import uuid
 
 from mlcbakery.main import app  # Keep app import if needed for client
 
@@ -563,5 +564,58 @@ async def test_get_missing_preview():
 
         response = await ac.get(f"/api/v1/datasets/{dataset_id}/preview")
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_dataset_duplicate_name_case_insensitive():
+    """
+    Test that creating a dataset with a name differing only by case within the same collection
+    FAILS if the check is case-insensitive.
+    NOTE: This test is expected to FAIL with the current endpoint implementation.
+    """
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # 1. Create a unique collection for this test
+        collection_name = f"TestCiDsColl-{uuid.uuid4().hex[:8]}"
+        collection_data = {"name": collection_name, "description": "Collection for CI dataset name test"}
+        coll_resp = await ac.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
+        assert coll_resp.status_code == 200, f"Failed to create prerequisite collection: {coll_resp.text}"
+        collection_id = coll_resp.json()["id"]
+
+        # 2. Create the first dataset with a mixed-case name
+        base_name = f"TestCiDs-{uuid.uuid4().hex[:8]}"
+        dataset_name_mixed_case = base_name
+        dataset_data_mixed = {
+            "name": dataset_name_mixed_case,
+            "data_path": "/path/to/ci_ds_mixed",
+            "format": "json",
+            "collection_id": collection_id,
+            "entity_type": "dataset",
+        }
+        response_mixed = await ac.post("/api/v1/datasets/", json=dataset_data_mixed, headers=AUTH_HEADERS)
+        assert response_mixed.status_code == 200, f"Failed to create initial mixed-case dataset: {response_mixed.text}"
+
+        # 3. Attempt to create another dataset in the same collection with the same name but all lowercase
+        dataset_name_lower_case = base_name.lower()
+        assert dataset_name_mixed_case != dataset_name_lower_case # Ensure names differ only by case
+        
+        dataset_data_lower = {
+            "name": dataset_name_lower_case,
+            "data_path": "/path/to/ci_ds_lower",
+            "format": "json",
+            "collection_id": collection_id,
+            "entity_type": "dataset",
+        }
+        response_lower = await ac.post("/api/v1/datasets/", json=dataset_data_lower, headers=AUTH_HEADERS)
+
+        # This assertion is what is desired. It will likely fail with current code.
+        assert response_lower.status_code == 400, \
+            f"Expected 400 (duplicate) but got {response_lower.status_code}. \
+            Current dataset name check is likely case-sensitive. Response: {response_lower.text}"
+        
+        response_detail = response_lower.json().get("detail", "").lower()
+        assert "already exists" in response_detail, \
+            f"Expected 'dataset already exists' in detail, but got: {response_detail}. \
+            Current dataset name check is likely case-sensitive."
 
 

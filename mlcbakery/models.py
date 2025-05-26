@@ -114,9 +114,10 @@ class TrainedModel(Entity):
 
     id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
     model_path = Column(String, nullable=False)
-    framework = Column(String, nullable=False)
     metadata_version = Column(String, nullable=True)
     model_metadata = Column(JSON, nullable=True)
+    long_description = Column(Text, nullable=True)
+    model_attributes = Column(JSON, nullable=True)
 
     __mapper_args__ = {"polymorphic_identity": "trained_model"}
 
