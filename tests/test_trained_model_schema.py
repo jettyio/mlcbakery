@@ -8,7 +8,7 @@ def test_trained_model_create_valid():
         "name": "My Test Model",
         "model_path": "/path/to/model.pt",
         "entity_type": "trained_model", # This is fixed in the schema, but good to include for completeness
-        "collection_id": 1,
+        "collection_name": "test-collection",
         "metadata_version": "1.0.0",
         "model_metadata": {"accuracy": 0.95, "layers": 5},
         "asset_origin": "s3://my-bucket/models/model.pt",
@@ -22,7 +22,7 @@ def test_trained_model_create_valid():
     assert model.long_description == data["long_description"]
     assert model.model_attributes == data["model_attributes"]
     assert model.model_metadata == data["model_metadata"]
-    assert model.collection_id == data["collection_id"]
+    assert model.collection_name == data["collection_name"]
 
 def test_trained_model_create_missing_required_fields():
     """Test TrainedModelCreate with missing required fields (name, model_path)."""
@@ -39,16 +39,17 @@ def test_trained_model_create_optional_fields_none():
     data = {
         "name": "Minimal Model",
         "model_path": "/path/to/minimal.h5",
+        "collection_name": "test-collection",
         "asset_origin": None,
         "long_description": None,
         "model_attributes": None,
         "model_metadata": None,
-        "collection_id": None,
         "metadata_version": None,
     }
     model = TrainedModelCreate(**data)
     assert model.name == data["name"]
     assert model.model_path == data["model_path"]
+    assert model.collection_name == data["collection_name"]
     assert model.asset_origin is None
     assert model.long_description is None
     assert model.model_attributes is None
@@ -56,7 +57,7 @@ def test_trained_model_create_optional_fields_none():
 
 def test_trained_model_create_default_entity_type():
     """Test that entity_type has the correct default."""
-    model = TrainedModelCreate(name="Test", model_path="/path")
+    model = TrainedModelCreate(name="Test", model_path="/path", collection_name="test-collection")
     assert model.entity_type == "trained_model"
 
 def test_trained_model_update_all_fields():

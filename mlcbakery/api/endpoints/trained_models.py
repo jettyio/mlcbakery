@@ -64,7 +64,7 @@ async def create_trained_model(
     if result_check.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Trained model with name '{trained_model_in.name}' already exists in collection '{collection.name}' (ID: {collection.id})"
+            detail=f"Trained model with name '{trained_model_in.name}' already exists in collection '{collection.name}'"
         )
     
     # Prepare model data for creation, explicitly setting collection_id
