@@ -2,15 +2,18 @@ import os
 from fastapi import FastAPI
 
 from opentelemetry import trace # type: ignore
-from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter # type: ignore
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor # type: ignore
 from opentelemetry.sdk.metrics import MeterProvider # type: ignore
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter # type: ignore
 from opentelemetry.sdk.resources import Resource # type: ignore
+from opentelemetry import metrics
 import logging
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.metrics import get_meter_provider, get_meter
-# from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+from mlcbakery.metrics import init_metrics
+
 _LOGGER = logging.getLogger(__name__)
 from mlcbakery.api.endpoints import (
     datasets,
@@ -21,48 +24,42 @@ from mlcbakery.api.endpoints import (
     entity_relationships,
 )
 
-
-# Re-enable OpenAPI docs after fixing schema issues
+# Define app early
 app = FastAPI(title="MLCBakery")
 
 # Configure OpenTelemetry
-# Set up a resource for your application
 resource = Resource(attributes={
-    "service.name": "mlcbakery", # Adjust if you like
+    "service.name": "mlcbakery",
 })
 
-# Metrics setup
-# This section configures OpenTelemetry metrics.
-# Metrics are exported to Google Cloud Monitoring if GOOGLE_CLOUD_PROJECT is set.
-# Otherwise, you can uncomment the ConsoleMetricExporter to view them locally.
-metric_readers = []
+OTLP_ENDPOINT = os.getenv("OTEL_COLLECTOR_ENDPOINT", "localhost:4317")
 
-if os.getenv("GOOGLE_CLOUD_PROJECT"):
-    _LOGGER.info("GOOGLE_CLOUD_PROJECT is set. Initializing Google Cloud Monitoring exporter for metrics.") # Consider using logging
-    cloud_monitoring_exporter = CloudMonitoringMetricsExporter() # type: ignore
-    gcp_reader = PeriodicExportingMetricReader(
-        exporter=cloud_monitoring_exporter,
-        export_interval_millis=5000, # Adjust export interval as needed
-    )
-    metric_readers.append(gcp_reader)
+otlp_trace_exporter = None
+otlp_metric_exporter = None
+
+if os.getenv("OTLP_SECURE", "false").lower() == "true":
+    _LOGGER.info(f"OTLP_SECURE is set. Configuring OTLP exporters for secure: {OTLP_ENDPOINT}")
+    otlp_trace_exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=False)
+    otlp_metric_exporter = OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=False)
 else:
-    _LOGGER.info("GOOGLE_CLOUD_PROJECT not set. Metrics will be collected. To view them locally, uncomment ConsoleMetricExporter setup below.") # Consider using logging
-    from opentelemetry.sdk.metrics.export import ConsoleMetricExporter
-    console_exporter = ConsoleMetricExporter()
-    console_reader = PeriodicExportingMetricReader(
-        exporter=console_exporter,
-        export_interval_millis=5000, # Adjust export interval as needed
-    )
-    metric_readers.append(console_reader)
-    _LOGGER.info("ConsoleMetricExporter has been enabled for local metrics viewing.")
+    _LOGGER.info(f"OTLP_SECURE not set. Configuring OTLP exporters for insecure: {OTLP_ENDPOINT}")
+    otlp_trace_exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, insecure=True) # Local collector might not use TLS
+    otlp_metric_exporter = OTLPMetricExporter(endpoint=OTLP_ENDPOINT, insecure=True) # Local collector might not use TLS
 
-# Always initialize MeterProvider.
-# FastAPIInstrumentor will use this meter_provider.
-# If metric_readers is empty, metrics are collected by FastAPIInstrumentor but not exported by these readers.
-meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
 tracer_provider = TracerProvider(resource=resource)
-# FastAPIInstrumentor.instrument_app(app, meter_provider=meter_provider) # type: ignore
-# If you also set up tracing:
+if otlp_trace_exporter:
+    span_processor = BatchSpanProcessor(otlp_trace_exporter)
+    tracer_provider.add_span_processor(span_processor)
+    _LOGGER.info("OTLP Trace Exporter configured.")
+else:
+    _LOGGER.warning("OTLP Trace Exporter not configured. Traces will not be exported via OTLP.")
+
+meter_provider = MeterProvider(resource=resource)
+metrics.set_meter_provider(meter_provider)
+
+init_metrics()
+
+
 FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_provider=meter_provider)
 
 
@@ -70,7 +67,6 @@ FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_p
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "healthy"}
-
 
 app.include_router(collections.router, prefix="/api/v1", tags=["Collections"])
 app.include_router(datasets.router, prefix="/api/v1", tags=["Datasets"])

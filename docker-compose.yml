@@ -17,8 +17,15 @@ services:
       - TYPESENSE_PROTOCOL=http
       - TYPESENSE_API_KEY=thisisatestkey
       - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
+      - OTLP_SECURE=false
     depends_on:
-      - db
+      db:
+        condition: service_started
+      search:
+        condition: service_started
+      otel-collector:
+        condition: service_started
 
   mcp:
     container_name: mcp
@@ -66,6 +73,21 @@ services:
       - typesense_data:/data
     ports:
       - "8108:8108" # Default Typesense port
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: mlcbakery_otel_collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    depends_on:
+      db:
+        condition: service_started
+    networks:
+      - default
 
 volumes:
   caddy_data:

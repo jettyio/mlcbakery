@@ -16,7 +16,7 @@ import os
 import typesense
 import tempfile
 
-from mlcbakery.models import Dataset, Collection, Activity, Entity
+from mlcbakery.models import Dataset, Collection, Entity
 from mlcbakery.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
@@ -37,26 +37,11 @@ from mlcbakery.croissant_validation import (
     ValidationResult as CroissantValidationResult,  # Alias to avoid potential name conflicts
 )
 from opentelemetry import trace # Import for span manipulation
-from opentelemetry.metrics import get_meter
+from mlcbakery.metrics import get_metric, NAME_SEARCH_QUERIES_TOTAL
 
-# Create a "created" activity for the dataset
-# from mlcbakery.schemas.activity import ActivityCreate
-# from mlcbakery.api.endpoints.activities import create_activity
-from mlcbakery.models import Agent
-
-# Initialize a meter
-meter = get_meter("mlcbakery.meter")
-
-# Define a counter for search queries
-search_queries_counter = meter.create_counter(
-    name="mlcbakery.search.queries_total",
-    description="Counts the total number of search queries processed.",
-    unit="1"
-)
 
 
 router = APIRouter()
-
 
 @router.get("/datasets/search")
 async def search_datasets(
@@ -73,7 +58,7 @@ async def search_datasets(
     current_span.set_attribute("search.query", q)
 
     # Increment the search queries counter
-    search_queries_counter.add(1)
+    get_metric(NAME_SEARCH_QUERIES_TOTAL).add(1)
 
     search_parameters = {
         "q": q,
@@ -134,14 +119,10 @@ async def create_dataset(
     await db.commit()
     await db.flush([db_dataset])
     # new_dataset_id = db_dataset.id
-    
-
-    
     # # Fetch the collection for this dataset
     # stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
     # result_coll = await db.execute(stmt_coll)
     # collection = result_coll.scalar_one_or_none()
-    
     # # Find the default agent for this collection
     # agent_name = f"{collection.name} Owner"
     # stmt_agent = select(Agent).where(Agent.name == agent_name).where(Agent.collection_id == collection.id)
