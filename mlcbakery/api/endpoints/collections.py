@@ -2,6 +2,7 @@ import fastapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload  # For eager loading entities
+from sqlalchemy import func # Added for func.lower
 from typing import List
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -30,8 +31,8 @@ async def create_collection(
     Create a new collection (async).
     """
 
-    # check if the collection already exists
-    stmt_coll = select(Collection).where(Collection.name == collection.name)
+    # check if the collection already exists (case-insensitive)
+    stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection.name))
     result_coll = await db.execute(stmt_coll)
     existing_collection = result_coll.scalar_one_or_none()
     if existing_collection:

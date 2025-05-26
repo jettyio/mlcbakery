@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func # Added for func.lower
 from typing import Set
 import os
 import typesense
@@ -105,9 +106,10 @@ async def create_dataset(
     else:
         raise HTTPException(status_code=400, detail="Collection ID is required")
 
+    # Check for duplicate dataset name (case-insensitive) within the same collection
     stmt_check = (
         select(Dataset)
-        .where(Dataset.name == dataset.name)
+        .where(func.lower(Dataset.name) == func.lower(dataset.name))
         .where(Dataset.collection_id == dataset.collection_id)
     )
     result_check = await db.execute(stmt_check)
