@@ -37,7 +37,6 @@ class TrainedModelUpdate(TrainedModelBase):
     """Schema for updating a trained model."""
     name: Optional[str] = None
     model_path: Optional[str] = None
-    collection_id: Optional[int] = None
     metadata_version: Optional[str] = None
     model_metadata: Optional[dict] = None
     asset_origin: Optional[str] = None

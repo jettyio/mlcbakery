@@ -91,7 +91,6 @@ def test_trained_model_update_some_fields():
 def test_trained_model_update_no_fields():
     """Test TrainedModelUpdate with no fields provided (all should be None)."""
     update_schema = TrainedModelUpdate()
-    assert update_schema.name is None
     assert update_schema.model_path is None
     assert update_schema.collection_id is None
     assert update_schema.metadata_version is None

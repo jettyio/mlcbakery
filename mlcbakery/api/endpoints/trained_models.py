@@ -78,3 +78,96 @@ async def create_trained_model(
 
     return db_trained_model
 
+
+@router.put(
+    "/models/{model_id}",
+    response_model=TrainedModelResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update a Trained Model",
+    tags=["Trained Models"],
+)
+async def update_trained_model(
+    model_id: int,
+    trained_model_in: TrainedModelUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+):
+    """
+    Update an existing trained model in the database.
+
+    Requires admin privileges.
+
+    - **model_id**: ID of the model to update.
+    - **model_path**: Path to the model artifact.
+    - **metadata_version**: Optional version string for the metadata.
+    - **model_metadata**: Optional dictionary for arbitrary model metadata.
+    - **asset_origin**: Optional string indicating the origin of the model asset (e.g., S3 URI).
+    - **long_description**: Optional detailed description of the model.
+    - **model_attributes**: Optional dictionary for specific model attributes.
+
+    The model name and collection cannot be changed.
+    """
+    stmt = select(TrainedModel).where(TrainedModel.id == model_id)
+    result = await db.execute(stmt)
+    db_trained_model = result.scalar_one_or_none()
+
+    if "name" in trained_model_in.model_dump(exclude_unset=True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Updating the model name is not allowed.",
+        )
+
+    if "collection_id" in trained_model_in.model_dump(exclude_unset=True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Updating the model collection is not allowed.",
+        )
+
+    if not db_trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trained model with id {model_id} not found",
+        )
+
+    update_data = trained_model_in.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(db_trained_model, field, value)
+
+    await db.commit()
+    await db.refresh(db_trained_model)
+    return db_trained_model
+
+
+@router.delete(
+    "/models/{model_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a Trained Model",
+    tags=["Trained Models"],
+)
+async def delete_trained_model(
+    model_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+):
+    """
+    Delete a trained model from the database.
+
+    Requires admin privileges.
+
+    - **model_id**: ID of the model to delete.
+    """
+    stmt = select(TrainedModel).where(TrainedModel.id == model_id)
+    result = await db.execute(stmt)
+    db_trained_model = result.scalar_one_or_none()
+
+    if not db_trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trained model with id {model_id} not found",
+        )
+
+    await db.delete(db_trained_model)
+    await db.commit()
+    return None
+
