@@ -1,0 +1,25 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317 # Listen on all interfaces for OTLP gRPC
+      http:
+        endpoint: 0.0.0.0:4318 # Listen for OTLP HTTP (optional, but good to have)
+
+exporters:
+  debug:
+    verbosity: detailed
+  
+# processors:
+#   batch:
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      # processors: [batch]
+      exporters: [debug] 
