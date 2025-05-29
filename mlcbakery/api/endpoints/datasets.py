@@ -120,58 +120,6 @@ async def create_dataset(
     db.add(db_dataset)
     await db.commit()
     await db.flush([db_dataset])
-    # new_dataset_id = db_dataset.id
-    # # Fetch the collection for this dataset
-    # stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
-    # result_coll = await db.execute(stmt_coll)
-    # collection = result_coll.scalar_one_or_none()
-    # # Find the default agent for this collection
-    # agent_name = f"{collection.name} Owner"
-    # stmt_agent = select(Agent).where(Agent.name == agent_name).where(Agent.collection_id == collection.id)
-    # result_agent = await db.execute(stmt_agent)
-    # default_agent = result_agent.scalar_one_or_none()
-
-    # TODO: Add activity creation back in
-    # activity_data = ActivityCreate(
-    #     name="created",
-    #     output_entity_id=new_dataset_id,
-    #     input_entity_ids=dataset.input_entity_ids,
-    #     agent_ids=[default_agent.id] if default_agent else []
-    # )
-    #
-    # await create_activity(activity=activity_data, db=db)
-
-    # stmt_refresh = (
-    #     select(Dataset)
-    #     .where(Dataset.id == new_dataset_id)
-    #     .options(
-    #         selectinload(Dataset.collection),
-    #         selectinload(Dataset.input_activities).options(
-    #             selectinload(Activity.input_entities).options(
-    #                 selectinload(Entity.collection)
-    #             ),
-    #             selectinload(Activity.output_entity).options(
-    #                 selectinload(Entity.collection)
-    #             ),
-    #             selectinload(Activity.agents),
-    #         ),
-    #         selectinload(Dataset.output_activities).options(
-    #             selectinload(Activity.input_entities).options(
-    #                 selectinload(Entity.collection)
-    #             ),
-    #             selectinload(Activity.agents),
-    #         ),
-    #     )
-    # )
-    # result_refresh = await db.execute(stmt_refresh)
-    # refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-
-    # if not refreshed_dataset:
-    #     raise HTTPException(
-    #         status_code=500, detail="Failed to reload dataset after creation"
-    #     )
-
-    
     return db_dataset
 
 

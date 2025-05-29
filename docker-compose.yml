@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile.bakery
     ports:
-      - "8000:8000"
+      - "8081:8080"
     volumes:
       - .:/app    
     environment:
@@ -19,12 +19,11 @@ services:
       - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
       - OTLP_HTTP_ENDPOINT=http://otel-collector:4318
       - IS_GCP_METRICS=false
+      - OTEL_ENABLED=false
     depends_on:
       db:
         condition: service_started
       search:
-        condition: service_started
-      otel-collector:
         condition: service_started
 
   mcp:
@@ -86,8 +85,6 @@ services:
     depends_on:
       db:
         condition: service_started
-    networks:
-      - default
 
 volumes:
   caddy_data:

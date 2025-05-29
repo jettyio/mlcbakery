@@ -91,7 +91,8 @@ metrics.set_meter_provider(meter_provider)
 
 init_metrics()
 
-FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_provider=meter_provider)
+if os.getenv("OTEL_ENABLED", "false").lower() == "true":
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_provider=meter_provider)
 
 @app.get("/api/v1/health")
 async def health_check():
