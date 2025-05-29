@@ -47,7 +47,5 @@ class TrainedModelUpdate(TrainedModelBase):
 class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime
-    # input_activities: List[ActivityResponse] = []
-    # output_activities: List[ActivityResponse] = []
 
     model_config = ConfigDict(from_attributes=True)

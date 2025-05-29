@@ -48,6 +48,21 @@ class BakeryDataset:
     asset_origin: str | None = None
 
 
+@dataclasses.dataclass
+class BakeryModel:
+    id: str
+    name: str
+    collection_id: str
+    model_path: str  # Path to the model artifact
+    metadata_version: Optional[str] = None
+    model_metadata: Optional[Dict[str, Any]] = None
+    asset_origin: Optional[str] = None
+    long_description: Optional[str] = None
+    model_attributes: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    parent_collection_model: str | None = None # Similar to parent_collection_dataset for datasets
+
+
 class Client:
     def __init__(
         self,
@@ -1185,3 +1200,197 @@ class Client:
         except Exception as e:
             _LOGGER.error(f"Error downloading dataset data: {e}")
             raise
+
+    def get_model_by_name(
+        self, collection_name: str, model_name: str
+    ) -> BakeryModel | None:
+        """Get a model by name in a collection if it exists."""
+        endpoint = f"/models/{collection_name}/{model_name}"
+        try:
+            response = self._request("GET", endpoint)
+            model_response = response.json()
+
+            return BakeryModel(
+                id=model_response["id"],
+                name=model_response["name"],
+                collection_id=model_response["collection_id"],
+                model_path=model_response.get("model_path"),
+                metadata_version=model_response.get("metadata_version"),
+                model_metadata=model_response.get("model_metadata"),
+                asset_origin=model_response.get("asset_origin"),
+                long_description=model_response.get("long_description"),
+                model_attributes=model_response.get("model_attributes"),
+                created_at=model_response.get("created_at"),
+            )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                _LOGGER.info(f"Model '{collection_name}/{model_name}' not found.")
+                return None
+            else:
+                _LOGGER.error(
+                    f"HTTP error fetching model '{collection_name}/{model_name}': {e}"
+                )
+                raise
+        except Exception as e:
+            _LOGGER.error(
+                f"Error fetching model '{collection_name}/{model_name}': {e}"
+            )
+            raise
+
+    def create_model(
+        self, collection_name: str, model_name: str, params: dict = dict()
+    ) -> BakeryModel:
+        """Create a model in a collection."""
+        endpoint = "/models"  # As per API: POST /models
+        # Ensure collection_name is in params for the API, even if collection_id is also used internally
+        payload = {
+            "name": model_name,
+            "collection_name": collection_name, # API expects collection_name for creation
+            "entity_type": "trained_model", # Default entity type
+            **params, # params should include model_path and other metadata
+        }
+        
+        # Ensure model_path is present, as it's required by the schema
+        if "model_path" not in payload or not payload["model_path"]:
+            raise ValueError("model_path is required to create a model.")
+
+        try:
+            response = self._request("POST", endpoint, json_data=payload)
+            json_response = response.json()
+            if "id" not in json_response or "name" not in json_response:
+                raise ValueError("Invalid response received from create model API")
+
+            return BakeryModel(
+                id=json_response["id"],
+                name=json_response["name"],
+                collection_id=json_response.get("collection_id"),
+                model_path=json_response.get("model_path"),
+                metadata_version=json_response.get("metadata_version"),
+                model_metadata=json_response.get("model_metadata"),
+                asset_origin=json_response.get("asset_origin"),
+                long_description=json_response.get("long_description"),
+                model_attributes=json_response.get("model_attributes"),
+                created_at=json_response.get("created_at"),
+            )
+        except Exception as e:
+            raise Exception(
+                f"Failed to create model {model_name} in collection {collection_name}: {e}"
+            ) from e
+
+    def update_model(self, model_id: str, params: dict) -> BakeryModel:
+        """Update a model."""
+        endpoint = f"/models/{model_id}" # As per API: PUT /models/{model_id}
+        try:
+            response = self._request("PUT", endpoint, json_data=params)
+            json_response = response.json()
+            if "id" not in json_response or "name" not in json_response:
+                raise ValueError("Invalid response received from update model API")
+
+            return BakeryModel(
+                id=json_response["id"],
+                name=json_response["name"],
+                collection_id=json_response.get("collection_id"),
+                model_path=json_response.get("model_path"),
+                metadata_version=json_response.get("metadata_version"),
+                model_metadata=json_response.get("model_metadata"),
+                asset_origin=json_response.get("asset_origin"),
+                long_description=json_response.get("long_description"),
+                model_attributes=json_response.get("model_attributes"),
+                created_at=json_response.get("created_at"),
+            )
+        except Exception as e:
+            raise Exception(f"Failed to update model {model_id}: {e}") from e
+
+    def push_model(
+        self,
+        model_identifier: str, # e.g., "collection_name/model_name"
+        model_physical_path: str, # Actual path to model artifact, e.g., /path/to/model.pkl or s3://bucket/model
+        model_metadata: Optional[dict] = None,
+        asset_origin: Optional[str] = None,
+        long_description: Optional[str] = None,
+        metadata_version: str = "1.0.0",
+        model_attributes: Optional[Dict[str, Any]] = None,
+        # No data_file_path or preview for models as per current scope
+    ) -> BakeryModel:
+        """Push a model's metadata to the bakery.
+
+        Args:
+            model_identifier: String in the format 'collection_name/model_name'.
+            model_physical_path: The actual path or URI to the model artifact.
+            model_metadata: Optional dictionary for arbitrary model metadata.
+            asset_origin: Optional string indicating the origin of the model asset.
+            long_description: Optional detailed description of the model.
+            metadata_version: Version string for the metadata.
+            model_attributes: Optional dictionary for specific model attributes.
+
+        Returns:
+            The BakeryModel object representing the pushed model.
+        """
+        if "/" not in model_identifier:
+            raise ValueError(
+                "model_identifier must be in the format 'collection_name/model_name'"
+            )
+        collection_name, model_name = model_identifier.split("/", 1)
+
+        collection = self.find_or_create_by_collection_name(collection_name)
+        if not collection: # Should not happen if find_or_create is correct
+             raise Exception(f"Failed to find or create collection {collection_name}")
+
+
+        existing_model = self.get_model_by_name(collection_name, model_name)
+
+        entity_payload = {
+            "model_path": model_physical_path,
+            "model_metadata": model_metadata,
+            "asset_origin": asset_origin,
+            "long_description": long_description,
+            "metadata_version": metadata_version,
+            "model_attributes": model_attributes,
+            # name and collection_name/collection_id handled by create_model/update_model
+        }
+        
+        # Filter out None values from payload to avoid overwriting existing fields with null during update
+        # For creation, all provided fields will be used.
+        # The API schema for update (TrainedModelUpdate) has optional fields, so sending None might clear them.
+        # It's safer to only send fields that have a value.
+        entity_payload_for_update = {k: v for k, v in entity_payload.items() if v is not None}
+
+
+        pushed_model: BakeryModel
+        if existing_model:
+            # Update existing model
+            _LOGGER.info(
+                f"Updating model {model_name} in collection {collection_name}"
+            )
+            # The update payload should not contain 'name' or 'collection_id' as they are immutable or set via URL
+            pushed_model = self.update_model(existing_model.id, entity_payload_for_update)
+        else:
+            # Create new model
+            _LOGGER.info(
+                f"Creating model {model_name} in collection {collection_name}"
+            )
+            # For creation, we pass all relevant fields, including those that might be None if the API handles defaults.
+            # The create_model method expects collection_name and model_name as separate args.
+            # The payload for create_model needs 'collection_name' for the API.
+            creation_payload = entity_payload.copy() # Start with all fields
+            # collection_name is passed as an argument to self.create_model
+            # model_name is passed as an argument to self.create_model
+            pushed_model = self.create_model(
+                collection_name, # Passed to create_model, which puts it in payload for API
+                model_name,
+                creation_payload, # Contains model_path, metadata etc.
+            )
+        
+        # Note: Entity relationships are not explicitly handled here yet,
+        # but could be added if a manifest-like structure is introduced for models
+        # or if parent information is passed to push_model.
+        # For now, returning the created/updated model.
+
+        # Fetch the final state of the model after creation/update
+        final_model = self.get_model_by_name(collection_name, model_name)
+        if not final_model:
+            # This should ideally not happen if create/update was successful
+            _LOGGER.error(f"Failed to retrieve model {collection_name}/{model_name} after push operation.")
+            # Fallback to the model object returned by create/update, though it might be less complete.
+            return pushed_model 
+        return final_model
