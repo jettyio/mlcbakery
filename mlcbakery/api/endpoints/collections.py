@@ -74,7 +74,7 @@ async def get_collection(
     return collection
 
 
-@router.get("/collections/", response_model=List[CollectionResponse])
+@router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db)
 ):
