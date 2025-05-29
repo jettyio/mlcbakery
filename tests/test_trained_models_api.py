@@ -181,11 +181,3 @@ async def test_create_trained_model_duplicate_name_case_insensitive(async_client
     assert "already exists" in response_detail, \
         f"Expected 'trained model with name ... already exists' in detail, but got: {response_detail}. \
         Current model name check is likely case-sensitive."
-
-# Note: To make these tests fully runnable, you'll need:
-# 1. A conftest.py (or similar test setup) that:
-#    - Provides the `async_client` fixture, configured with your FastAPI app.
-#    - Provides the `db_session` fixture if your actual endpoint interacts with the DB.
-# 2. Your actual FastAPI application (`mlcbakery.main.app` or equivalent) to be importable.
-# 3. The CRUD layer for `TrainedModel` to be implemented in the endpoint if you move
-#    beyond testing the placeholder. 
