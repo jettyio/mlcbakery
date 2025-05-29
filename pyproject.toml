@@ -1,6 +1,6 @@
 [project]
 name = "mlcbakery"
-version = "0.1.0"
+version = "0.1.1"
 description = "A machine learning data and model management system with provenance tracking"
 requires-python = ">=3.12"
 dependencies = [
