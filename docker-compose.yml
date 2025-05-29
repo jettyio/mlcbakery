@@ -16,7 +16,7 @@ services:
       - TYPESENSE_PORT=8108
       - TYPESENSE_PROTOCOL=http
       - TYPESENSE_API_KEY=thisisatestkey
-      - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
+      - TYPESENSE_COLLECTION_NAME=mlcbakery_entities
       - OTLP_HTTP_ENDPOINT=http://otel-collector:4318
       - IS_GCP_METRICS=false
       - OTEL_ENABLED=false
@@ -66,7 +66,7 @@ services:
       - TYPESENSE_DATA_DIR=/data
       # Use a strong, randomly generated API key in production
       - TYPESENSE_API_KEY=thisisatestkey
-      - TYPESENSE_COLLECTION_NAME=mlcbakery_datasets
+      - TYPESENSE_COLLECTION_NAME=mlcbakery_entities
       - TYPESENSE_ENABLE_CORS=true # Allow CORS for easier development
     volumes:
       - typesense_data:/data

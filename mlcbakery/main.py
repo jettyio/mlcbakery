@@ -55,16 +55,17 @@ else:
     # Use OTLP exporters to collector
     OTLP_HTTP_ENDPOINT = os.getenv("OTLP_HTTP_ENDPOINT", "http://localhost:4318")
     
-    # Cloud Run services communicate over HTTPS, so we use HTTP exporters
-    _LOGGER.info(f"Configuring OTLP HTTP exporters for: {OTLP_HTTP_ENDPOINT}")
-    trace_exporter = OTLPSpanExporter(
-        endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/traces",
-        headers={}  # Add any required headers here
-    )
-    metric_exporter = OTLPMetricExporter(
-        endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/metrics",
-        headers={}  # Add any required headers here
-    )
+    if os.getenv("OTEL_ENABLED", "false").lower() == "true":
+        # Cloud Run services communicate over HTTPS, so we use HTTP exporters
+        _LOGGER.info(f"Configuring OTLP HTTP exporters for: {OTLP_HTTP_ENDPOINT}")
+        trace_exporter = OTLPSpanExporter(
+            endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/traces",
+            headers={}  # Add any required headers here
+        )
+        metric_exporter = OTLPMetricExporter(
+            endpoint=f"{OTLP_HTTP_ENDPOINT}/v1/metrics",
+            headers={}  # Add any required headers here
+        )
 
 # Configure metric readers
 metric_readers = []

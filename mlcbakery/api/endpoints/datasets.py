@@ -63,9 +63,9 @@ async def search_datasets(
 
     search_parameters = {
         "q": q,
-        "query_by": "long_description, metadata, collection_name, dataset_name, full_name",
+        "query_by": "long_description, metadata, collection_name, entity_name, full_name",
         "per_page": limit,
-        "include_fields": "collection_name, dataset_name, full_name",
+        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata",
     }
 
     try:
