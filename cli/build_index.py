@@ -176,6 +176,8 @@ async def build_index():
                 if not dataset.dataset_metadata:
                     print(f" Skipping dataset ID {dataset.id} (name: {dataset.name}) due to missing dataset metadata.")
                     continue
+                if dataset.dataset_metadata:
+                    dataset.dataset_metadata = {k.replace("@", "__"): v for k, v in dataset.dataset_metadata.items() if isinstance(v, str)}
                 document = {
                     "id": doc_id,
                     "collection_name": dataset.collection.name,
@@ -203,7 +205,7 @@ async def build_index():
                 doc_id = f"{model.entity_type}/{model.collection.name}/{model.name}"
                 metadata = model.model_metadata or None
                 if metadata:
-                    metadata = {k: v for k, v in metadata.items() if isinstance(v, str)}
+                    metadata = {k.replace("@", "__"): v for k, v in metadata.items() if isinstance(v, str)}
 
                 document = {
                     "id": doc_id,
