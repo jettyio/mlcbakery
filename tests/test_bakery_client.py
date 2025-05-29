@@ -185,8 +185,14 @@ class TestBakeryClientAuth(unittest.TestCase):
 
             # Determine response based on URL and method
             if method == "GET" and url == f"{API_URL}/collections":
-                print("  -> Responding for GET /collections")
+                print("  -> Responding for GET /collections (list all)")
                 return mock_get_collections_resp
+            elif method == "GET" and url == f"{API_URL}/collections/{SAMPLE_COLLECTION_NAME}":
+                print(f"  -> Simulating 404 for GET {url}")
+                mock_404_response = Mock(spec=requests.Response)
+                mock_404_response.status_code = 404
+                mock_404_response.raise_for_status.side_effect = mock_http_404
+                return mock_404_response
             elif (
                 method == "GET"
                 and url
@@ -212,8 +218,8 @@ class TestBakeryClientAuth(unittest.TestCase):
             elif "/preview" in url:
                 print("  -> Responding for GET preview")
                 return mock_get_preview_resp
-            elif method == "POST" and url == f"{API_URL}/collections":
-                print("  -> Responding for POST /collections")
+            elif method == "POST" and url == f"{API_URL}/collections/":
+                print("  -> Responding for POST /collections (create)")
                 # Return a mock response for collection creation
                 mock_create_collection_resp = Mock(spec=requests.Response)
                 mock_create_collection_resp.json.return_value = {
