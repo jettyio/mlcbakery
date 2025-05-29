@@ -178,32 +178,48 @@ class Client:
         """Get a collection by collection name and create it if it doesn't exist."""
         # TODO: check if the collection already exists
         try:
-            response = self._request("GET", f"/collections/{collection_name}")
-            c = response.json()
-            return BakeryCollection(
-                    id=c["id"], name=c["name"], description=c.get("description", "")
-                )
+            return self.get_collection_by_name(collection_name)
         except Exception as e:
             # If GET fails (e.g., 404 if no collections yet), proceed to create
             _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
 
         # If collection doesn't exist, create it
         try:
-            response = self._request(
-                "POST",
-                "/collections",
-                json_data={"name": collection_name, "description": ""},
-            )
-            json_response = response.json()
-            return BakeryCollection(
-                id=json_response.get("id", ""),
-                name=json_response.get("name", ""),
-                description=json_response.get("description", ""),
-            )
+            return self.create_collection(collection_name)
         except Exception as e:
             raise Exception(
                 f"Failed to create collection {collection_name}: {e}"
             ) from e
+    
+    def get_collection_by_name(self, collection_name: str) -> BakeryCollection | None:
+        """Get a collection by name."""
+        endpoint = f"/collections/{collection_name}"
+        try:
+            response = self._request("GET", endpoint)
+            response.raise_for_status()
+            return BakeryCollection(
+                id=response.json().get("id", ""),
+                name=response.json().get("name", ""),
+                description=response.json().get("description", ""),
+            )
+        except Exception as e:
+            raise Exception(
+                f"Failed to get collection {collection_name}: {e}"
+            ) from e
+    
+    def create_collection(self, collection_name: str, description: str = "") -> BakeryCollection:
+        """Create a collection."""
+        endpoint = "/collections/"
+        payload = {
+            "name": collection_name,
+            "description": description,
+        }
+        response = self._request("POST", endpoint, json_data=payload)
+        return BakeryCollection(
+            id=response.json().get("id", ""),
+            name=response.json().get("name", ""),
+            description=response.json().get("description", ""),
+        )
 
     def create_entity_relationship(
         self,
