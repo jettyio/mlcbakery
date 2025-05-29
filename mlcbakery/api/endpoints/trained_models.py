@@ -13,9 +13,36 @@ from mlcbakery.schemas.trained_model import (
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
 
-from mlcbakery.models import TrainedModel, Collection, Entity
+from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
+
+# Helper function to find a model by collection name and model name
+async def _find_model_by_name(collection_name: str, model_name: str, db: AsyncSession) -> TrainedModel | None:
+    stmt = (
+        select(TrainedModel)
+        .join(Collection, TrainedModel.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(func.lower(TrainedModel.name) == func.lower(model_name)) # Case-insensitive name match
+        .where(TrainedModel.entity_type == "trained_model") # Ensure it is a trained model
+        .options(
+            selectinload(TrainedModel.collection),
+            # Add other selectinloads if needed in the future, e.g., for relationships
+            selectinload(TrainedModel.upstream_links).options(
+                selectinload(EntityRelationship.source_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+            selectinload(TrainedModel.downstream_links).options(
+                selectinload(EntityRelationship.target_entity).options(
+                    selectinload(Entity.collection)
+                ),
+            ),
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
 
 @router.post(
     "/models",
@@ -170,4 +197,30 @@ async def delete_trained_model(
     await db.delete(db_trained_model)
     await db.commit()
     return None
+
+
+@router.get(
+    "/models/{collection_name}/{model_name}", 
+    response_model=TrainedModelResponse,
+    summary="Get a Trained Model by Collection and Model Name",
+    tags=["Trained Models"],
+)
+async def get_trained_model_by_name(
+    collection_name: str, 
+    model_name: str, 
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get a specific trained model by its collection name and model name.
+
+    - **collection_name**: Name of the collection the model belongs to.
+    - **model_name**: Name of the model.
+    """
+    db_trained_model = await _find_model_by_name(collection_name, model_name, db)
+    if not db_trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trained model '{model_name}' in collection '{collection_name}' not found"
+        )
+    return db_trained_model
 
