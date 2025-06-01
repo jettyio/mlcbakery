@@ -14,21 +14,6 @@ from sqlalchemy.orm import relationship, backref
 from .database import Base
 
 
-# Association tables
-# was_associated_with = Table(
-#     "was_associated_with",
-#     Base.metadata,
-#     Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-#     Column("agent_id", Integer, ForeignKey("agents.id"), primary_key=True),
-# )
-
-# activity_entities = Table(
-#     "activity_entities",
-#     Base.metadata,
-#     Column("activity_id", Integer, ForeignKey("activities.id"), primary_key=True),
-#     Column("entity_id", Integer, ForeignKey("entities.id"), primary_key=True),
-# )
-
 
 # NEW EntityRelationship class
 class EntityRelationship(Base):

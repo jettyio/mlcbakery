@@ -149,12 +149,10 @@ async def test_create_entity_link_no_source_success(db_session: AsyncSession):
     assert data["activity_name"] == ACTIVITY_NAME_INGESTED # Added assertion for activity_name in response
 
     target_entity_db = (await db_session.execute(select(Dataset).where(Dataset.name == TARGET_ENTITY_NAME_2))).scalar_one()
-    # Activity record is no longer created by this endpoint, so removed activity_db fetch
-    # activity_db = (await db_session.execute(select(Activity).where(Activity.name == ACTIVITY_NAME_INGESTED))).scalar_one()
 
     link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == data["id"]))).scalar_one()
     assert link.target_entity_id == target_entity_db.id
-    assert link.activity_name == ACTIVITY_NAME_INGESTED # Changed from activity_id to activity_name
+    assert link.activity_name == ACTIVITY_NAME_INGESTED
 
 
 async def test_create_entity_link_reuse_activity(db_session: AsyncSession):
@@ -199,9 +197,6 @@ async def test_create_entity_link_reuse_activity(db_session: AsyncSession):
     assert link1_db.activity_name == activity_to_reuse
     assert link2_db.activity_name == activity_to_reuse
 
-    # The part about checking Activity table count is removed as the endpoint no longer manages Activity records.
-    # activities_count = (await db_session.execute(select(Activity).where(Activity.name == activity_to_reuse))).scalars().all()
-    # assert len(activities_count) == 1 # This is no longer guaranteed by the endpoint.
 
 async def test_create_entity_link_target_not_found(db_session: AsyncSession):
     """Test error when target entity is not found."""
