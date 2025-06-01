@@ -46,27 +46,33 @@ class TestBakeryClientLocal(unittest.TestCase):
 
     def test_prepare_dataset(self):
         """Test creating a .manifest.json file for a dataset."""
-        params = {
+        dataset_name = "test_dataset"
+        collection_name = "test_collection"
+        origin = "test.com"
+        metadata_version = "1.0.0"
+
+        expected_params = {
             "properties": {
+                "name": dataset_name,
+                "collection_name": collection_name,
                 "type": "dataset",
-                "name": "test_dataset",
-                "collection_name": "test_collection",
-                "origin": "test.com",
-                "metadata_version": "1.0.0",
+                "origin": origin,
+                "metadata_version": metadata_version,
             },
-            "parents": [
-                {
-                    "generated_by": None,
-                    "attributed_to": "test@example.com"
-                }
-            ],
+            "parents": [],
             "assets": {
+                "metadata": "metadata.json",
                 "long_description": "README.md",
-                "metadata": "metadata.json"
             }
         }
         
-        result = self.client.prepare_dataset(self.source_dataset_path, params)
+        result = self.client.prepare_dataset(
+            self.source_dataset_path, 
+            dataset_name=dataset_name,
+            collection_name=collection_name,
+            origin=origin,
+            metadata_version=metadata_version
+        )
         
         # Check that .manifest.json was created
         bakery_file = os.path.join(self.source_dataset_path, ".manifest.json")
@@ -75,32 +81,24 @@ class TestBakeryClientLocal(unittest.TestCase):
         # Check that the content is correct
         with open(bakery_file, "r") as f:
             content = json.load(f)
-        self.assertEqual(content, params)
-        self.assertEqual(result, params)
+        self.assertEqual(content, expected_params)
+        self.assertEqual(result, expected_params)
 
     def test_duplicate_dataset(self):
         """Test duplicating a dataset."""
+        source_dataset_name = "source_dataset"
+        source_collection_name = "test_collection"
+        source_origin = "test.com"
+        source_metadata_version = "1.0.0"
+
         # First prepare the source dataset
-        source_params = {
-            "properties": {
-                "type": "dataset",
-                "name": "source_dataset",
-                "collection_name": "test_collection",
-                "origin": "test.com",
-                "metadata_version": "1.0.0",
-            },
-            "parents": [
-                {
-                    "generated_by": None,
-                    "attributed_to": "original@example.com"
-                }
-            ],
-            "assets": {
-                "long_description": "README.md",
-                "metadata": "metadata.json"
-            }
-        }
-        self.client.prepare_dataset(self.source_dataset_path, source_params)
+        self.client.prepare_dataset(
+            self.source_dataset_path,
+            dataset_name=source_dataset_name,
+            collection_name=source_collection_name,
+            origin=source_origin,
+            metadata_version=source_metadata_version
+        )
         
         # Now duplicate it
         dest_dataset_path = os.path.join(self.test_dir, "duplicate_dataset")
@@ -135,7 +133,9 @@ class TestBakeryClientLocal(unittest.TestCase):
         
         # Check that the parent record was added correctly
         self.assertEqual(len(content["parents"]), 1)
-        self.assertEqual(content["parents"][0]["generated_by"], "dataset/test_collection/source_dataset")
+        # The `duplicate_dataset` method in bakery_client.py uses "generated" as the key.
+        expected_parent_generated_value = f"dataset/{source_collection_name}/{source_dataset_name}"
+        self.assertEqual(content["parents"][0]["generated"], expected_parent_generated_value)
 
     @patch("mlcbakery.bakery_client.Client.push_dataset")
     def test_save_to_bakery_without_data_upload(self, mock_push_dataset):
@@ -149,20 +149,18 @@ class TestBakeryClientLocal(unittest.TestCase):
         mock_push_dataset.return_value = mock_dataset
         
         # Prepare the dataset
-        params = {
-            "properties": {
-                "type": "dataset",
-                "name": "test_dataset",
-                "collection_name": "test_collection",
-                "origin": "test.com",
-                "metadata_version": "1.0.0",
-            },
-            "assets": {
-                "long_description": "README.md",
-                "metadata": "metadata.json"
-            }
-        }
-        self.client.prepare_dataset(self.source_dataset_path, params)
+        dataset_name = "test_dataset"
+        collection_name = "test_collection"
+        origin = "test.com"
+        metadata_version = "1.0.0"
+
+        self.client.prepare_dataset(
+            self.source_dataset_path,
+            dataset_name=dataset_name,
+            collection_name=collection_name,
+            origin=origin,
+            metadata_version=metadata_version
+        )
         
         # Mock the mlcroissant.Dataset
         with patch("mlcroissant.Dataset") as mock_mlc_dataset:
@@ -174,8 +172,8 @@ class TestBakeryClientLocal(unittest.TestCase):
             # Check that push_dataset was called with the right arguments
             mock_push_dataset.assert_called_once()
             call_args = mock_push_dataset.call_args[1]
-            self.assertEqual(call_args["dataset_path"], "test_collection/test_dataset")
-            self.assertEqual(call_args["metadata_version"], "1.0.0")
+            self.assertEqual(call_args["dataset_path"], f"{collection_name}/{dataset_name}")
+            self.assertEqual(call_args["metadata_version"], metadata_version)
             self.assertIsNone(call_args["data_file_path"])
             
             # Check the result
@@ -193,20 +191,18 @@ class TestBakeryClientLocal(unittest.TestCase):
         mock_push_dataset.return_value = mock_dataset
         
         # Prepare the dataset
-        params = {
-            "properties": {
-                "type": "dataset",
-                "name": "test_dataset",
-                "collection_name": "test_collection",
-                "origin": "test.com",
-                "metadata_version": "1.0.0",
-            },
-            "assets": {
-                "long_description": "README.md",
-                "metadata": "metadata.json"
-            }
-        }
-        self.client.prepare_dataset(self.source_dataset_path, params)
+        dataset_name = "test_dataset"
+        collection_name = "test_collection"
+        origin = "test.com"
+        metadata_version = "1.0.0"
+
+        self.client.prepare_dataset(
+            self.source_dataset_path,
+            dataset_name=dataset_name,
+            collection_name=collection_name,
+            origin=origin,
+            metadata_version=metadata_version
+        )
         
         # Mock the mlcroissant.Dataset
         with patch("mlcroissant.Dataset") as mock_mlc_dataset:
@@ -218,8 +214,8 @@ class TestBakeryClientLocal(unittest.TestCase):
             # Check that push_dataset was called with the right arguments
             mock_push_dataset.assert_called_once()
             call_args = mock_push_dataset.call_args[1]
-            self.assertEqual(call_args["dataset_path"], "test_collection/test_dataset")
-            self.assertEqual(call_args["metadata_version"], "1.0.0")
+            self.assertEqual(call_args["dataset_path"], f"{collection_name}/{dataset_name}")
+            self.assertEqual(call_args["metadata_version"], metadata_version)
             
             # data_file_path should be set to a temporary file path
             self.assertIsNotNone(call_args["data_file_path"])

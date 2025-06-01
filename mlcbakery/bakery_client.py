@@ -14,6 +14,72 @@ import mlcroissant as mlc
 import pandas as pd
 
 _LOGGER = logging.getLogger(__name__)
+
+_LONG_DESCRIPTION_TEMPLATE = """
+# {dataset_name}
+
+## Collection
+
+{collection_name}
+"""
+
+_DATASET_METADATA_TEMPLATE = """
+{
+    "@context": {
+      "@language": "en",
+      "@vocab": "https://schema.org/",
+      "citeAs": "cr:citeAs",
+      "column": "cr:column",
+      "conformsTo": "dct:conformsTo",
+      "cr": "http://mlcommons.org/croissant/",
+      "rai": "http://mlcommons.org/croissant/RAI/",
+      "data": {
+        "@id": "cr:data",
+        "@type": "@json"
+      },
+      "dataType": {
+        "@id": "cr:dataType",
+        "@type": "@vocab"
+      },
+      "dct": "http://purl.org/dc/terms/",
+      "examples": {
+        "@id": "cr:examples",
+        "@type": "@json"
+      },
+      "extract": "cr:extract",
+      "field": "cr:field",
+      "fileProperty": "cr:fileProperty",
+      "fileObject": "cr:fileObject",
+      "fileSet": "cr:fileSet",
+      "format": "cr:format",
+      "includes": "cr:includes",
+      "isLiveDataset": "cr:isLiveDataset",
+      "jsonPath": "cr:jsonPath",
+      "key": "cr:key",
+      "md5": "cr:md5",
+      "parentField": "cr:parentField",
+      "path": "cr:path",
+      "recordSet": "cr:recordSet",
+      "references": "cr:references",
+      "regex": "cr:regex",
+      "repeated": "cr:repeated",
+      "replace": "cr:replace",
+      "sc": "https://schema.org/",
+      "separator": "cr:separator",
+      "source": "cr:source",
+      "subField": "cr:subField",
+      "transform": "cr:transform"
+    },
+    "@type": "sc:Dataset",
+    "name": "{dataset_name}",
+    "description": "",
+    "conformsTo": "http://mlcommons.org/croissant/1.0",
+    "citeAs": "",
+    "license": "unknown",
+    "url": "{url}"
+  }
+"""
+
 # Configure basic logging if not already configured
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -870,7 +936,7 @@ class Client:
         # Upload the data file
         return self.upload_dataset_data(collection_name, dataset_name, data_file_path)
 
-    def prepare_dataset(self, dataset_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def prepare_dataset(self, dataset_path: str, dataset_name: str, collection_name: str, origin="mlcbakery", metadata_version="1.0.0") -> Dict[str, Any]:
         """Prepares a dataset folder for the bakery by creating a .manifest.json file.
 
         Args:
@@ -896,9 +962,28 @@ class Client:
         
         
         # Store input_entity_ids in params for later use when creating the dataset
-        if "properties" not in params:
-            params["properties"] = {}
-            
+        params = {}
+        params["properties"] = {
+            "name": dataset_name,
+            "collection_name": collection_name,
+            "type": "dataset",
+            "origin": origin,
+            "metadata_version": metadata_version,
+        }
+        params["parents"] = []
+        params["assets"] = {
+            "metadata": "metadata.json",
+            "long_description": "README.md",
+        }
+        long_description_path = dataset_dir / "README.md"
+        metadata_path = dataset_dir / "metadata.json"
+        if not long_description_path.exists():
+            long_description_path.write_text(_LONG_DESCRIPTION_TEMPLATE.replace("{dataset_name}", dataset_name).replace("{collection_name}", collection_name))
+        if not metadata_path.exists():
+            with open(metadata_path, "w") as f:
+                url = f"{self.bakery_url}/api/v1/datasets/{collection_name}/{dataset_name}"
+                data = json.loads(_DATASET_METADATA_TEMPLATE.replace("{dataset_name}", dataset_name).replace("{url}", url))
+                json.dump(data, f, indent=2)
         # Create .manifest.json file with the provided parameters
         bakery_json_path = dataset_dir / ".manifest.json"
         
@@ -971,7 +1056,7 @@ class Client:
         
         # Replace parents with a new lineage entry pointing to the source dataset
         parent_record = {
-            "generated_by": f"{source_entity_type}/{source_collection_name}/{source_entity_name}"
+            "generated": f"{source_entity_type}/{source_collection_name}/{source_entity_name}"
         }
         bakery_data["parents"] = [parent_record]
         
@@ -1130,16 +1215,16 @@ class Client:
             parents = bakery_data.get("parents", [])
             if parents:
                 for parent in parents:
-                    source_entity_str = parent.get("generated_by")
+                    source_entity_str = parent.get("generated")
                     if source_entity_str:
                         try:
                             target_entity_str = f"dataset/{collection_name}/{dataset_name}"
                             _LOGGER.info(
-                                f"Creating entity relationship: {source_entity_str} -> generated_by -> {target_entity_str}"
+                                f"Creating entity relationship: {source_entity_str} -> generated -> {target_entity_str}"
                             )
                             self.create_entity_relationship(
                                 target_entity_str=target_entity_str,
-                                activity_name="generated_by",
+                                activity_name="generated",
                                 source_entity_str=source_entity_str,
                             )
                         except Exception as e:
