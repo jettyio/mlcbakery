@@ -29,7 +29,7 @@ from mlcbakery.schemas.dataset import (
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
-from mlcbakery.search import get_typesense_client, TYPESENSE_COLLECTION_NAME
+from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
     validate_croissant,
@@ -50,7 +50,7 @@ async def search_datasets(
     limit: int = Query(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
-    ts: typesense.Client = Depends(get_typesense_client),
+    ts: typesense.Client = Depends(search.get_typesense_client),
 ):
     """Search datasets using Typesense based on query term."""
     # Get the current span
@@ -65,27 +65,11 @@ async def search_datasets(
         "q": q,
         "query_by": "long_description, metadata, collection_name, entity_name, full_name",
         "per_page": limit,
+        "filter_by": "entity_type:dataset",
         "include_fields": "collection_name, entity_name, full_name, entity_type, metadata",
     }
 
-    try:
-        search_results = ts.collections[TYPESENSE_COLLECTION_NAME].documents.search(
-            search_parameters
-        )
-        return {"hits": search_results["hits"]}
-    except typesense.exceptions.ObjectNotFound:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Typesense collection '{TYPESENSE_COLLECTION_NAME}' not found. Please build the index first.",
-        )
-    except typesense.exceptions.TypesenseClientError as e:
-        print(f"Typesense API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Typesense search failed: {e}")
-    except Exception as e:
-        print(f"Unexpected error during Typesense search: {e}")
-        raise HTTPException(
-            status_code=500, detail="An unexpected error occurred during search"
-        )
+    return await search.run_search_query(search_parameters, ts)
 
 
 @router.post("/datasets/", response_model=DatasetResponse)

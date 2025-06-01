@@ -47,3 +47,24 @@ def get_typesense_client() -> typesense.Client:
     if ts_client is None:
         # Handle case where client initialization failed at startup
         raise HTTPException(status_code=503, detail="Typesense client not initialized")
+
+async def run_search_query(search_parameters: dict, ts: typesense.Client) -> dict:
+    """Run a search query against Typesense."""    
+    try:
+        search_results = ts.collections[TYPESENSE_COLLECTION_NAME].documents.search(
+            search_parameters
+        )
+        return {"hits": search_results["hits"]}
+    except typesense.exceptions.ObjectNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Typesense collection '{TYPESENSE_COLLECTION_NAME}' not found. Please build the index first.",
+        )
+    except typesense.exceptions.TypesenseClientError as e:
+        print(f"Typesense API error: {e}")
+        raise HTTPException(status_code=500, detail=f"Typesense search failed: {e}")
+    except Exception as e:
+        print(f"Unexpected error during Typesense search: {e}")
+        raise HTTPException(
+            status_code=500, detail="An unexpected error occurred during search"
+        )

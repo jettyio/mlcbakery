@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 from typing import List
+import typesense
+
+from mlcbakery import search
 
 from mlcbakery.schemas.trained_model import (
     TrainedModelCreate,
@@ -12,7 +15,7 @@ from mlcbakery.schemas.trained_model import (
 )
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_admin_token
-
+from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
 
@@ -43,6 +46,30 @@ async def _find_model_by_name(collection_name: str, model_name: str, db: AsyncSe
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+@router.get("/models/search")
+async def search_models(
+    q: str = Query(..., min_length=1, description="Search query term"),
+    limit: int = Query(
+        default=30, ge=1, le=100, description="Number of results to return"
+    ),
+    ts: typesense.Client = Depends(search.get_typesense_client),
+):
+    """Search models using Typesense based on query term."""
+    # Get the current span
+    current_span = trace.get_current_span()
+    # Add the search query as an attribute to the span
+    current_span.set_attribute("search.query", q)
+
+    search_parameters = {
+        "q": q,
+        "query_by": "long_description, metadata, collection_name, entity_name, full_name",
+        "per_page": limit,
+        "filter_by": "entity_type:trained_model",
+        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata",
+    }
+
+    return await search.run_search_query(search_parameters, ts)
 
 @router.post(
     "/models",
