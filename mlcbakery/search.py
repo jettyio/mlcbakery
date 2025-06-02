@@ -11,6 +11,22 @@ from fastapi import HTTPException
 
 from mlcbakery.models import Dataset, Entity, EntityRelationship, TrainedModel
 
+def setup_and_get_typesense_client():
+    """Setup the Typesense client."""
+    load_dotenv()
+    TYPESENSE_HOST_ENV = os.getenv(
+        "TYPESENSE_HOST", "search"
+    )  # Default to service name inside docker
+    TYPESENSE_PORT_ENV = int(os.getenv("TYPESENSE_PORT", 8108))
+    TYPESENSE_PROTOCOL_ENV = os.getenv("TYPESENSE_PROTOCOL", "http")
+    TYPESENSE_API_KEY_ENV = os.getenv("TYPESENSE_API_KEY")
+    return get_typesense_client(
+        host=TYPESENSE_HOST_ENV,
+        port=TYPESENSE_PORT_ENV,
+        protocol=TYPESENSE_PROTOCOL_ENV,
+        api_key=TYPESENSE_API_KEY_ENV,
+    )
+
 def get_typesense_client(
     host: str | None = None,
     port: int | None = None,
