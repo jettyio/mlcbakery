@@ -11,16 +11,21 @@ from fastapi import HTTPException
 
 from mlcbakery.models import Dataset, Entity, EntityRelationship, TrainedModel
 
-load_dotenv()  # Load environment variables from .env file if present
-
-TYPESENSE_HOST_ENV = os.getenv(
-    "TYPESENSE_HOST", "search"
-)  # Default to service name inside docker
-TYPESENSE_PORT_ENV = int(os.getenv("TYPESENSE_PORT", 8108))
-TYPESENSE_PROTOCOL_ENV = os.getenv("TYPESENSE_PROTOCOL", "http")
-TYPESENSE_API_KEY_ENV = os.getenv("TYPESENSE_API_KEY")
-TYPESENSE_COLLECTION_NAME_ENV = os.getenv("TYPESENSE_COLLECTION_NAME", "mlcbakery_entities")
-
+def setup_and_get_typesense_client():
+    """Setup the Typesense client."""
+    load_dotenv()
+    TYPESENSE_HOST_ENV = os.getenv(
+        "TYPESENSE_HOST", "search"
+    )  # Default to service name inside docker
+    TYPESENSE_PORT_ENV = int(os.getenv("TYPESENSE_PORT", 8108))
+    TYPESENSE_PROTOCOL_ENV = os.getenv("TYPESENSE_PROTOCOL", "http")
+    TYPESENSE_API_KEY_ENV = os.getenv("TYPESENSE_API_KEY")
+    return get_typesense_client(
+        host=TYPESENSE_HOST_ENV,
+        port=TYPESENSE_PORT_ENV,
+        protocol=TYPESENSE_PROTOCOL_ENV,
+        api_key=TYPESENSE_API_KEY_ENV,
+    )
 
 def get_typesense_client(
     host: str | None = None,
@@ -31,10 +36,10 @@ def get_typesense_client(
     """FastAPI dependency to provide the Typesense client.
     Can also be used directly by passing connection parameters.
     """
-    resolved_host = host or TYPESENSE_HOST_ENV
-    resolved_port = port or TYPESENSE_PORT_ENV
-    resolved_protocol = protocol or TYPESENSE_PROTOCOL_ENV
-    resolved_api_key = api_key or TYPESENSE_API_KEY_ENV
+    resolved_host = host 
+    resolved_port = port
+    resolved_protocol = protocol
+    resolved_api_key = api_key
 
     if not resolved_api_key:
         print("Typesense API key is not configured. Cannot initialize client.")
@@ -304,12 +309,8 @@ async def rebuild_index(
 
 async def run_search_query(search_parameters: dict, ts: typesense.Client) -> dict:
     """Run a search query against Typesense."""
-    # Determine collection name for search. If `rebuild_index` uses a dynamic name,
-    # this function might need to know it, or it defaults to the env var.
-    # For now, assuming it uses the global env var for search,
-    # which might differ from the one passed to rebuild_index if used directly.
-    # This aspect might need clarification based on usage patterns.
-    collection_to_search = TYPESENSE_COLLECTION_NAME_ENV
+    load_dotenv()
+    collection_to_search = os.getenv("TYPESENSE_COLLECTION_NAME", "mlcbakery_entities")
     if not collection_to_search:
         raise HTTPException(status_code=500, detail="Typesense collection name not configured for search.")
         

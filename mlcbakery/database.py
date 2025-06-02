@@ -8,28 +8,28 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable not set")
+    print("WARNING: DATABASE_URL environment variable not set!")
+else:
+    # Ensure DATABASE_URL uses async driver, e.g., postgresql+asyncpg://...
+    if "postgresql://" in DATABASE_URL and "+asyncpg" not in DATABASE_URL:
+        # Basic replacement, adjust if your URL is complex
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif not DATABASE_URL.startswith("postgresql+asyncpg"):
+        # Consider raising an error or logging a warning for unsupported/unexpected formats
+        print(
+            f"Warning: DATABASE_URL format ({DATABASE_URL}) might not be compatible with asyncpg."
+        )
 
-# Ensure DATABASE_URL uses async driver, e.g., postgresql+asyncpg://...
-if "postgresql://" in DATABASE_URL and "+asyncpg" not in DATABASE_URL:
-    # Basic replacement, adjust if your URL is complex
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif not DATABASE_URL.startswith("postgresql+asyncpg"):
-    # Consider raising an error or logging a warning for unsupported/unexpected formats
-    print(
-        f"Warning: DATABASE_URL format ({DATABASE_URL}) might not be compatible with asyncpg."
+
+    # Create async engine
+    engine = create_async_engine(DATABASE_URL, echo=True)  # Add echo=True for debugging
+
+    # Create async session factory
+    AsyncSessionFactory = sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,  # Recommended for FastAPI
     )
-
-
-# Create async engine
-engine = create_async_engine(DATABASE_URL, echo=True)  # Add echo=True for debugging
-
-# Create async session factory
-AsyncSessionFactory = sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,  # Recommended for FastAPI
-)
 
 Base = declarative_base()
 
