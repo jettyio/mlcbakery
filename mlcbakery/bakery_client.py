@@ -791,6 +791,23 @@ class Client:
             # Depending on desired behavior, could return empty list or raise
             raise  # Raising for now, as listing collections seems fundamental
 
+    def search_models(self, query: str, limit: int = 30) -> list[dict]:
+        """Search models using a query string.
+        """
+        endpoint = "/models/search"
+        params = {"q": query, "limit": limit}
+        try:
+            response = self._request("GET", endpoint, params=params)
+            results = response.json()
+            return results.get("hits", [])
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Error searching datasets with query '{query}': {e}")
+            # Return empty list on error, or could re-raise
+            return []
+        except Exception as e:
+            _LOGGER.error(f"Unexpected error searching datasets: {e}")
+            return []
+
     def search_datasets(self, query: str, limit: int = 30) -> list[dict]:
         """Search datasets using a query string.
 
