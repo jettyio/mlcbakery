@@ -7,7 +7,7 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Any, Tuple, Optional, Union, Dict, List
+from typing import Any, Union
 
 import requests
 import mlcroissant as mlc
@@ -85,17 +85,14 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-AuthType = Optional[Tuple[str, str]]  # Define a type alias for auth credentials
-TokenType = Union[str, None]  # Assuming token is just a string or None for now
-
 
 @dataclasses.dataclass
 class BakeryCollection:
     id: str
     name: str
     description: str
-    storage_info: Optional[Dict[str, Any]] = None
-    storage_provider: Optional[str] = None
+    storage_info: dict[str, Any] | None = None
+    storage_provider: str | None = None
 
 
 @dataclasses.dataclass
@@ -103,6 +100,7 @@ class BakeryDataset:
     id: str
     name: str
     collection_id: str
+    collection_name: str | None = None
     parent_collection_dataset: str | None = None
     metadata: mlc.Dataset | None = None
     preview: pd.DataFrame | None = None
@@ -120,12 +118,13 @@ class BakeryModel:
     name: str
     collection_id: str
     model_path: str  # Path to the model artifact
-    metadata_version: Optional[str] = None
-    model_metadata: Optional[Dict[str, Any]] = None
-    asset_origin: Optional[str] = None
-    long_description: Optional[str] = None
-    model_attributes: Optional[Dict[str, Any]] = None
-    created_at: Optional[str] = None
+    collection_name: str | None = None
+    metadata_version: str | None = None
+    model_metadata: dict[str, Any] | None = None
+    asset_origin: str | None = None
+    long_description: str | None = None
+    model_attributes: dict[str, Any] | None = None
+    created_at: str | None = None
     parent_collection_model: str | None = None # Similar to parent_collection_dataset for datasets
 
 
@@ -133,7 +132,7 @@ class Client:
     def __init__(
         self,
         bakery_url: str = "http://localhost:8000",
-        token: TokenType = None,  # Changed from auth: AuthType
+        token: str | None = None
     ):
         """
         Initializes the BakeryClient.
@@ -149,12 +148,10 @@ class Client:
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
-        files: Optional[dict[str, Any]] = None,
-        headers: Optional[
-            dict[str, Any]
-        ] = None,  # Defaulting to None, will be set below
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+        headers: dict[str, Any] | None = None,  # Defaulting to None, will be set below
         stream: bool = False,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
@@ -188,8 +185,8 @@ class Client:
             raise
 
     def validate_croissant_dataset(
-        self, dataset_input: Union[mlc.Dataset, Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, dataset_input: Union[mlc.Dataset, dict[str, Any]]
+    ) -> dict[str, Any]:
         """
         Validates a Croissant dataset by sending its metadata to the
         MLC Bakery API's validation endpoint.
@@ -208,7 +205,7 @@ class Client:
         _LOGGER.info("Requesting Croissant dataset validation from API.")
 
         # 1. Determine JSON data
-        json_data: Dict[str, Any]
+        json_data: dict[str, Any]
         if isinstance(dataset_input, mlc.Dataset):
             json_data = dataset_input.jsonld
         else:
@@ -291,7 +288,7 @@ class Client:
         self,
         target_entity_str: str,
         activity_name: str,
-        source_entity_str: Optional[str] = None,
+        source_entity_str: str | None = None,
     ) -> dict:
         """
         Creates an entity relationship in the MLC Bakery.
@@ -449,6 +446,7 @@ class Client:
                 id=dataset_response["id"],
                 name=dataset_response["name"],
                 collection_id=dataset_response["collection_id"],
+                collection_name=collection_name,
                 metadata=metadata,
                 preview=preview_df,
                 metadata_version=dataset_response.get("metadata_version"),
@@ -601,27 +599,27 @@ class Client:
             ) from e
 
     def get_upstream_entities(
-        self, collection_name: str, dataset_name: str
+        self, entity_type: str, collection_name: str, entity_name: str
     ) -> list[dict] | None:
         """Get the upstream entities (provenance) for a dataset."""
-        endpoint = f"/datasets/{collection_name}/{dataset_name}/upstream"
+        endpoint = f"/entity-relationships/{entity_type}/{collection_name}/{entity_name}/upstream"
         try:
             response = self._request("GET", endpoint)
             return response.json()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 _LOGGER.info(
-                    f"Upstream entities for dataset '{collection_name}/{dataset_name}' not found (or dataset itself not found)."
+                    f"Upstream entities for {entity_type} '{collection_name}/{entity_name}' not found (or dataset itself not found)."
                 )
                 return None  # Return None if the dataset or upstream info doesn't exist
             else:
                 _LOGGER.error(
-                    f"HTTP error fetching upstream entities for '{collection_name}/{dataset_name}': {e}"
+                    f"HTTP error fetching upstream entities for '{collection_name}/{entity_name}': {e}"
                 )
                 raise  # Re-raise other HTTP errors
         except Exception as e:
             _LOGGER.error(
-                f"Error fetching upstream entities for '{collection_name}/{dataset_name}': {e}"
+                f"Error fetching upstream entities for '{collection_name}/{entity_name}': {e}"
             )
             raise  # Re-raise unexpected errors
 
@@ -711,8 +709,8 @@ class Client:
     def update_collection_storage_info(
         self,
         collection_name: str,
-        storage_info: Optional[Dict[str, Any]] = None,
-        storage_provider: Optional[str] = None,
+        storage_info: dict[str, Any] | None = None,
+        storage_provider: str | None = None,
     ) -> BakeryCollection:
         """Update a collection's storage information.
 
@@ -953,7 +951,7 @@ class Client:
         # Upload the data file
         return self.upload_dataset_data(collection_name, dataset_name, data_file_path)
 
-    def prepare_dataset(self, dataset_path: str, dataset_name: str, collection_name: str, origin="mlcbakery", metadata_version="1.0.0") -> Dict[str, Any]:
+    def prepare_dataset(self, dataset_path: str, dataset_name: str, collection_name: str, origin="mlcbakery", metadata_version="1.0.0") -> dict[str, Any]:
         """Prepares a dataset folder for the bakery by creating a .manifest.json file.
 
         Args:
@@ -1012,7 +1010,7 @@ class Client:
         except Exception as e:
             raise IOError(f"Failed to write .manifest.json: {e}") from e
     
-    def duplicate_dataset(self, source_path: str, dest_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def duplicate_dataset(self, source_path: str, dest_path: str, params: dict[str, Any]) -> dict[str, Any]:
         """Duplicates a dataset to a new folder and updates the bakery metadata.
 
         Args:
@@ -1332,6 +1330,7 @@ class Client:
                 id=model_response["id"],
                 name=model_response["name"],
                 collection_id=model_response["collection_id"],
+                collection_name=collection_name,
                 model_path=model_response.get("model_path"),
                 metadata_version=model_response.get("metadata_version"),
                 model_metadata=model_response.get("model_metadata"),
@@ -1423,11 +1422,11 @@ class Client:
         self,
         model_identifier: str, # e.g., "collection_name/model_name"
         model_physical_path: str, # Actual path to model artifact, e.g., /path/to/model.pkl or s3://bucket/model
-        model_metadata: Optional[dict] = None,
-        asset_origin: Optional[str] = None,
-        long_description: Optional[str] = None,
+        model_metadata: dict[str, Any] | None = None,
+        asset_origin: str | None = None,
+        long_description: str | None = None,
         metadata_version: str = "1.0.0",
-        model_attributes: Optional[Dict[str, Any]] = None,
+        model_attributes: dict[str, Any] | None = None,
         # No data_file_path or preview for models as per current scope
     ) -> BakeryModel:
         """Push a model's metadata to the bakery.

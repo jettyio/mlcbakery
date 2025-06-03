@@ -11,6 +11,11 @@ from mlcbakery.schemas.entity_relationship import EntityLinkCreateRequest # New 
 from fastapi.security import HTTPAuthorizationCredentials # For consistency with other endpoints
 from mlcbakery.api.dependencies import verify_admin_token # Adjusted import path
 
+# Added imports for the new endpoint
+from mlcbakery.schemas.dataset import ProvenanceEntityNode
+from mlcbakery.api.endpoints.datasets import build_upstream_tree_async
+# Note: build_upstream_tree_async internally uses _find_entity_by_id from datasets.py
+
 router = APIRouter(
     prefix="/entity-relationships",
     tags=["Entity Relationships"],
@@ -74,6 +79,18 @@ async def create_entity_link(
     if not target_entity: # Should be caught by _resolve, but as a safeguard.
         raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
 
+    # check if the relationship already exists
+    existing_relationship = await db.execute(
+        select(EntityRelationship).where(
+            EntityRelationship.source_entity_id == source_entity.id if source_entity else None,
+            EntityRelationship.target_entity_id == target_entity.id,
+            EntityRelationship.activity_name == link_request.activity_name
+        )
+    )
+    existing_relationship = existing_relationship.scalar_one_or_none()
+    if existing_relationship:
+        return existing_relationship
+
     db_entity_relationship = EntityRelationship(
         source_entity_id=source_entity.id if source_entity else None,
         target_entity_id=target_entity.id, # target_entity is guaranteed to be not None here
@@ -85,3 +102,41 @@ async def create_entity_link(
     await db.refresh(db_entity_relationship)
     
     return db_entity_relationship 
+
+@router.get("/{entity_type}/{collection_name}/{entity_name}/upstream", response_model=ProvenanceEntityNode)
+async def get_entity_upstream_tree(
+    entity_type: str,
+    collection_name: str,
+    entity_name: str,
+    db: AsyncSession = Depends(get_async_db),
+    # Admin token dependency is at the router level
+) -> ProvenanceEntityNode:
+    """
+    Get the provenance tree for any specified entity.
+    The tree includes both upstream and downstream links from each node's perspective.
+    """
+    entity_str = f"{entity_type}/{collection_name}/{entity_name}"
+    
+    # Resolve the starting entity
+    # _resolve_entity_from_string will raise HTTPException if not found or format is bad.
+    # It expects entity_role for error messaging, "starting" or "root" seems appropriate.
+    starting_entity = await _resolve_entity_from_string(entity_str, db, entity_role="starting")
+
+    if not starting_entity:
+        # This case should ideally be covered by _resolve_entity_from_string raising an error,
+        # but as a safeguard or if _resolve_entity_from_string is modified to return None.
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_str}' not found.")
+
+    # Build the provenance tree using the imported function
+    # The `build_upstream_tree_async` function explores both upstream and downstream relationships
+    # for each node it processes, filling the respective fields in ProvenanceEntityNode.
+    # The initial call has no preceding link, hence `link=None`.
+    # A new set for visited nodes is created for each call to get a full tree from the starting point.
+    provenance_tree = await build_upstream_tree_async(starting_entity, None, db, set())
+    
+    if not provenance_tree:
+        # This might happen if the starting_entity itself was None after resolution,
+        # or if build_upstream_tree_async returns None for some reason (e.g. initial entity is in visited, though unlikely for root).
+        raise HTTPException(status_code=500, detail=f"Could not generate provenance tree for entity '{entity_str}'.")
+
+    return provenance_tree 
