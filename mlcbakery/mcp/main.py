@@ -49,7 +49,7 @@ mcp.tool("search-datasets", description="Search for datasets using a query strin
     tools.search_datasets_tool
 )
 mcp.tool("help", description="Get help for the MLC Bakery API")(tools.get_help)
-mcp.tool("dataset/mlcroissant", description="Get the Croissant dataset template")(
+mcp.tool("dataset/mlcroissant", description="Get the Croissant dataset")(
     tools.get_dataset_metadata
 )
 
