@@ -1,4 +1,4 @@
-from opentelemetry.metrics import get_meter_provider
+from opentelemetry.metrics import get_meter_provider, Counter
 
 NAME_SEARCH_QUERIES_TOTAL = "mlcbakery.search.queries_total"
 _METRICS = {}
@@ -10,5 +10,10 @@ def init_metrics():
     description="Counts the total number of search queries processed."
 )
 
-def get_metric(name: str):
+def get_metric(name: str) -> Counter:
     return _METRICS.get(name)
+
+def increment_metric(name: str, value: int = 1):
+    if name not in _METRICS:
+        raise ValueError(f"Metric {name} not found")
+    _METRICS[name].add(value)

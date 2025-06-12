@@ -107,6 +107,22 @@ class TrainedModel(Entity):
     __mapper_args__ = {"polymorphic_identity": "trained_model"}
 
 
+class Task(Entity):
+    """Represents a workflow Task in the system."""
+
+    __tablename__ = "tasks"
+
+    id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
+    # Required fields
+    workflow = Column(JSON, nullable=False)
+    # Optional metadata fields
+    version = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+
+    # Polymorphic identity so SQLAlchemy knows this is a subtype of Entity
+    __mapper_args__ = {"polymorphic_identity": "task"}
+
+
 class Collection(Base):
     """Represents a collection in the system.
 

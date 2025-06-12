@@ -58,8 +58,6 @@ async def search_datasets(
     # Add the search query as an attribute to the span
     current_span.set_attribute("search.query", q)
 
-    # Increment the search queries counter
-    get_metric(NAME_SEARCH_QUERIES_TOTAL).add(1)
 
     search_parameters = {
         "q": q,

@@ -5,7 +5,7 @@ from typing import Literal
 
 class EntityBase(BaseModel):
     name: str
-    entity_type: Literal["entity", "dataset", "trained_model"]
+    entity_type: Literal["entity", "dataset", "trained_model", "task"]
 
 
 class EntityResponse(EntityBase):
