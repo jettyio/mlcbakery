@@ -23,10 +23,45 @@ jobs:
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      - name: Install Dependencies
-        run: uv sync --system
 
-      - name: Run tests and generate coverage report
+
+      - name: Verify sqlalchemy installation
+        run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          echo "Waiting for database to start..."
+          sleep 15 # Add a longer initial delay
+          retries=30
+          count=0
+          # Wait for the PostgreSQL service to be ready
+          # Try connecting to localhost as the port should be mapped
+          until pg_isready -h localhost -p 5432 -U postgres; do
+              count=$((count+1))
+              if [ $count -ge $retries ]; then
+              echo "Database did not become ready after $retries attempts."
+              exit 1
+              fi
+              echo "Waiting for database... attempt $count/$retries"
+              sleep 3 # Increase sleep interval
+          done
+          echo "Database is ready!"
+        env:
+          PGPASSWORD: password # Use the same password as defined in the service
+        # Add step to run database migrations
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+          DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+        run: uv run alembic upgrade heads
+
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+          DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
         run: uv run pytest --cov=mlcbakery --cov-report=xml
 
       - name: Upload coverage to Codecov
