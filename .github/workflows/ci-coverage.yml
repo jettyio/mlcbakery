@@ -1,0 +1,92 @@
+name: CI & Code Coverage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+        postgres:
+          image: postgres:16 # Use a specific version
+          env:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres # Use a simple password for testing
+            POSTGRES_DB: test_db
+          # Set health checks to wait until postgres has started
+          options: >-
+            --health-cmd pg_isready
+            --health-interval 10s
+            --health-timeout 5s
+            --health-retries 5
+          ports:
+            # Maps tcp port 5432 on service container to the host
+            # We use a random free port on the host
+            - 5432:5432 # Keep the default port mapping
+  
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+      - name: Install dependencies
+        run: uv pip install --system .[dev,webclient]
+  
+      - name: Verify sqlalchemy installation
+        run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          echo "Waiting for database to start..."
+          sleep 15 # Add a longer initial delay
+          retries=30
+          count=0
+          # Wait for the PostgreSQL service to be ready
+          # Try connecting to localhost as the port should be mapped
+          until pg_isready -h localhost -p 5432 -U postgres; do
+              count=$((count+1))
+              if [ $count -ge $retries ]; then
+              echo "Database did not become ready after $retries attempts."
+              exit 1
+              fi
+              echo "Waiting for database... attempt $count/$retries"
+              sleep 3 # Increase sleep interval
+          done
+          echo "Database is ready!"
+        env:
+          PGPASSWORD: password # Use the same password as defined in the service
+        # Add step to run database migrations
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+          DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+        run: uv run alembic upgrade heads
+
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+          DATABASE_TEST_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_db
+        run: uv run pytest --cov=mlcbakery --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

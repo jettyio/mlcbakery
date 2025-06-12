@@ -29,6 +29,7 @@ from mlcbakery.api.endpoints import (
     storage,
     entity_relationships,
     trained_models,
+    tasks,
 )
 
 # Define app early
@@ -106,3 +107,4 @@ app.include_router(activities.router, prefix="/api/v1", tags=["Activities"])
 app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])
 app.include_router(storage.router, prefix="/api/v1", tags=["Storage"])
 app.include_router(entity_relationships.router, prefix="/api/v1", tags=["Entity Relationships"])
+app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])

@@ -48,10 +48,6 @@ jobs:
     - name: Verify sqlalchemy installation
       run: uv pip list | grep sqlalchemy || echo "SQLAlchemy not found"
 
-    # No need to verify aiosqlite anymore
-    # - name: Verify aiosqlite installation
-    #   run: uv pip list | grep aiosqlite || echo "aiosqlite not found"
-
     # Add this step to install the PostgreSQL client
     - name: Install PostgreSQL client
       run: sudo apt-get update && sudo apt-get install -y postgresql-client
