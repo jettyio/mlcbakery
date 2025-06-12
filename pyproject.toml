@@ -96,3 +96,8 @@ members = [
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api" 
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.2.1",
+]
