@@ -11,6 +11,24 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+        postgres:
+          image: postgres:16 # Use a specific version
+          env:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres # Use a simple password for testing
+            POSTGRES_DB: test_db
+          # Set health checks to wait until postgres has started
+          options: >-
+            --health-cmd pg_isready
+            --health-interval 10s
+            --health-timeout 5s
+            --health-retries 5
+          ports:
+            # Maps tcp port 5432 on service container to the host
+            # We use a random free port on the host
+            - 5432:5432 # Keep the default port mapping
+  
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
