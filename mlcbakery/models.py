@@ -9,6 +9,7 @@ from sqlalchemy import (
     Text,
     LargeBinary,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
 from .database import Base
@@ -85,7 +86,7 @@ class Dataset(Entity):
     data_path = Column(String, nullable=False)
     format = Column(String, nullable=False)
     metadata_version = Column(String, nullable=True)
-    dataset_metadata = Column(JSON, nullable=True)
+    dataset_metadata = Column(JSONB, nullable=True)
     preview = Column(LargeBinary, nullable=True)
     preview_type = Column(String, nullable=True)
     long_description = Column(Text, nullable=True)
@@ -100,9 +101,9 @@ class TrainedModel(Entity):
     id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
     model_path = Column(String, nullable=False)
     metadata_version = Column(String, nullable=True)
-    model_metadata = Column(JSON, nullable=True)
+    model_metadata = Column(JSONB, nullable=True)
     long_description = Column(Text, nullable=True)
-    model_attributes = Column(JSON, nullable=True)
+    model_attributes = Column(JSONB, nullable=True)
 
     __mapper_args__ = {"polymorphic_identity": "trained_model"}
 
@@ -114,7 +115,7 @@ class Task(Entity):
 
     id = Column(Integer, ForeignKey("entities.id"), primary_key=True)
     # Required fields
-    workflow = Column(JSON, nullable=False)
+    workflow = Column(JSONB, nullable=False)
     # Optional metadata fields
     version = Column(String, nullable=True)
     description = Column(Text, nullable=True)
@@ -143,7 +144,7 @@ class Collection(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(Text)
-    storage_info = Column(JSON, nullable=True)
+    storage_info = Column(JSONB, nullable=True)
     storage_provider = Column(String, nullable=True)
 
     # Relationships
