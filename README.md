@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/jettyio-mlcbakery-badge.png)](https://mseep.ai/app/jettyio-mlcbakery)
+
 # MLC Bakery
 
 A Python-based service for managing ML model provenance and lineage, built with FastAPI and SQLAlchemy. Support for Croissant metadata validation.
