@@ -1563,17 +1563,19 @@ class Client:
             raise
 
     def create_task(
-        self, collection_name: str, task_name: str, workflow: dict[str, Any], params: dict = dict()
+        self, collection_name: str, task_name: str, workflow: dict[str, Any], version: str="1.0.0", description: str="", params: dict = dict()
     ) -> BakeryTask:
         """Create a task in a collection."""
-        endpoint = "/tasks"  # As per API: POST /tasks
+        endpoint = "/tasks" 
         # Ensure collection_name is in params for the API
         payload = {
             "name": task_name,
-            "collection_name": collection_name,  # API expects collection_name for creation
+            "collection_name": collection_name, 
             "workflow": workflow,
-            "entity_type": "task",  # Default entity type
-            **params,  # params may include version, description, etc.
+            "entity_type": "task", 
+            "version": version,
+            "description": description,
+            **params, 
         }
 
         try:
@@ -1586,6 +1588,7 @@ class Client:
                 id=json_response["id"],
                 name=json_response["name"],
                 collection_id=json_response.get("collection_id"),
+                collection_name=collection_name,
                 workflow=json_response.get("workflow", {}),
                 version=json_response.get("version"),
                 description=json_response.get("description"),
