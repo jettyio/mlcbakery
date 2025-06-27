@@ -45,8 +45,7 @@ class TestTaskClient:
         task = self.client.create_task(
             collection_name="test-collection",
             task_name="test-task",
-            workflow=self.sample_workflow,
-            params={"version": "1.0", "description": "Test task"}
+            workflow=self.sample_workflow
         )
         
         # Assertions
@@ -59,12 +58,12 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "POST"
-        assert "/tasks" in args[1]
-        assert kwargs["json"]["name"] == "test-task"
-        assert kwargs["json"]["collection_name"] == "test-collection"
-        assert kwargs["json"]["workflow"] == self.sample_workflow
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "POST"
+        assert "/tasks" in call_kwargs["url"]
+        assert call_kwargs["json"]["name"] == "test-task"
+        assert call_kwargs["json"]["collection_name"] == "test-collection"
+        assert call_kwargs["json"]["workflow"] == self.sample_workflow
 
     @patch('mlcbakery.bakery_client.requests.request')
     def test_get_task_by_name(self, mock_request):
@@ -95,17 +94,22 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "GET"
-        assert "/tasks/test-collection/test-task" in args[1]
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "GET"
+        assert "/tasks/test-collection/test-task" in call_kwargs["url"]
 
     @patch('mlcbakery.bakery_client.requests.request')
     def test_get_task_by_name_not_found(self, mock_request):
         """Test getting a task that doesn't exist."""
-        # Mock 404 response
+        # Mock 404 response with proper HTTPError
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_response.raise_for_status.side_effect = Exception("404 Not Found")
+        
+        # Create a proper HTTPError with a mock response
+        from requests.exceptions import HTTPError
+        http_error = HTTPError("404 Not Found")
+        http_error.response = mock_response
+        mock_response.raise_for_status.side_effect = http_error
         mock_request.return_value = mock_response
         
         # Call method
@@ -144,10 +148,10 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "PUT"
-        assert "/tasks/1" in args[1]
-        assert kwargs["json"] == params
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "PUT"
+        assert "/tasks/1" in call_kwargs["url"]
+        assert call_kwargs["json"] == params
 
     @patch('mlcbakery.bakery_client.requests.request')
     def test_list_tasks(self, mock_request):
@@ -190,11 +194,11 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "GET"
-        assert "/tasks/" in args[1]
-        assert kwargs["params"]["skip"] == 0
-        assert kwargs["params"]["limit"] == 10
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "GET"
+        assert "/tasks/" in call_kwargs["url"]
+        assert call_kwargs["params"]["skip"] == 0
+        assert call_kwargs["params"]["limit"] == 10
 
     @patch('mlcbakery.bakery_client.requests.request')
     def test_search_tasks(self, mock_request):
@@ -224,11 +228,11 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "GET"
-        assert "/tasks/search" in args[1]
-        assert kwargs["params"]["q"] == "test query"
-        assert kwargs["params"]["limit"] == 10
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "GET"
+        assert "/tasks/search" in call_kwargs["url"]
+        assert call_kwargs["params"]["q"] == "test query"
+        assert call_kwargs["params"]["limit"] == 10
 
     @patch('mlcbakery.bakery_client.requests.request')
     def test_delete_task(self, mock_request):
@@ -244,9 +248,9 @@ class TestTaskClient:
         
         # Verify request was made correctly
         mock_request.assert_called_once()
-        args, kwargs = mock_request.call_args
-        assert args[0] == "DELETE"
-        assert "/tasks/1" in args[1]
+        call_kwargs = mock_request.call_args.kwargs
+        assert call_kwargs["method"] == "DELETE"
+        assert "/tasks/1" in call_kwargs["url"]
 
     @patch.object(Client, 'find_or_create_by_collection_name')
     @patch.object(Client, 'get_task_by_name')
