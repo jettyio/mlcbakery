@@ -28,6 +28,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
     "sqlalchemy>=2.0.40",
+    "sqlalchemy-continuum>=1.4.2",
     "starlette>=0.46.2",
     "typesense>=1.0.3",
     "uvicorn>=0.34.2",
@@ -52,6 +53,9 @@ name = "mlcbakery"
 version = "0.1.4"
 description = "A machine learning data and model management system with provenance tracking"
 authors = ["Jonathan Lebensold <jon@jetty.io>"]
+
+[tool.poetry.scripts]
+bakery-cli = "cli.bakery_cli:main"
 
 [tool.poetry.dependencies]
 python = "^3.12"

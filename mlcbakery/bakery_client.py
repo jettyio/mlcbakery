@@ -113,6 +113,20 @@ class BakeryDataset:
 
 
 @dataclasses.dataclass
+class BakeryTask:
+    id: str
+    name: str
+    collection_id: str
+    workflow: dict[str, Any]
+    collection_name: str | None = None
+    version: str | None = None
+    description: str | None = None
+    entity_type: str = "task"
+    asset_origin: str | None = None
+    created_at: str | None = None
+
+
+@dataclasses.dataclass
 class BakeryModel:
     id: str
     name: str
@@ -1511,3 +1525,213 @@ class Client:
             # Fallback to the model object returned by create/update, though it might be less complete.
             return pushed_model 
         return final_model
+
+    def get_task_by_name(
+        self, collection_name: str, task_name: str
+    ) -> BakeryTask | None:
+        """Get a task by name in a collection if it exists."""
+        endpoint = f"/tasks/{collection_name}/{task_name}"
+        try:
+            response = self._request("GET", endpoint)
+            task_response = response.json()
+
+            return BakeryTask(
+                id=task_response["id"],
+                name=task_response["name"],
+                collection_id=task_response["collection_id"],
+                collection_name=collection_name,
+                workflow=task_response.get("workflow", {}),
+                version=task_response.get("version"),
+                description=task_response.get("description"),
+                entity_type=task_response.get("entity_type", "task"),
+                asset_origin=task_response.get("asset_origin"),
+                created_at=task_response.get("created_at"),
+            )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                _LOGGER.info(f"Task '{collection_name}/{task_name}' not found.")
+                return None
+            else:
+                _LOGGER.error(
+                    f"HTTP error fetching task '{collection_name}/{task_name}': {e}"
+                )
+                raise
+        except Exception as e:
+            _LOGGER.error(
+                f"Error fetching task '{collection_name}/{task_name}': {e}"
+            )
+            raise
+
+    def create_task(
+        self, collection_name: str, task_name: str, workflow: dict[str, Any], params: dict = dict()
+    ) -> BakeryTask:
+        """Create a task in a collection."""
+        endpoint = "/tasks"  # As per API: POST /tasks
+        # Ensure collection_name is in params for the API
+        payload = {
+            "name": task_name,
+            "collection_name": collection_name,  # API expects collection_name for creation
+            "workflow": workflow,
+            "entity_type": "task",  # Default entity type
+            **params,  # params may include version, description, etc.
+        }
+
+        try:
+            response = self._request("POST", endpoint, json_data=payload)
+            json_response = response.json()
+            if "id" not in json_response or "name" not in json_response:
+                raise ValueError("Invalid response received from create task API")
+
+            return BakeryTask(
+                id=json_response["id"],
+                name=json_response["name"],
+                collection_id=json_response.get("collection_id"),
+                workflow=json_response.get("workflow", {}),
+                version=json_response.get("version"),
+                description=json_response.get("description"),
+                entity_type=json_response.get("entity_type", "task"),
+                asset_origin=json_response.get("asset_origin"),
+                created_at=json_response.get("created_at"),
+            )
+        except Exception as e:
+            raise Exception(
+                f"Failed to create task {task_name} in collection {collection_name}: {e}"
+            ) from e
+
+    def update_task(self, task_id: str, params: dict) -> BakeryTask:
+        """Update a task."""
+        endpoint = f"/tasks/{task_id}"  # As per API: PUT /tasks/{task_id}
+        try:
+            response = self._request("PUT", endpoint, json_data=params)
+            json_response = response.json()
+            if "id" not in json_response or "name" not in json_response:
+                raise ValueError("Invalid response received from update task API")
+
+            return BakeryTask(
+                id=json_response["id"],
+                name=json_response["name"],
+                collection_id=json_response.get("collection_id"),
+                workflow=json_response.get("workflow", {}),
+                version=json_response.get("version"),
+                description=json_response.get("description"),
+                entity_type=json_response.get("entity_type", "task"),
+                asset_origin=json_response.get("asset_origin"),
+                created_at=json_response.get("created_at"),
+            )
+        except Exception as e:
+            raise Exception(f"Failed to update task {task_id}: {e}") from e
+
+    def list_tasks(self, skip: int = 0, limit: int = 100) -> list[BakeryTask]:
+        """List all tasks."""
+        endpoint = "/tasks/"
+        params = {"skip": skip, "limit": limit}
+        try:
+            response = self._request("GET", endpoint, params=params)
+            tasks_data = response.json()
+            
+            tasks = []
+            for task_data in tasks_data:
+                tasks.append(BakeryTask(
+                    id=task_data["id"],
+                    name=task_data["name"],
+                    collection_id=task_data["collection_id"],
+                    collection_name=task_data.get("collection_name"),
+                    workflow=task_data.get("workflow", {}),
+                    version=task_data.get("version"),
+                    description=task_data.get("description"),
+                    entity_type=task_data.get("entity_type", "task"),
+                    asset_origin=task_data.get("asset_origin"),
+                    created_at=task_data.get("created_at"),
+                ))
+            return tasks
+        except Exception as e:
+            raise Exception(f"Failed to list tasks: {e}") from e
+
+    def search_tasks(self, query: str, limit: int = 30) -> list[dict]:
+        """Search for tasks using a query string."""
+        endpoint = "/tasks/search"
+        params = {"q": query, "limit": limit}
+        try:
+            response = self._request("GET", endpoint, params=params)
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to search tasks: {e}") from e
+
+    def delete_task(self, task_id: str) -> None:
+        """Delete a task."""
+        endpoint = f"/tasks/{task_id}"
+        try:
+            response = self._request("DELETE", endpoint)
+            if response.status_code != 204:
+                raise ValueError("Unexpected response code from delete task API")
+        except Exception as e:
+            raise Exception(f"Failed to delete task {task_id}: {e}") from e
+
+    def push_task(
+        self,
+        task_identifier: str,  # e.g., "collection_name/task_name"
+        workflow: dict[str, Any],
+        version: str | None = None,
+        description: str | None = None,
+        asset_origin: str | None = None,
+    ) -> BakeryTask:
+        """Push a task to the bakery.
+
+        Args:
+            task_identifier: String in the format 'collection_name/task_name'.
+            workflow: Dictionary containing the workflow definition.
+            version: Optional version string for the task.
+            description: Optional description of the task.
+            asset_origin: Optional string indicating the origin of the task.
+
+        Returns:
+            The BakeryTask object representing the pushed task.
+        """
+        if "/" not in task_identifier:
+            raise ValueError(
+                "task_identifier must be in the format 'collection_name/task_name'"
+            )
+        collection_name, task_name = task_identifier.split("/", 1)
+
+        collection = self.find_or_create_by_collection_name(collection_name)
+        if not collection:
+            raise Exception(f"Failed to find or create collection {collection_name}")
+
+        existing_task = self.get_task_by_name(collection_name, task_name)
+
+        entity_payload = {
+            "workflow": workflow,
+            "version": version,
+            "description": description,
+            "asset_origin": asset_origin,
+        }
+        
+        # Filter out None values from payload to avoid overwriting existing fields
+        entity_payload_for_update = {k: v for k, v in entity_payload.items() if v is not None}
+
+        pushed_task: BakeryTask
+        if existing_task:
+            # Update existing task
+            _LOGGER.info(
+                f"Updating task {task_name} in collection {collection_name}"
+            )
+            pushed_task = self.update_task(existing_task.id, entity_payload_for_update)
+        else:
+            # Create new task
+            _LOGGER.info(
+                f"Creating task {task_name} in collection {collection_name}"
+            )
+            creation_payload = entity_payload.copy()
+            pushed_task = self.create_task(
+                collection_name,
+                task_name,
+                workflow,
+                creation_payload,
+            )
+        
+        # Fetch the final state of the task after creation/update
+        final_task = self.get_task_by_name(collection_name, task_name)
+        if not final_task:
+            _LOGGER.error(f"Failed to retrieve task {collection_name}/{task_name} after push operation.")
+            return pushed_task 
+        return final_task
