@@ -6,6 +6,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker
 import httpx
 import pytest_asyncio  # Import pytest_asyncio
+import sqlalchemy as sa
 
 # Assuming models.py and database.py are importable from the root
 # Adjust the import path if your structure is different
@@ -83,7 +84,9 @@ async def setup_test_db():
     async with engine.begin() as conn:  # Use engine.begin()
         try:
             print("\n--- Global Fixture: Dropping tables... ---")
-            await conn.run_sync(models.Base.metadata.drop_all)  # Use models.Base
+            # Use CASCADE to handle foreign key dependencies
+            await conn.execute(sa.text("DROP SCHEMA public CASCADE;"))
+            await conn.execute(sa.text("CREATE SCHEMA public;"))
             print("--- Global Fixture: Creating tables... ---")
             await conn.run_sync(models.Base.metadata.create_all)  # Use models.Base
             # Commit is handled implicitly by engine.begin() context manager on success
@@ -117,7 +120,9 @@ async def setup_test_db():
     async with engine.begin() as conn:  # Use engine.begin()
         try:
             print("--- Global Fixture: Dropping tables (teardown)... ---")
-            await conn.run_sync(models.Base.metadata.drop_all)  # Use models.Base
+            # Use CASCADE to handle foreign key dependencies during teardown
+            await conn.execute(sa.text("DROP SCHEMA public CASCADE;"))
+            await conn.execute(sa.text("CREATE SCHEMA public;"))
             # Commit is handled implicitly by engine.begin() context manager on success
             print(
                 "--- Global Fixture: Tables dropped (Teardown Transaction Committing). ---"
