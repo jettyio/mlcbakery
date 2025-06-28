@@ -197,26 +197,6 @@ async def delete_task(
 
 
 @router.get(
-    "/tasks/{collection_name}/{task_name}",
-    response_model=TaskResponse,
-    summary="Get a Task by Collection and Name",
-    tags=["Tasks"],
-)
-async def get_task_by_name(
-    collection_name: str,
-    task_name: str,
-    db: AsyncSession = Depends(get_async_db),
-):
-    db_task = await _find_task_by_name(collection_name, task_name, db)
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task '{task_name}' in collection '{collection_name}' not found",
-        )
-    return db_task
-
-
-@router.get(
     "/tasks/",
     response_model=List[TaskListResponse],
     summary="List Tasks",
@@ -249,4 +229,76 @@ async def list_tasks(
             collection_name=task.collection.name if task.collection else None,
         )
         for task in tasks
-    ] 
+    ]
+
+
+@router.get(
+    "/tasks/{collection_name}/",
+    response_model=List[TaskListResponse],
+    summary="List Tasks by Collection",
+    tags=["Tasks"],
+)
+async def list_tasks_by_collection(
+    collection_name: str,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max records to return"),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all tasks in a specific collection."""
+    # First verify the collection exists
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    # Get tasks in the collection
+    stmt = (
+        select(Task)
+        .join(Collection, Task.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(Task.entity_type == "task")
+        .options(selectinload(Task.collection))
+        .offset(skip)
+        .limit(limit)
+        .order_by(Task.id)
+    )
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    return [
+        TaskListResponse(
+            id=task.id,
+            name=task.name,
+            workflow=task.workflow,
+            version=task.version,
+            description=task.description,
+            collection_id=task.collection_id,
+            collection_name=task.collection.name if task.collection else None,
+        )
+        for task in tasks
+    ]
+
+
+@router.get(
+    "/tasks/{collection_name}/{task_name}",
+    response_model=TaskResponse,
+    summary="Get a Task by Collection and Name",
+    tags=["Tasks"],
+)
+async def get_task_by_name(
+    collection_name: str,
+    task_name: str,
+    db: AsyncSession = Depends(get_async_db),
+):
+    db_task = await _find_task_by_name(collection_name, task_name, db)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_name}' in collection '{collection_name}' not found",
+        )
+    return db_task 

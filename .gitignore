@@ -198,3 +198,4 @@ Caddyfile
 # testing notebooks
 .ipynb
 test_datasets/
+notebooks/tasks.ipynb
