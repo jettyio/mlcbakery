@@ -15,7 +15,7 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_admin_token  # Add this import
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token
 from mlcbakery.schemas.activity import ActivityResponse
 
 router = fastapi.APIRouter()
@@ -76,7 +76,8 @@ async def get_collection(
 
 @router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
-    skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db)
+    skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token),
 ):
     """
     Get collections from the database with pagination (async).

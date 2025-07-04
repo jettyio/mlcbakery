@@ -4,11 +4,51 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
+import jwt
+from jwt import PyJWKClient
+
+
 logging.basicConfig(level=logging.INFO)
 
 # Define the bearer scheme
 bearer_scheme = HTTPBearer()
 
+JWT_ISSUER_JWKS_URL = os.getenv("JWT_ISSUER_JWKS_URL")
+
+async def verify_jwt_token(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    """
+    Dependency that verifies the provided JWT token.
+
+    This works over both HTTP and HTTPS as the Bearer token authentication
+    is transport protocol agnostic. The token is sent in the Authorization header
+    which is preserved by the reverse proxy as configured in Caddyfile.
+    """
+    print(credentials)
+    print(credentials.credentials)
+
+    token = credentials.credentials
+    jwks_client = PyJWKClient(JWT_ISSUER_JWKS_URL)
+
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={
+                "verify_aud": False,  # Adjust as needed
+            }
+        )
+        print(f"JWT payload: {payload}")
+        return payload
+    except Exception as e:
+        print(f"JWT verification failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired JWT token"
+        )
 
 async def verify_admin_token(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -21,6 +61,8 @@ async def verify_admin_token(
     is transport protocol agnostic. The token is sent in the Authorization header
     which is preserved by the reverse proxy as configured in Caddyfile.
     """
+    print(credentials)
+    print(credentials.credentials)
     # Read the token *inside* the function
     admin_auth_token = os.environ.get("ADMIN_AUTH_TOKEN")
     if not admin_auth_token:  # Check the locally read token

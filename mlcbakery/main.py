@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from opentelemetry import trace # type: ignore
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor # type: ignore
@@ -34,6 +35,14 @@ from mlcbakery.api.endpoints import (
 
 # Define app early
 app = FastAPI(title="MLCBakery")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["localhost:5173", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configure OpenTelemetry
 resource = Resource(attributes={
