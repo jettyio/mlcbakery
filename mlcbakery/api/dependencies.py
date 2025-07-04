@@ -6,7 +6,7 @@ import logging
 
 import jwt
 from jwt import PyJWKClient
-
+from jwt.exceptions import PyJWTError
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,8 +42,15 @@ async def verify_jwt_token(
             }
         )
         print(f"JWT payload: {payload}")
-        return payload
-    except Exception as e:
+        org_id = payload.get("org_id", None)
+        user_id = payload.get("sub", None)
+
+        return {
+            "verified": True,
+            "organization": org_id is not None,
+            "identifier": org_id if org_id else user_id
+        }
+    except PyJWTError as e:
         print(f"JWT verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

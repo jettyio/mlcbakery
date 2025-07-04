@@ -25,7 +25,7 @@ router = fastapi.APIRouter()
 async def create_collection(
     collection: CollectionCreate,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
+    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
 ):
     """
     Create a new collection (async).
@@ -43,7 +43,9 @@ async def create_collection(
         description=collection.description,
         storage_info=collection.storage_info,
         storage_provider=collection.storage_provider,
+        owner_identifier=auth['identifier']
     )
+
     db.add(db_collection)
     await db.commit()
     await db.refresh(db_collection)
@@ -63,13 +65,16 @@ async def create_collection(
 
 @router.get("/collections/{collection_name}", response_model=CollectionResponse)
 async def get_collection(
-    collection_name: str, db: AsyncSession = fastapi.Depends(get_async_db)
+    collection_name: str, 
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token)
 ):
+    print(auth)
     """Get a collection by name (async)."""
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
-    if not collection:
+    if not collection or collection.owner_identifier != auth['identifier']:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
     return collection
 
@@ -77,7 +82,7 @@ async def get_collection(
 @router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token),
+    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token),
 ):
     """
     Get collections from the database with pagination (async).
@@ -86,7 +91,7 @@ async def list_collections(
         raise fastapi.HTTPException(
             status_code=422, detail="Invalid pagination parameters"
         )
-    stmt = select(Collection).offset(skip).limit(limit)
+    stmt = select(Collection).where(Collection.owner_identifier == auth['identifier']).offset(skip).limit(limit)
     # Add .options(selectinload(Collection.entities)) if eager loading needed
     result = await db.execute(stmt)
     collections = result.scalars().all()
