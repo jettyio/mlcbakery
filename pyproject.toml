@@ -1,6 +1,6 @@
 [project]
 name = "mlcbakery"
-version = "0.1.4"
+version = "0.1.5"
 description = "A machine learning data and model management system with provenance tracking"
 requires-python = ">=3.12"
 dependencies = [
@@ -50,7 +50,7 @@ include = '\.pyi?$'
 
 [tool.poetry]
 name = "mlcbakery"
-version = "0.1.4"
+version = "0.1.5"
 description = "A machine learning data and model management system with provenance tracking"
 authors = ["Jonathan Lebensold <jon@jetty.io>"]
 
