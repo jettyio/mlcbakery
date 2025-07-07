@@ -6,7 +6,7 @@ import json
 
 from mlcbakery.main import app
 from mlcbakery.schemas.collection import CollectionCreate
-from mlcbakery.lib.jwt_strategies.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers
+from mlcbakery.lib.jwt_strategies.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
 # Assuming conftest.py provides TEST_ADMIN_TOKEN and async_client fixture
 from conftest import TEST_ADMIN_TOKEN 
 
@@ -109,6 +109,125 @@ async def test_create_collection_duplicate_name_case_insensitive(async_client: A
     assert "already exists" in response_detail, \
         f"Expected 'already exists' in detail, but got: {response_detail}. \
         Current endpoint logic is likely case-sensitive."
+
+@pytest.mark.asyncio
+async def test_get_collection_success(async_client: AsyncClient):
+    """Test successful retrieval of a collection."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for API testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Now retrieve the collection by ID
+    response = await async_client.get(f"/api/v1/collections/{created_collection['name']}", headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["description"] == collection_data["description"]
+
+@pytest.mark.asyncio
+async def test_get_collection_storage_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that retrieving storage for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for API testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to retrieve storage with a different org's token
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}/storage",
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+
+@pytest.mark.asyncio
+async def test_get_collection_storage_success(async_client: AsyncClient):
+    """Test successful retrieval of a collection."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for API testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Now retrieve the collection by ID
+    response = await async_client.get(f"/api/v1/collections/{created_collection['name']}/storage", headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["description"] == collection_data["description"]
+
+@pytest.mark.asyncio
+async def test_get_collection_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test failure to retrieve a collection with an invalid token."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for API testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+
+    # Now try to retrieve it with an invalid token
+    response = await async_client.get(f"/api/v1/collections/{unique_name}", headers=authorization_headers(sample_user_token("user 0987")))
+    
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+@pytest.mark.asyncio
+async def test_list_collections(async_client: AsyncClient):
+    """Test listing all collections."""
+    # Create a couple of collections
+    org1_collection_name = f"test-collection-org1"
+    collection_data = {
+        "name": org1_collection_name,
+        "description": f"A test collection for API testing."
+    }
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1")))
+
+    org2_collection_name = f"test-collection-org2"
+    collection_data = {
+        "name": org2_collection_name,
+        "description": f"A test collection for API testing."
+    }
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2")))
+
+    # Now list all collections
+    response = await async_client.get("/api/v1/list-collections/", headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1")))
+
+    assert response.status_code == 200
+    response_data = response.json()
+    assert isinstance(response_data, list)
+    assert len(response_data) == 1
 
 # TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
 # TODO: Add tests for invalid inputs (e.g., missing name) 

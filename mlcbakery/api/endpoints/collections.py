@@ -69,7 +69,6 @@ async def get_collection(
     db: AsyncSession = fastapi.Depends(get_async_db),
     auth = fastapi.Depends(verify_jwt_token)
 ):
-    print(auth)
     """Get a collection by name (async)."""
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
@@ -104,7 +103,7 @@ async def list_collections(
 async def get_collection_storage_info(
     collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
+    auth = fastapi.Depends(verify_jwt_token),
 ):
     """Get storage information for a specific collection.
     This endpoint requires admin authentication.
@@ -114,7 +113,7 @@ async def get_collection_storage_info(
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection:
+    if not collection or collection.owner_identifier != auth['identifier']:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     return collection
@@ -160,6 +159,7 @@ async def list_datasets_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
+    auth = fastapi.Depends(verify_jwt_token)
 ):
     """Get a list of datasets for a specific collection with pagination (async)."""
     # First verify the collection exists
