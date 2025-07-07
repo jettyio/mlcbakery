@@ -23,9 +23,6 @@ async def verify_jwt_token(
     is transport protocol agnostic. The token is sent in the Authorization header
     which is preserved by the reverse proxy as configured in Caddyfile.
     """
-    print(credentials)
-    print(credentials.credentials)
-
     token = credentials.credentials
 
     parsed_token = verification_strategy.parse_token(token)
@@ -79,9 +76,6 @@ async def verify_admin_token(
     is transport protocol agnostic. The token is sent in the Authorization header
     which is preserved by the reverse proxy as configured in Caddyfile.
     """
-    print(credentials)
-    print(credentials.credentials)
-    # Read the token *inside* the function
     admin_auth_token = os.environ.get("ADMIN_AUTH_TOKEN")
     if not admin_auth_token:  # Check the locally read token
         raise HTTPException(
