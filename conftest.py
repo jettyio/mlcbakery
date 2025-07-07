@@ -14,6 +14,9 @@ from mlcbakery import models  # Add this import
 from mlcbakery.database import get_async_db  # Import the dependency getter
 from mlcbakery.main import app  # Import the FastAPI app
 
+from mlcbakery.jwt import jwt_verification_strategy
+from mlcbakery.lib.jwt_strategies.passthrough_strategy import PassthroughStrategy
+
 # --- Test Admin Token ---
 TEST_ADMIN_TOKEN = "test-super-secret-token"  # Define a constant for the test token
 
@@ -49,6 +52,10 @@ async def override_get_async_db():
 # This needs to happen before tests run that use the app/client
 app.dependency_overrides[get_async_db] = override_get_async_db
 
+def passthrough_jwt_verification_strategy():
+    return PassthroughStrategy()
+
+app.dependency_overrides[jwt_verification_strategy] = passthrough_jwt_verification_strategy
 
 # --- Fixture to Set Admin Auth Token Env Var ---
 @pytest.fixture(scope="session", autouse=True)  # Use session scope and autouse

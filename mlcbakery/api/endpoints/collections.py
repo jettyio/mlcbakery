@@ -15,17 +15,17 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
 from mlcbakery.schemas.activity import ActivityResponse
+from mlcbakery.api.access_level import AccessLevel
 
 router = fastapi.APIRouter()
-
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
     collection: CollectionCreate,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
+    auth = fastapi.Depends(verify_jwt_with_write_access)
 ):
     """
     Create a new collection (async).
@@ -67,7 +67,7 @@ async def create_collection(
 async def get_collection(
     collection_name: str, 
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token)
+    auth = fastapi.Depends(verify_jwt_token)
 ):
     print(auth)
     """Get a collection by name (async)."""
@@ -82,7 +82,7 @@ async def get_collection(
 @router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    auth: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_token),
+    auth = fastapi.Depends(verify_jwt_token),
 ):
     """
     Get collections from the database with pagination (async).
