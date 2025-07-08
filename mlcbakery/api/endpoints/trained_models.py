@@ -54,7 +54,6 @@ async def search_models(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
-    auth = Depends(verify_jwt_token),
 ):
     """Search models using Typesense based on query term."""
     # Get the current span
@@ -237,7 +236,6 @@ async def get_trained_model_by_name(
     collection_name: str, 
     model_name: str, 
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
 ):
     """
     Get a specific trained model by its collection name and model name.

@@ -51,7 +51,6 @@ async def search_datasets(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
-    auth = Depends(verify_jwt_token),
 ):
     """Search datasets using Typesense based on query term."""
     # Get the current span
@@ -111,7 +110,6 @@ async def list_datasets(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
 ):
     """Get a list of datasets with pagination (async)."""
     if skip < 0 or limit < 0:
@@ -121,7 +119,6 @@ async def list_datasets(
     stmt = (
         select(Dataset)
         .where(Dataset.entity_type == "dataset")
-        .where(Collection.owner_identifier == auth['identifier'])
         .options(
             selectinload(Dataset.collection),
             
@@ -346,7 +343,6 @@ async def get_dataset_preview(
     collection_name: str, 
     dataset_name: str, 
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
 ):
     """Get a dataset's preview (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -371,7 +367,6 @@ async def get_dataset_by_name(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
 ):
     """Get a specific dataset by collection name and dataset name (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -425,7 +420,6 @@ async def get_dataset_upstream_tree(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
 ) -> ProvenanceEntityNode:
     """Get the upstream entity tree for a dataset (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -438,8 +432,7 @@ async def get_dataset_upstream_tree(
 async def validate_mlcroissant_file(
     file: UploadFile = File(
         ..., description="Croissant JSON-LD metadata file to validate"
-    ),
-    auth = Depends(verify_jwt_with_write_access)
+    )
 ):
     """
     Validate an uploaded Croissant metadata file.
@@ -508,7 +501,6 @@ async def get_dataset_mlcroissant(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
 ):
     """Get a dataset's Croissant metadata (async)."""
     stmt = (
