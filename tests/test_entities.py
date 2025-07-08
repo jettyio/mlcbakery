@@ -45,8 +45,8 @@ async def create_test_dataset(
     return dataset_resp.json()
 
 
-async def create_test_agent(ac: httpx.AsyncClient, name="Test Agent API") -> dict:
-    agent_data = {"name": name, "type": "API testing"}
+async def create_test_agent(ac: httpx.AsyncClient, collection_id: int, name="Test Agent API") -> dict:
+    agent_data = {"name": name, "type": "API testing", "collection_id": collection_id}
     # Add headers to the request
     agent_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert agent_resp.status_code == 200, (

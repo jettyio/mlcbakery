@@ -7,8 +7,7 @@ import json
 from mlcbakery.main import app
 from mlcbakery.schemas.collection import CollectionCreate
 from mlcbakery.auth.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
-# Assuming conftest.py provides TEST_ADMIN_TOKEN and async_client fixture
-from conftest import TEST_ADMIN_TOKEN 
+# Assuming conftest.py provides async_client fixture
 
 @pytest.mark.asyncio
 async def test_create_collection_success(async_client: AsyncClient):
