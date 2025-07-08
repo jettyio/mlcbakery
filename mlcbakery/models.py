@@ -334,6 +334,7 @@ class Collection(Base):
     description = Column(Text)
     storage_info = Column(JSONB, nullable=True)
     storage_provider = Column(String, nullable=True)
+    owner_identifier = Column(String, nullable=False)  # Identifier for the owner (user or organization)
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")

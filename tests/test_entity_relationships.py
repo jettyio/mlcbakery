@@ -6,10 +6,10 @@ from sqlalchemy.future import select
 from mlcbakery.main import app # Your FastAPI app instance
 from mlcbakery.database import get_async_db, Base, engine # Assuming these are your DB setup
 from mlcbakery.models import Collection, Entity, Activity, EntityRelationship, Dataset
-from conftest import TEST_ADMIN_TOKEN  # Import the test token
+from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers
 
 # Define headers globally or pass them around
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+AUTH_HEADERS = authorization_headers(sample_org_token())
 
 
 # pytest-asyncio decorator for async test functions
@@ -76,8 +76,8 @@ async def clear_db(session: AsyncSession):
 #     # If you created all tables: await conn.run_sync(Base.metadata.drop_all) inside engine.begin()
 
 async def _setup_test_data_collections(db_session: AsyncSession) -> tuple[Collection, Collection]:
-    coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking")
-    coll2 = Collection(name=TEST_COLLECTION_NAME_2, description="Test collection 2 for linking")
+    coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking", owner_identifier="test-owner-1")
+    coll2 = Collection(name=TEST_COLLECTION_NAME_2, description="Test collection 2 for linking", owner_identifier="test-owner-2")
     db_session.add_all([coll1, coll2])
     await db_session.commit()
     await db_session.refresh(coll1)

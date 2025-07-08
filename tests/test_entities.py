@@ -2,11 +2,11 @@ import pytest
 import httpx
 
 from mlcbakery.main import app
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
 from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
 # Define headers globally or pass them around
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
-
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 # === Async Helper Functions for Creating Entities via API ===
 async def create_test_collection(
@@ -45,8 +45,8 @@ async def create_test_dataset(
     return dataset_resp.json()
 
 
-async def create_test_agent(ac: httpx.AsyncClient, name="Test Agent API") -> dict:
-    agent_data = {"name": name, "type": "API testing"}
+async def create_test_agent(ac: httpx.AsyncClient, collection_id: int, name="Test Agent API") -> dict:
+    agent_data = {"name": name, "type": "API testing", "collection_id": collection_id}
     # Add headers to the request
     agent_resp = await ac.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert agent_resp.status_code == 200, (
@@ -109,7 +109,7 @@ async def test_list_datasets():
         ds1 = await create_test_dataset(ac, collection_id, name="List DS 1")
         ds2 = await create_test_dataset(ac, collection_id, name="List DS 2")
 
-        response = await ac.get("/api/v1/datasets/")
+        response = await ac.get("/api/v1/datasets/", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
 
@@ -137,7 +137,7 @@ async def test_get_dataset():
         dataset_id = dataset["id"]
 
         # Use the name-based GET endpoint
-        response = await ac.get(f"/api/v1/datasets/{collection_name}/{dataset_name}")
+        response = await ac.get(f"/api/v1/datasets/{collection_name}/{dataset_name}", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == dataset_id
@@ -152,7 +152,8 @@ async def test_get_nonexistent_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Use the name-based GET endpoint for a non-existent entity
         response = await ac.get(
-            "/api/v1/datasets/NonExistentCollection/NonExistentDataset"
+            "/api/v1/datasets/NonExistentCollection/NonExistentDataset",
+            headers=AUTH_HEADERS
         )
         assert response.status_code == 404
         # Check the detail message for "not found"
@@ -182,7 +183,8 @@ async def test_delete_dataset():
 
         # Verify it's deleted using the name-based GET endpoint
         response_get = await ac.get(
-            f"/api/v1/datasets/{collection_name}/{dataset_name}"
+            f"/api/v1/datasets/{collection_name}/{dataset_name}",
+            headers=AUTH_HEADERS
         )
         assert response_get.status_code == 404
         # Check the detail message for "not found"

@@ -3,10 +3,11 @@ from httpx import AsyncClient
 from typing import Dict, Any
 import uuid
 
-from conftest import TEST_ADMIN_TOKEN
-from mlcbakery.schemas.collection import CollectionCreate
 
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+from mlcbakery.schemas.collection import CollectionCreate
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 async def _create_test_collection(async_client: AsyncClient, collection_name: str) -> Dict[str, Any]:
     collection_data = CollectionCreate(name=collection_name, description="Test Collection for Tasks")
@@ -59,7 +60,7 @@ async def test_get_task_by_name_success(async_client: AsyncClient):
     task_name = f"GetMeTask-{uuid.uuid4().hex[:8]}"
     created_task = await _create_test_task(async_client, collection["name"], task_name)
 
-    response = await async_client.get(f"/api/v1/tasks/{collection['name']}/{task_name}")
+    response = await async_client.get(f"/api/v1/tasks/{collection['name']}/{task_name}", headers=AUTH_HEADERS)
     assert response.status_code == 200
     retrieved_task = response.json()
     assert retrieved_task["id"] == created_task["id"]
@@ -96,7 +97,7 @@ async def test_delete_task_success(async_client: AsyncClient):
     del_response = await async_client.delete(f"/api/v1/tasks/{created_task['id']}", headers=AUTH_HEADERS)
     assert del_response.status_code == 204
 
-    get_response = await async_client.get(f"/api/v1/tasks/{collection['name']}/{task_name}")
+    get_response = await async_client.get(f"/api/v1/tasks/{collection['name']}/{task_name}", headers=AUTH_HEADERS)
     assert get_response.status_code == 404
 
 @pytest.mark.asyncio
@@ -136,7 +137,7 @@ async def test_list_tasks(async_client: AsyncClient):
     await _create_test_task(async_client, collection["name"], "Task1")
     await _create_test_task(async_client, collection["name"], "Task2")
 
-    response = await async_client.get("/api/v1/tasks/")
+    response = await async_client.get("/api/v1/tasks/", headers=AUTH_HEADERS)
     assert response.status_code == 200
     tasks = response.json()
     assert isinstance(tasks, list)

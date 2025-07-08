@@ -9,7 +9,7 @@ from mlcbakery.api.endpoints.datasets import build_upstream_tree_async
 async def test_build_upstream_tree_single_parent(db_session: AsyncSession):
     """Test building an upstream tree with a single parent."""
     # Setup mock data using real model instances
-    collection = Collection(id=1, name="Test Collection")
+    collection = Collection(id=1, name="Test Collection", owner_identifier="test-owner")
     db_session.add(collection)
     await db_session.commit()
     await db_session.refresh(collection)

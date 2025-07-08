@@ -10,8 +10,10 @@ from mlcbakery.main import app  # Keep app import if needed for client
 import httpx
 from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+
 # Define headers globally or pass them around
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 # TestClient remains synchronous, it uses the globally overridden dependency
 # Ensure the `app` object used here is the same one modified in conftest.py
@@ -20,15 +22,18 @@ client = TestClient(app)
 # Remove the setup_test_db fixture definition
 # Remove engine, TestingSessionLocal, override_get_db definitions
 
-
 # Tests remain marked as async
 @pytest.mark.asyncio
 async def test_create_agent():
     """Test creating a new agent."""
+    collection_id = create_collection()
+
     agent_data = {
         "name": "New Agent",
         "type": "human",
+        "collection_id": collection_id
     }
+
     response = client.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     # Check for the ProgrammingError first
     if response.status_code == 500 and "NotNullViolationError" in response.text:
@@ -44,8 +49,11 @@ async def test_create_agent():
 @pytest.mark.asyncio
 async def test_create_agent_without_type():
     """Test creating an agent without specifying type."""
+    collection_id = create_collection()
+    
     agent_data = {
         "name": "New Agent",
+        "collection_id": collection_id
     }
     response = client.post("/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS)
     assert (
@@ -65,10 +73,12 @@ async def test_list_agents():
     """Test getting all agents."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection_id = create_collection()
+        
         # Create known agents for this test
         agents_to_create = [
-            {"name": "List Agent 1 Async", "type": "human"},
-            {"name": "List Agent 2 Async", "type": "system"},
+            {"name": "List Agent 1 Async", "type": "human", "collection_id": collection_id},
+            {"name": "List Agent 2 Async", "type": "system", "collection_id": collection_id},
         ]
         created_agents_info = []
         for agent_data in agents_to_create:
@@ -80,7 +90,7 @@ async def test_list_agents():
             )
             created_agents_info.append(resp.json())  # Store created agent data
 
-        response = await ac.get("/api/v1/agents/")
+        response = await ac.get("/api/v1/agents/", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
 
@@ -98,13 +108,15 @@ async def test_list_agents_pagination():
     """Test pagination of agents."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection_id = create_collection()
+        
         base_name = "PaginateAgentAsync"
         agents_to_create = [
-            {"name": f"{base_name}_{i}", "type": "human" if i % 2 == 0 else "system"}
+            {"name": f"{base_name}_{i}", "type": "human" if i % 2 == 0 else "system", "collection_id": collection_id}
             for i in range(5)  # Create 5 agents for pagination check
         ]
         # delete all agents
-        response = await ac.get("/api/v1/agents/")
+        response = await ac.get("/api/v1/agents/", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         for agent in data:
@@ -121,7 +133,7 @@ async def test_list_agents_pagination():
             created_agents.append(resp.json())
 
         # Fetch page 2 (skip=2, limit=2) to get 3rd and 4th items
-        response = await ac.get("/api/v1/agents/?skip=2&limit=2")
+        response = await ac.get("/api/v1/agents/?skip=2&limit=2", headers=AUTH_HEADERS)
         assert response.status_code == 200
         paginated_data = response.json()
         assert len(paginated_data) == 2
@@ -143,8 +155,10 @@ async def test_get_agent():
     """Test getting a specific agent."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection_id = create_collection()
+        
         # Create agent to get
-        agent_data = {"name": "GetAgentAsync", "type": "human"}
+        agent_data = {"name": "GetAgentAsync", "type": "human", "collection_id": collection_id}
         create_resp = await ac.post(
             "/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS
         )
@@ -154,7 +168,7 @@ async def test_get_agent():
         agent_id = create_resp.json()["id"]
 
         # Get the specific agent
-        response = await ac.get(f"/api/v1/agents/{agent_id}")
+        response = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == agent_id
@@ -165,7 +179,7 @@ async def test_get_agent():
 @pytest.mark.asyncio
 async def test_get_nonexistent_agent():
     """Test getting an agent that doesn't exist."""
-    response = client.get("/api/v1/agents/99999")  # GET doesn't need auth headers
+    response = client.get("/api/v1/agents/99999", headers=AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
 
@@ -175,8 +189,10 @@ async def test_delete_agent():
     """Test deleting an agent."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection_id = create_collection()
+
         # Create agent to delete
-        agent_data = {"name": "DeleteAgentAsync", "type": "system"}
+        agent_data = {"name": "DeleteAgentAsync", "type": "system", "collection_id": collection_id}
         create_resp = await ac.post(
             "/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS
         )
@@ -191,7 +207,7 @@ async def test_delete_agent():
         assert response.json()["message"] == "Agent deleted successfully"
 
         # Verify it's deleted
-        get_response = await ac.get(f"/api/v1/agents/{agent_id}")
+        get_response = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert get_response.status_code == 404
 
 
@@ -208,8 +224,10 @@ async def test_update_agent():
     """Test updating an agent."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection_id = create_collection()
+
         # Create agent to update
-        agent_data = {"name": "UpdateAgentAsync", "type": "human"}
+        agent_data = {"name": "UpdateAgentAsync", "type": "human", "collection_id": collection_id}
         create_resp = await ac.post(
             "/api/v1/agents/", json=agent_data, headers=AUTH_HEADERS
         )
@@ -233,7 +251,7 @@ async def test_update_agent():
         assert data["id"] == agent_id  # Ensure ID hasn't changed
 
         # Optional: Verify by fetching again
-        get_resp = await ac.get(f"/api/v1/agents/{agent_id}")
+        get_resp = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert get_resp.status_code == 200
         get_data = get_resp.json()
         assert get_data["name"] == update_data["name"]
@@ -252,3 +270,14 @@ async def test_update_nonexistent_agent():
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
+
+def create_collection():
+    collection_data = {
+        "name": "test-collection",
+        "description": "A test collection for API testing."
+    }
+
+    collection_response = client.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
+
+    return collection_response.json()["id"]
+
