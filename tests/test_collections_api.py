@@ -6,7 +6,7 @@ import json
 
 from mlcbakery.main import app
 from mlcbakery.schemas.collection import CollectionCreate
-from mlcbakery.lib.jwt_strategies.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
+from mlcbakery.auth.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
 # Assuming conftest.py provides TEST_ADMIN_TOKEN and async_client fixture
 from conftest import TEST_ADMIN_TOKEN 
 
@@ -55,7 +55,7 @@ async def test_create_collection_fails_with_member_access_level(async_client: As
 
     response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token("Member")))
 
-    assert response.status_code == 403 # Collections API uses 200 for create
+    assert response.status_code == 403
 
 @pytest.mark.asyncio
 async def test_create_collection_duplicate_name_exact(async_client: AsyncClient):

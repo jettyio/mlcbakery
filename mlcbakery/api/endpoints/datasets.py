@@ -28,7 +28,7 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
 from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
@@ -74,7 +74,7 @@ async def search_datasets(
 async def create_dataset(
     dataset: DatasetCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _: HTTPAuthorizationCredentials = Depends(verify_jwt_with_write_access),
 ):
     """Create a new dataset (async)."""
     if dataset.collection_id:
@@ -110,6 +110,7 @@ async def list_datasets(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token)
 ):
     """Get a list of datasets with pagination (async)."""
     if skip < 0 or limit < 0:
@@ -119,6 +120,7 @@ async def list_datasets(
     stmt = (
         select(Dataset)
         .where(Dataset.entity_type == "dataset")
+        .where(Collection.owner_identifier == auth['identifier'])
         .options(
             selectinload(Dataset.collection),
             
@@ -205,7 +207,7 @@ async def update_dataset(
     dataset_id: int,
     dataset_update: DatasetUpdate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _ = Depends(verify_jwt_with_write_access),
 ):
     """Update a dataset (async)."""
     stmt_get = (
@@ -242,7 +244,7 @@ async def update_dataset(
 async def delete_dataset(
     dataset_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _ = Depends(verify_jwt_with_write_access),
 ):
     """Delete a dataset (async)."""
     stmt = (
@@ -266,7 +268,7 @@ async def update_dataset_metadata(
     dataset_id: int,
     metadata: dict,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _ = Depends(verify_jwt_with_write_access),
 ):
     """Update just the metadata of a dataset (async)."""
     stmt_get = (
@@ -301,7 +303,7 @@ async def update_dataset_preview(
     dataset_id: int,
     preview_update: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _ = Depends(verify_jwt_with_write_access),
 ):
     """Update a dataset's preview (async) using file upload."""
     stmt_get = (
@@ -340,7 +342,10 @@ async def update_dataset_preview(
 
 @router.get("/datasets/{collection_name}/{dataset_name}/preview")
 async def get_dataset_preview(
-    collection_name: str, dataset_name: str, db: AsyncSession = Depends(get_async_db)
+    collection_name: str, 
+    dataset_name: str, 
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token)
 ):
     """Get a dataset's preview (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -365,6 +370,7 @@ async def get_dataset_by_name(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token)
 ):
     """Get a specific dataset by collection name and dataset name (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -418,6 +424,7 @@ async def get_dataset_upstream_tree(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token)
 ) -> ProvenanceEntityNode:
     """Get the upstream entity tree for a dataset (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
@@ -431,6 +438,7 @@ async def validate_mlcroissant_file(
     file: UploadFile = File(
         ..., description="Croissant JSON-LD metadata file to validate"
     ),
+    auth = Depends(verify_jwt_with_write_access)
 ):
     """
     Validate an uploaded Croissant metadata file.
@@ -499,6 +507,7 @@ async def get_dataset_mlcroissant(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token)
 ):
     """Get a dataset's Croissant metadata (async)."""
     stmt = (

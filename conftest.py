@@ -15,7 +15,7 @@ from mlcbakery.database import get_async_db  # Import the dependency getter
 from mlcbakery.main import app  # Import the FastAPI app
 
 from mlcbakery.jwt import jwt_verification_strategy
-from mlcbakery.lib.jwt_strategies.passthrough_strategy import PassthroughStrategy
+from mlcbakery.auth.passthrough_strategy import PassthroughStrategy
 
 # --- Test Admin Token ---
 TEST_ADMIN_TOKEN = "test-super-secret-token"  # Define a constant for the test token
