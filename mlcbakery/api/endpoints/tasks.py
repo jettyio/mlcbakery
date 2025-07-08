@@ -16,7 +16,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
 from opentelemetry import trace
 
 router = APIRouter()
@@ -57,6 +57,7 @@ async def search_tasks(
     q: str = Query(..., min_length=1, description="Search query term"),
     limit: int = Query(default=30, ge=1, le=100, description="Number of results to return"),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
+    auth = Depends(verify_jwt_token),
 ):
     """Search tasks using Typesense based on query term."""
     current_span = trace.get_current_span()
@@ -206,6 +207,7 @@ async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token),
 ):
     stmt = (
         select(Task)
@@ -243,6 +245,7 @@ async def list_tasks_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token),
 ):
     """List all tasks in a specific collection."""
     # First verify the collection exists
@@ -294,6 +297,7 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token),
 ):
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:

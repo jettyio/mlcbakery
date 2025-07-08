@@ -10,8 +10,10 @@ from mlcbakery.main import app  # Keep app import if needed for client
 import httpx
 from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+
 # Define headers globally or pass them around
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 # TestClient remains synchronous, it uses the globally overridden dependency
 # Ensure the `app` object used here is the same one modified in conftest.py
@@ -80,7 +82,7 @@ async def test_list_agents():
             )
             created_agents_info.append(resp.json())  # Store created agent data
 
-        response = await ac.get("/api/v1/agents/")
+        response = await ac.get("/api/v1/agents/", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
 
@@ -104,7 +106,7 @@ async def test_list_agents_pagination():
             for i in range(5)  # Create 5 agents for pagination check
         ]
         # delete all agents
-        response = await ac.get("/api/v1/agents/")
+        response = await ac.get("/api/v1/agents/", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         for agent in data:
@@ -121,7 +123,7 @@ async def test_list_agents_pagination():
             created_agents.append(resp.json())
 
         # Fetch page 2 (skip=2, limit=2) to get 3rd and 4th items
-        response = await ac.get("/api/v1/agents/?skip=2&limit=2")
+        response = await ac.get("/api/v1/agents/?skip=2&limit=2", headers=AUTH_HEADERS)
         assert response.status_code == 200
         paginated_data = response.json()
         assert len(paginated_data) == 2
@@ -154,7 +156,7 @@ async def test_get_agent():
         agent_id = create_resp.json()["id"]
 
         # Get the specific agent
-        response = await ac.get(f"/api/v1/agents/{agent_id}")
+        response = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == agent_id
@@ -165,7 +167,7 @@ async def test_get_agent():
 @pytest.mark.asyncio
 async def test_get_nonexistent_agent():
     """Test getting an agent that doesn't exist."""
-    response = client.get("/api/v1/agents/99999")  # GET doesn't need auth headers
+    response = client.get("/api/v1/agents/99999", headers=AUTH_HEADERS)  # GET doesn't need auth headers
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
 
@@ -191,7 +193,7 @@ async def test_delete_agent():
         assert response.json()["message"] == "Agent deleted successfully"
 
         # Verify it's deleted
-        get_response = await ac.get(f"/api/v1/agents/{agent_id}")
+        get_response = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert get_response.status_code == 404
 
 
@@ -233,7 +235,7 @@ async def test_update_agent():
         assert data["id"] == agent_id  # Ensure ID hasn't changed
 
         # Optional: Verify by fetching again
-        get_resp = await ac.get(f"/api/v1/agents/{agent_id}")
+        get_resp = await ac.get(f"/api/v1/agents/{agent_id}", headers=AUTH_HEADERS)
         assert get_resp.status_code == 200
         get_data = get_resp.json()
         assert get_data["name"] == update_data["name"]

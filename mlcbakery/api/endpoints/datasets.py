@@ -51,6 +51,7 @@ async def search_datasets(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
+    auth = Depends(verify_jwt_token),
 ):
     """Search datasets using Typesense based on query term."""
     # Get the current span

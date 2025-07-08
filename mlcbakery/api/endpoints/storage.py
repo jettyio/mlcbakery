@@ -9,7 +9,7 @@ import logging
 from mlcbakery.models import Collection, Dataset, Entity
 from mlcbakery.schemas.storage import DataUploadResponse, DataDownloadResponse
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token
+from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access
 from mlcbakery.storage.gcp import (
     create_gcs_client,
     get_next_file_number,
@@ -33,7 +33,7 @@ async def upload_dataset_data(
     dataset_name: str,
     data_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _: HTTPAuthorizationCredentials = Depends(verify_jwt_with_write_access),
 ):
     """Upload a dataset's data as a tar.gz file.
 
@@ -190,7 +190,7 @@ async def get_dataset_data_download_url(
     dataset_name: str,
     file_number: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _: HTTPAuthorizationCredentials = Depends(verify_jwt_token),
 ):
     """Get a temporary download URL for a dataset's data file.
 
@@ -198,9 +198,6 @@ async def get_dataset_data_download_url(
         collection_name: Name of the collection
         dataset_name: Name of the dataset
         file_number: The enumerated file number to download
-
-    Returns:
-        A signed URL to download the data file
     """
     # 1. Verify collection and dataset exist
     collection_stmt = (
@@ -308,7 +305,7 @@ async def download_latest_dataset_data(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    _: HTTPAuthorizationCredentials = Depends(verify_jwt_token),
 ) -> Response:
     """Download the latest data file for a dataset directly.
 

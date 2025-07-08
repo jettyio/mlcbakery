@@ -14,7 +14,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelUpdate,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -54,6 +54,7 @@ async def search_models(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
+    auth = Depends(verify_jwt_token),
 ):
     """Search models using Typesense based on query term."""
     # Get the current span
@@ -235,7 +236,8 @@ async def delete_trained_model(
 async def get_trained_model_by_name(
     collection_name: str, 
     model_name: str, 
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token),
 ):
     """
     Get a specific trained model by its collection name and model name.

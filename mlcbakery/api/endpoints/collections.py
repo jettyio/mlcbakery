@@ -15,9 +15,8 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access
 from mlcbakery.schemas.activity import ActivityResponse
-from mlcbakery.api.access_level import AccessLevel
 
 router = fastapi.APIRouter()
 
@@ -126,7 +125,7 @@ async def update_collection_storage_info(
     collection_name: str,
     storage_info: dict = fastapi.Body(...),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_admin_token),
+    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_with_write_access),
 ):
     """Update storage information for a specific collection.
     This endpoint requires admin authentication.
@@ -197,6 +196,7 @@ async def list_agents_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
+    auth = fastapi.Depends(verify_jwt_token)
 ):
     """Get a list of agents for a specific collection with pagination (async)."""
     # First verify the collection exists
