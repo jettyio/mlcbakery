@@ -10,7 +10,7 @@ class JWTStrategy(ABC):
     """
 
 
-    def parse_token(self, token: str) -> str:
+    def parse_token(self, token: str):
       payload = self.decode_token(token)
 
       if not payload:
