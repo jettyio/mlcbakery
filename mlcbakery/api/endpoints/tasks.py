@@ -24,12 +24,11 @@ router = APIRouter()
 # --------------------------------------------
 # Helper utilities
 # --------------------------------------------
-async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSession, owner_identifier: str) -> Task | None:
+async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSession) -> Task | None:
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
         .where(Collection.name == collection_name)
-        .where(Collection.owner_identifier == owner_identifier)
         .where(func.lower(Task.name) == func.lower(task_name))
         .where(Task.entity_type == "task")
         .options(
@@ -58,7 +57,6 @@ async def search_tasks(
     q: str = Query(..., min_length=1, description="Search query term"),
     limit: int = Query(default=30, ge=1, le=100, description="Number of results to return"),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
-    auth = Depends(verify_jwt_token),
 ):
     """Search tasks using Typesense based on query term."""
     current_span = trace.get_current_span()
@@ -94,7 +92,6 @@ async def create_task(
     # Find collection by name and verify ownership
     stmt_collection = select(Collection).where(
         Collection.name == task_in.collection_name,
-        Collection.owner_identifier == auth['identifier']
     )
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
@@ -148,7 +145,6 @@ async def update_task(
         .join(Collection, Task.collection_id == Collection.id)
         .where(
             Task.id == task_id,
-            Collection.owner_identifier == auth['identifier']
         )
     )
     result = await db.execute(stmt)
@@ -192,16 +188,12 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
 ):
     # Get task and verify ownership
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
-        .where(
-            Task.id == task_id,
-            Collection.owner_identifier == auth['identifier']
-        )
+        .where(Task.id == task_id)
     )
     result = await db.execute(stmt)
     db_task = result.scalar_one_or_none()
@@ -227,13 +219,11 @@ async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
 ):
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
         .where(Task.entity_type == "task")
-        .where(Collection.owner_identifier == auth['identifier'])
         .options(selectinload(Task.collection))
         .offset(skip)
         .limit(limit)
@@ -267,13 +257,11 @@ async def list_tasks_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
 ):
     """List all tasks in a specific collection owned by the user."""
     # First verify the collection exists and is owned by the user
     stmt_collection = select(Collection).where(
         Collection.name == collection_name,
-        Collection.owner_identifier == auth['identifier']
     )
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
@@ -322,9 +310,8 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
 ):
-    db_task = await _find_task_by_name(collection_name, task_name, db, auth['identifier'])
+    db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
