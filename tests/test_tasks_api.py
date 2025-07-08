@@ -5,8 +5,9 @@ import uuid
 
 from conftest import TEST_ADMIN_TOKEN
 from mlcbakery.schemas.collection import CollectionCreate
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
 
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 async def _create_test_collection(async_client: AsyncClient, collection_name: str) -> Dict[str, Any]:
     collection_data = CollectionCreate(name=collection_name, description="Test Collection for Tasks")

@@ -16,7 +16,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token
+from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_with_write_access
 from opentelemetry import trace
 
 router = APIRouter()
@@ -86,7 +86,7 @@ async def search_tasks(
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    auth = Depends(verify_jwt_with_write_access),
 ):
     """Create a new workflow Task."""
     # Find collection by name
@@ -135,7 +135,7 @@ async def update_task(
     task_id: int,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    auth = Depends(verify_jwt_with_write_access),
 ):
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)
@@ -179,7 +179,7 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_admin_token),
+    auth = Depends(verify_jwt_with_write_access),
 ):
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)

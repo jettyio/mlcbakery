@@ -8,9 +8,10 @@ import uuid # For unique collection names
 from mlcbakery.main import app # Import your FastAPI app
 from conftest import TEST_ADMIN_TOKEN # Import the test token
 from mlcbakery.schemas.collection import CollectionCreate # Added
+from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
 
 # Define headers globally or pass them around
-AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+AUTH_HEADERS = authorization_headers(sample_user_token())
 
 
 # Helper to create a test collection

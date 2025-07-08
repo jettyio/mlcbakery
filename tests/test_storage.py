@@ -18,6 +18,7 @@ async def test_upload_dataset_data(
         name="test_storage_collection",
         description="Test collection for storage",
         storage_provider="gcp",
+        owner_identifier="test-owner",
         storage_info={
             "bucket": "test-bucket",
             "type": "service_account",
