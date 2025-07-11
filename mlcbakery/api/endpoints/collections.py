@@ -15,16 +15,29 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access, verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access
 from mlcbakery.schemas.activity import ActivityResponse
 
 router = fastapi.APIRouter()
+
+def _user_has_collection_access(collection: Collection, auth: dict) -> bool:
+    """
+    Check if the authenticated user has access to the collection.
+    Admin users have access to all collections.
+    Regular users only have access to collections they own.
+    """
+    # Admin users have access to all collections
+    if auth.get("auth_type") == "admin":
+        return True
+    
+    # Regular users only have access to collections they own
+    return collection.owner_identifier == auth.get("identifier")
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
     collection: CollectionCreate,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_with_write_access)
+    auth = fastapi.Depends(verify_admin_or_jwt_with_write_access)
 ):
     """
     Create a new collection (async).
@@ -66,13 +79,13 @@ async def create_collection(
 async def get_collection(
     collection_name: str, 
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_token)
+    auth = fastapi.Depends(verify_admin_or_jwt_token)
 ):
     """Get a collection by name (async)."""
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
-    if not collection or collection.owner_identifier != auth['identifier']:
+    if not collection or not _user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
     return collection
 
@@ -80,7 +93,7 @@ async def get_collection(
 @router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_token),
+    auth = fastapi.Depends(verify_admin_or_jwt_token),
 ):
     """
     Get collections from the database with pagination (async).
@@ -89,7 +102,13 @@ async def list_collections(
         raise fastapi.HTTPException(
             status_code=422, detail="Invalid pagination parameters"
         )
-    stmt = select(Collection).where(Collection.owner_identifier == auth['identifier']).offset(skip).limit(limit)
+    
+    # Admin users can see all collections, regular users only see their own
+    if auth.get("auth_type") == "admin":
+        stmt = select(Collection).offset(skip).limit(limit)
+    else:
+        stmt = select(Collection).where(Collection.owner_identifier == auth['identifier']).offset(skip).limit(limit)
+    
     # Add .options(selectinload(Collection.entities)) if eager loading needed
     result = await db.execute(stmt)
     collections = result.scalars().all()
@@ -102,17 +121,17 @@ async def list_collections(
 async def get_collection_storage_info(
     collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_token),
+    auth = fastapi.Depends(verify_admin_or_jwt_token),
 ):
     """Get storage information for a specific collection.
-    This endpoint requires admin authentication.
+    This endpoint requires authentication with collection access.
     """
     # First verify the collection exists
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or collection.owner_identifier != auth['identifier']:
+    if not collection or not _user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     return collection
@@ -125,16 +144,16 @@ async def update_collection_storage_info(
     collection_name: str,
     storage_info: dict = fastapi.Body(...),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = fastapi.Depends(verify_jwt_with_write_access),
+    auth = fastapi.Depends(verify_admin_or_jwt_with_write_access),
 ):
     """Update storage information for a specific collection.
-    This endpoint requires admin authentication.
+    This endpoint requires write access to the collection.
     """
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection:
+    if not collection or not _user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     if "storage_info" in storage_info:
@@ -158,15 +177,15 @@ async def list_datasets_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_token)
+    auth = fastapi.Depends(verify_admin_or_jwt_token)
 ):
     """Get a list of datasets for a specific collection with pagination (async)."""
-    # First verify the collection exists
+    # First verify the collection exists and user has access
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection:
+    if not collection or not _user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     # Query datasets associated with the collection ID
@@ -196,15 +215,15 @@ async def list_agents_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_jwt_token)
+    auth = fastapi.Depends(verify_admin_or_jwt_token)
 ):
     """Get a list of agents for a specific collection with pagination (async)."""
-    # First verify the collection exists
+    # First verify the collection exists and user has access
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection:
+    if not collection or not _user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     # Query agents associated with the collection ID

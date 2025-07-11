@@ -67,7 +67,7 @@ async def verify_access_level(
 
 async def verify_admin_token(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-):
+) -> dict:
     """
     Dependency that verifies the provided admin token against the one stored
     in environment variables.
@@ -75,6 +75,8 @@ async def verify_admin_token(
     This works over both HTTP and HTTPS as the Bearer token authentication
     is transport protocol agnostic. The token is sent in the Authorization header
     which is preserved by the reverse proxy as configured in Caddyfile.
+    
+    Returns a standardized payload format compatible with JWT tokens.
     """
     admin_auth_token = os.environ.get("ADMIN_AUTH_TOKEN")
     if not admin_auth_token:  # Check the locally read token
@@ -93,4 +95,87 @@ async def verify_admin_token(
             detail="Invalid or missing admin token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return credentials  # Or return True, or nothing if just validation is needed
+    
+    # Return standardized payload format for consistency with JWT tokens
+    return {
+        "auth_type": "admin",
+        "access_level": AccessLevel.ADMIN,
+        "identifier": "admin"
+    }
+
+# New hybrid dependency functions that allow admin token to supersede JWT access
+
+async def verify_admin_or_jwt_token(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    verification_strategy = Depends(jwt_verification_strategy)
+) -> dict:
+    """
+    Dependency that verifies either admin token or JWT token.
+    Admin token supersedes JWT token access, granting maximum privileges.
+    
+    Returns a standardized payload format for both auth methods.
+    """
+    try:
+        # Try admin token first
+        admin_payload = await verify_admin_token(credentials)
+        return admin_payload
+    except HTTPException:
+        # Fall back to JWT verification if admin token fails
+        jwt_payload = await verify_jwt_token(credentials, verification_strategy)
+        # Add auth_type for consistency
+        jwt_payload["auth_type"] = "jwt"
+        return jwt_payload
+
+async def verify_admin_or_jwt_with_write_access(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    verification_strategy = Depends(jwt_verification_strategy)
+) -> dict:
+    """
+    Dependency that verifies either admin token or JWT token with write access.
+    Admin token supersedes JWT token access, granting maximum privileges.
+    
+    For JWT tokens, requires WRITE access level or higher.
+    """
+    try:
+        # Try admin token first - admin always has write access
+        admin_payload = await verify_admin_token(credentials)
+        return admin_payload
+    except HTTPException:
+        # Fall back to JWT verification with write access requirement
+        jwt_payload = await verify_access_level(AccessLevel.WRITE, credentials, verification_strategy)
+        # Add auth_type for consistency
+        jwt_payload["auth_type"] = "jwt"
+        return jwt_payload
+
+async def verify_admin_or_jwt_with_access_level(
+    required_access_level: AccessLevel,
+    credentials: HTTPAuthorizationCredentials,
+    verification_strategy
+) -> dict:
+    """
+    Dependency that verifies either admin token or JWT token with specific access level.
+    Admin token supersedes JWT token access, granting maximum privileges.
+    
+    For JWT tokens, requires the specified access level or higher.
+    """
+    try:
+        # Try admin token first - admin always has maximum access
+        admin_payload = await verify_admin_token(credentials)
+        return admin_payload
+    except HTTPException:
+        # Fall back to JWT verification with access level requirement
+        jwt_payload = await verify_access_level(required_access_level, credentials, verification_strategy)
+        # Add auth_type for consistency
+        jwt_payload["auth_type"] = "jwt"
+        return jwt_payload
+
+# Convenience wrapper for commonly used access levels
+async def verify_admin_or_jwt_with_read_access(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    verification_strategy = Depends(jwt_verification_strategy)
+) -> dict:
+    """
+    Dependency that verifies either admin token or JWT token with read access.
+    This is equivalent to verify_admin_or_jwt_token since READ is the base level.
+    """
+    return await verify_admin_or_jwt_with_access_level(AccessLevel.READ, credentials, verification_strategy)
