@@ -4,9 +4,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload  # For eager loading entities
 from sqlalchemy import func # Added for func.lower
 from typing import List
-from fastapi.security import HTTPAuthorizationCredentials
 
-from mlcbakery.models import Collection, Dataset, Entity, Activity, Agent
+from mlcbakery.models import Collection, Dataset, Agent
 from mlcbakery.schemas.collection import (
     CollectionCreate,
     CollectionResponse,
@@ -15,10 +14,15 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access, verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access
-from mlcbakery.schemas.activity import ActivityResponse
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access
 
 router = fastapi.APIRouter()
+
+def _user_auth_org_ids(auth: dict) -> list[str]:
+    """
+    Get the organization IDs for the authenticated user.
+    """
+    return auth.get("claims", {}).get("organizations", {}).keys()
 
 def _user_has_collection_access(collection: Collection, auth: dict) -> bool:
     """
@@ -31,7 +35,7 @@ def _user_has_collection_access(collection: Collection, auth: dict) -> bool:
         return True
     
     # Regular users only have access to collections they own
-    return collection.owner_identifier == auth.get("identifier")
+    return collection.auth_org_id in _user_auth_org_ids(auth)
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
@@ -107,7 +111,8 @@ async def list_collections(
     if auth.get("auth_type") == "admin":
         stmt = select(Collection).offset(skip).limit(limit)
     else:
-        stmt = select(Collection).where(Collection.owner_identifier == auth['identifier']).offset(skip).limit(limit)
+        org_ids = _user_auth_org_ids(auth)
+        stmt = select(Collection).where(Collection.auth_org_id.in_(org_ids)).offset(skip).limit(limit)
     
     # Add .options(selectinload(Collection.entities)) if eager loading needed
     result = await db.execute(stmt)

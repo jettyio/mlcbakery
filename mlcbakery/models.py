@@ -325,6 +325,7 @@ class Collection(Base):
         storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
         entities: Relationship to associated entities (datasets and models).
         agents: Relationship to associated agents.
+        auth_org_id: Optional organization identifier for authentication purposes.
     """
 
     __tablename__ = "collections"
@@ -335,6 +336,7 @@ class Collection(Base):
     storage_info = Column(JSONB, nullable=True)
     storage_provider = Column(String, nullable=True)
     owner_identifier = Column(String, nullable=False)  # Identifier for the owner (user or organization)
+    auth_org_id = Column(String, nullable=True)  # Optional organization identifier for authentication
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")

@@ -4,7 +4,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
-from mlcbakery.jwt import jwt_verification_strategy
+from mlcbakery.auth.jwks_strategy import JWKSStrategy
+
+JWT_ISSUER_JWKS_URL = os.getenv("JWT_ISSUER_JWKS_URL", "")
+
+def jwt_verification_strategy():
+    return JWKSStrategy(JWT_ISSUER_JWKS_URL)
+
 from mlcbakery.api.access_level import AccessLevel
 
 logging.basicConfig(level=logging.INFO)
@@ -23,10 +29,7 @@ async def verify_jwt_token(
     is transport protocol agnostic. The token is sent in the Authorization header
     which is preserved by the reverse proxy as configured in Caddyfile.
     """
-    token = credentials.credentials
-
-    parsed_token = verification_strategy.parse_token(token)
-
+    parsed_token = verification_strategy.parse_token(credentials.credentials)
     if not parsed_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -40,6 +43,7 @@ async def verify_jwt_with_write_access(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     jwt_verification_strategy = Depends(jwt_verification_strategy)
 ):
+    # TODO(jon): we need to fix this by using the permissions available in the claims of the JWT token
     return await verify_access_level(AccessLevel.WRITE, credentials, jwt_verification_strategy)
 
 async def verify_access_level(
@@ -56,7 +60,7 @@ async def verify_access_level(
     """
 
     jwt_payload = await verify_jwt_token(credentials, jwt_verification_strategy)
-
+    # TODO(jon): we need to fix this
     if jwt_payload["access_level"].value < required_access_level.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
