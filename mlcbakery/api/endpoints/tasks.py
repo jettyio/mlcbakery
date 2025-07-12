@@ -16,7 +16,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access
 from opentelemetry import trace
 
 router = APIRouter()
@@ -86,7 +86,7 @@ async def search_tasks(
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_admin_or_jwt_with_write_access),
 ):
     """Create a new workflow Task."""
     # Find collection by name and verify ownership
@@ -137,7 +137,7 @@ async def update_task(
     task_id: int,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_admin_or_jwt_with_write_access),
 ):
     # Get task and verify ownership
     stmt = (
@@ -188,6 +188,7 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_with_write_access),
 ):
     # Get task and verify ownership
     stmt = (
@@ -219,16 +220,46 @@ async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
-    stmt = (
-        select(Task)
-        .join(Collection, Task.collection_id == Collection.id)
-        .where(Task.entity_type == "task")
-        .options(selectinload(Task.collection))
-        .offset(skip)
-        .limit(limit)
-        .order_by(Task.id)
-    )
+    # Admin users can see all tasks, regular users only see their own
+    if auth.get("auth_type") == "admin":
+        stmt = (
+            select(Task)
+            .join(Collection, Task.collection_id == Collection.id)
+            .where(Task.entity_type == "task")
+            .options(selectinload(Task.collection))
+            .offset(skip)
+            .limit(limit)
+            .order_by(Task.id)
+        )
+    else:
+        org_ids = user_auth_org_ids(auth)
+        if org_ids:
+            stmt = (
+                select(Task)
+                .join(Collection, Task.collection_id == Collection.id)
+                .where(Task.entity_type == "task")
+                .where(Collection.auth_org_id.in_(org_ids))
+                .options(selectinload(Task.collection))
+                .offset(skip)
+                .limit(limit)
+                .order_by(Task.id)
+            )
+        else:
+            # Handle case where user has no org_id (use owner_identifier)
+            user_identifier = auth.get("sub")
+            stmt = (
+                select(Task)
+                .join(Collection, Task.collection_id == Collection.id)
+                .where(Task.entity_type == "task")
+                .where(Collection.owner_identifier == user_identifier)
+                .options(selectinload(Task.collection))
+                .offset(skip)
+                .limit(limit)
+                .order_by(Task.id)
+            )
+    
     result = await db.execute(stmt)
     tasks = result.scalars().all()
 
@@ -257,16 +288,15 @@ async def list_tasks_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """List all tasks in a specific collection owned by the user."""
-    # First verify the collection exists and is owned by the user
-    stmt_collection = select(Collection).where(
-        Collection.name == collection_name,
-    )
+    # First verify the collection exists and user has access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection:
+    if not collection or not user_has_collection_access(collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{collection_name}' not found",
@@ -310,6 +340,7 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:

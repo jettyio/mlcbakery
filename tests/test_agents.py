@@ -10,10 +10,10 @@ from mlcbakery.main import app  # Keep app import if needed for client
 import httpx
 from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
-from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
 
 # Define headers globally or pass them around
-AUTH_HEADERS = authorization_headers(sample_user_token())
+AUTH_HEADERS = authorization_headers(sample_org_token())
 
 # TestClient remains synchronous, it uses the globally overridden dependency
 # Ensure the `app` object used here is the same one modified in conftest.py

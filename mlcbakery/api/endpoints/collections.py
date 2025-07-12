@@ -14,28 +14,9 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_has_collection_access, user_auth_org_ids
 
 router = fastapi.APIRouter()
-
-def _user_auth_org_ids(auth: dict) -> list[str]:
-    """
-    Get the organization IDs for the authenticated user.
-    """
-    return auth.get("claims", {}).get("organizations", {}).keys()
-
-def _user_has_collection_access(collection: Collection, auth: dict) -> bool:
-    """
-    Check if the authenticated user has access to the collection.
-    Admin users have access to all collections.
-    Regular users only have access to collections they own.
-    """
-    # Admin users have access to all collections
-    if auth.get("auth_type") == "admin":
-        return True
-    
-    # Regular users only have access to collections they own
-    return collection.auth_org_id in _user_auth_org_ids(auth)
 
 @router.post("/collections/", response_model=CollectionResponse)
 async def create_collection(
@@ -54,12 +35,18 @@ async def create_collection(
     if existing_collection:
         raise fastapi.HTTPException(status_code=400, detail="Collection already exists")
 
+    # Get user identifier and org_id from auth payload
+    user_identifier = auth.get('sub') or auth.get('identifier', 'unknown')
+    user_org_ids = user_auth_org_ids(auth)
+    auth_org_id = user_org_ids[0] if user_org_ids else None
+
     db_collection = Collection(
         name=collection.name,
         description=collection.description,
         storage_info=collection.storage_info,
         storage_provider=collection.storage_provider,
-        owner_identifier=auth['identifier']
+        owner_identifier=user_identifier,
+        auth_org_id=auth_org_id
     )
 
     db.add(db_collection)
@@ -89,7 +76,7 @@ async def get_collection(
     stmt_coll = select(Collection).where(Collection.name == collection_name)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
-    if not collection or not _user_has_collection_access(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
     return collection
 
@@ -111,7 +98,7 @@ async def list_collections(
     if auth.get("auth_type") == "admin":
         stmt = select(Collection).offset(skip).limit(limit)
     else:
-        org_ids = _user_auth_org_ids(auth)
+        org_ids = user_auth_org_ids(auth)
         stmt = select(Collection).where(Collection.auth_org_id.in_(org_ids)).offset(skip).limit(limit)
     
     # Add .options(selectinload(Collection.entities)) if eager loading needed
@@ -136,7 +123,7 @@ async def get_collection_storage_info(
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not _user_has_collection_access(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     return collection
@@ -158,7 +145,7 @@ async def update_collection_storage_info(
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not _user_has_collection_access(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     if "storage_info" in storage_info:
@@ -190,7 +177,7 @@ async def list_datasets_by_collection(
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not _user_has_collection_access(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     # Query datasets associated with the collection ID
@@ -228,7 +215,7 @@ async def list_agents_by_collection(
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not _user_has_collection_access(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     # Query agents associated with the collection ID

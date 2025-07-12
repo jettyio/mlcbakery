@@ -2,11 +2,11 @@ import pytest
 import httpx
 
 from mlcbakery.main import app
-from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
 from conftest import TEST_ADMIN_TOKEN  # Import the test token
 
 # Define headers globally or pass them around
-AUTH_HEADERS = authorization_headers(sample_user_token())
+AUTH_HEADERS = authorization_headers(sample_org_token())
 
 # === Async Helper Functions for Creating Entities via API ===
 async def create_test_collection(

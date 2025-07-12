@@ -28,14 +28,14 @@ async def test_create_collection_success(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_collection_success_for_user(async_client: AsyncClient):
-    """Test successful creation of a new collection."""
+    """Test successful creation of a new collection as admin."""
     unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
     collection_data = {
         "name": unique_name,
         "description": "A test collection for API testing."
     }
 
-    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_user_token()))
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
     
     assert response.status_code == 200 # Collections API uses 200 for create
     response_data = response.json()

@@ -15,7 +15,7 @@ class JWTStrategy(ABC):
 
       if not payload:
         return None
-    
+  
       user_id = payload.get("sub", None)
       org_id = payload.get("org_id", None)
       org_slug = payload.get("org_slug", None)
@@ -23,8 +23,16 @@ class JWTStrategy(ABC):
 
       identifier = org_id if org_id else user_id
       is_organization = org_id is not None
-      # TODO(jon): we need to fix this by using the permissions available in the claims of the JWT token
-      access_level = AccessLevel.ADMIN if not is_organization or org_role == ADMIN_ROLE_NAME else AccessLevel.WRITE
+
+      # Map org_role to access level
+      if org_role == ADMIN_ROLE_NAME:
+          access_level = AccessLevel.ADMIN
+      elif org_role == "Writer":
+          access_level = AccessLevel.WRITE
+      elif org_role == "Member":
+          access_level = AccessLevel.READ
+      else:
+          access_level = AccessLevel.READ
 
       return {
         "verified": True,

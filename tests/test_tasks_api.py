@@ -5,9 +5,9 @@ import uuid
 
 
 from mlcbakery.schemas.collection import CollectionCreate
-from mlcbakery.auth.passthrough_strategy import sample_user_token, authorization_headers
+from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
 
-AUTH_HEADERS = authorization_headers(sample_user_token())
+AUTH_HEADERS = authorization_headers(sample_org_token())
 
 async def _create_test_collection(async_client: AsyncClient, collection_name: str) -> Dict[str, Any]:
     collection_data = CollectionCreate(name=collection_name, description="Test Collection for Tasks")
