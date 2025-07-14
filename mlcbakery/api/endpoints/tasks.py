@@ -16,7 +16,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access, verify_jwt_token
 from opentelemetry import trace
 
 router = APIRouter()
@@ -86,13 +86,13 @@ async def search_tasks(
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access),
+    auth = Depends(verify_jwt_token),
 ):
     """Create a new workflow Task."""
     # Find collection by name and verify ownership
     stmt_collection = select(Collection).where(
         Collection.name == task_in.collection_name,
-    )
+    ).where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
@@ -137,12 +137,13 @@ async def update_task(
     task_id: int,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access),
+    auth = Depends(verify_jwt_token),
 ):
     # Get task and verify ownership
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
+        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(
             Task.id == task_id,
         )
@@ -188,12 +189,13 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access),
+    auth = Depends(verify_jwt_token),
 ):
     # Get task and verify ownership
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
+        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(Task.id == task_id)
     )
     result = await db.execute(stmt)
