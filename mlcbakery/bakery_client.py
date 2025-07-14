@@ -93,7 +93,7 @@ class BakeryCollection:
     description: str
     storage_info: dict[str, Any] | None = None
     storage_provider: str | None = None
-
+    auth_org_id: str | None = None
 
 @dataclasses.dataclass
 class BakeryDataset:
@@ -278,6 +278,7 @@ class Client:
                 id=response.json().get("id", ""),
                 name=response.json().get("name", ""),
                 description=response.json().get("description", ""),
+                auth_org_id=response.json().get("auth_org_id", ""),
             )
         except Exception as e:
             raise Exception(
@@ -782,7 +783,7 @@ class Client:
 
     def get_collections(self) -> list[BakeryCollection]:
         """List all available collections."""
-        endpoint = "/collections"
+        endpoint = "/list-collections/"
         collections = []
         try:
             response = self._request("GET", endpoint)
@@ -795,6 +796,7 @@ class Client:
                         description=c_data.get(
                             "description", ""
                         ),  # Handle potentially missing description
+                        auth_org_id=c_data.get("auth_org_id", ""),
                     )
                 )
             return collections

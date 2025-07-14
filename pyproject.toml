@@ -84,6 +84,7 @@ pytest-cov = "^4.1.0"
 pytest-mock = "^3.10.0"
 httpx = "^0.28.0"
 mypy = "^1.8.0"
+ipykernel = "^6.29.0"
 
 [tool.poetry.group.mcp.dependencies]
 fastmcp = "^2.3.4"

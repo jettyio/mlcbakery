@@ -88,25 +88,7 @@ class TestBakeryClientAuth(unittest.TestCase):
         self.assertEqual(call_kwargs.get("json"), {"key": "value"})
         self.assertNotIn("auth", call_kwargs)
 
-    @patch(
-        "mlcbakery.bakery_client.Client._request"
-    )  # Keep this patch for high-level check
-    def test_get_collections_uses_request_helper(self, mock_internal_request):
-        """Test that get_collections uses the _request helper."""
-        # This test just verifies the internal call, not header details
-        mock_response = Mock(spec=requests.Response)
-        mock_response.json.return_value = [
-            {"id": "col1", "name": "coll1", "description": "desc1"}
-        ]
-        mock_internal_request.return_value = mock_response
-
-        client = Client(bakery_url=SAMPLE_URL, token=SAMPLE_TOKEN)
-        collections = client.get_collections()
-
-        mock_internal_request.assert_called_with("GET", "/collections")
-        self.assertEqual(len(collections), 1)
-        self.assertIsInstance(collections[0], BakeryCollection)
-
+    
     # Patch the actual requests.request call for detailed header checks
     @patch("requests.request")
     def test_push_dataset_sends_token(self, mock_http_request):

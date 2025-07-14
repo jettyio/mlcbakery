@@ -20,6 +20,7 @@ services:
       - OTLP_HTTP_ENDPOINT=http://otel-collector:4318
       - IS_GCP_METRICS=false
       - OTEL_ENABLED=false
+      - JWT_ISSUER_JWKS_URL=${JWT_ISSUER_JWKS_URL}
     depends_on:
       db:
         condition: service_started

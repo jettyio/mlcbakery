@@ -14,6 +14,7 @@ class CollectionCreate(CollectionBase):
 
 class CollectionResponse(CollectionBase):
     id: int
+    auth_org_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

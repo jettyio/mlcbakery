@@ -44,6 +44,13 @@ class TrainedModelUpdate(TrainedModelBase):
     model_attributes: Optional[dict] = None
 
 
+class TrainedModelListResponse(TrainedModelBase):
+    """Lightweight listing presentation for trained models."""
+    
+    id: int
+    collection_name: Optional[str] = None
+
+
 class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime

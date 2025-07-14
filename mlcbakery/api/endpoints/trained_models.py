@@ -12,9 +12,10 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelCreate,
     TrainedModelResponse,
     TrainedModelUpdate,
+    TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access, verify_jwt_token
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -53,7 +54,7 @@ async def search_models(
     limit: int = Query(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
-    ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
+    ts = Depends(search.setup_and_get_typesense_client),
 ):
     """Search models using Typesense based on query term."""
     # Get the current span
@@ -81,12 +82,10 @@ async def search_models(
 async def create_trained_model(
     trained_model_in: TrainedModelCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """
     Create a new trained model in the database.
-
-    Requires admin privileges.
 
     - **name**: Name of the model (required)
     - **model_path**: Path to the model artifact (required)
@@ -97,12 +96,12 @@ async def create_trained_model(
     - **long_description**: Optional detailed description of the model.
     - **model_attributes**: Optional dictionary for specific model attributes (e.g., input shape, output classes).
     """
-    # Find collection by name
+    # Find collection by name and verify access
     stmt_collection = select(Collection).where(Collection.name == trained_model_in.collection_name)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection:
+    if not collection or not user_has_collection_access(collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{trained_model_in.collection_name}' not found",
@@ -144,12 +143,10 @@ async def update_trained_model(
     model_id: int,
     trained_model_in: TrainedModelUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_jwt_token),
 ):
     """
     Update an existing trained model in the database.
-
-    Requires admin privileges.
 
     - **model_id**: ID of the model to update.
     - **model_path**: Path to the model artifact.
@@ -161,10 +158,18 @@ async def update_trained_model(
 
     The model name and collection cannot be changed.
     """
-    stmt = select(TrainedModel).where(TrainedModel.id == model_id)
+    
+    # Get model and verify access
+    stmt = (
+        select(TrainedModel)
+        .join(Collection, TrainedModel.collection_id == Collection.id)
+        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
+        .where(TrainedModel.id == model_id)
+    )
     result = await db.execute(stmt)
     db_trained_model = result.scalar_one_or_none()
 
+    
     if "name" in trained_model_in.model_dump(exclude_unset=True):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,12 +180,6 @@ async def update_trained_model(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Updating the model collection is not allowed.",
-        )
-
-    if not db_trained_model:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Trained model with id {model_id} not found",
         )
 
     update_data = trained_model_in.model_dump(exclude_unset=True)
@@ -202,20 +201,23 @@ async def update_trained_model(
 async def delete_trained_model(
     model_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """
     Delete a trained model from the database.
 
-    Requires admin privileges.
-
     - **model_id**: ID of the model to delete.
     """
-    stmt = select(TrainedModel).where(TrainedModel.id == model_id)
+    # Get model and verify access
+    stmt = (
+        select(TrainedModel)
+        .join(Collection, TrainedModel.collection_id == Collection.id)
+        .where(TrainedModel.id == model_id)
+    )
     result = await db.execute(stmt)
     db_trained_model = result.scalar_one_or_none()
 
-    if not db_trained_model:
+    if not db_trained_model or not user_has_collection_access(db_trained_model.collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Trained model with id {model_id} not found",
@@ -224,6 +226,138 @@ async def delete_trained_model(
     await db.delete(db_trained_model)
     await db.commit()
     return None
+
+
+@router.get(
+    "/models/",
+    response_model=List[TrainedModelListResponse],
+    summary="List Trained Models",
+    tags=["Trained Models"],
+)
+async def list_trained_models(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max records to return"),
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
+):
+    """List all trained models accessible to the user."""
+    # Admin users can see all models, regular users only see their own
+    if auth.get("auth_type") == "admin":
+        stmt = (
+            select(TrainedModel)
+            .join(Collection, TrainedModel.collection_id == Collection.id)
+            .where(TrainedModel.entity_type == "trained_model")
+            .options(selectinload(TrainedModel.collection))
+            .offset(skip)
+            .limit(limit)
+            .order_by(TrainedModel.id)
+        )
+    else:
+        org_ids = user_auth_org_ids(auth)
+        if org_ids:
+            stmt = (
+                select(TrainedModel)
+                .join(Collection, TrainedModel.collection_id == Collection.id)
+                .where(TrainedModel.entity_type == "trained_model")
+                .where(Collection.auth_org_id.in_(org_ids))
+                .options(selectinload(TrainedModel.collection))
+                .offset(skip)
+                .limit(limit)
+                .order_by(TrainedModel.id)
+            )
+        else:
+            # Handle case where user has no org_id (use owner_identifier)
+            user_identifier = auth.get("sub")
+            stmt = (
+                select(TrainedModel)
+                .join(Collection, TrainedModel.collection_id == Collection.id)
+                .where(TrainedModel.entity_type == "trained_model")
+                .where(Collection.owner_identifier == user_identifier)
+                .options(selectinload(TrainedModel.collection))
+                .offset(skip)
+                .limit(limit)
+                .order_by(TrainedModel.id)
+            )
+    
+    result = await db.execute(stmt)
+    models = result.scalars().all()
+
+    return [
+        TrainedModelListResponse(
+            id=model.id,
+            name=model.name,
+            model_path=model.model_path,
+            collection_id=model.collection_id,
+            collection_name=model.collection.name if model.collection else None,
+            metadata_version=model.metadata_version,
+            model_metadata=model.model_metadata,
+            asset_origin=model.asset_origin,
+            long_description=model.long_description,
+            model_attributes=model.model_attributes,
+            entity_type=model.entity_type,
+        )
+        for model in models
+    ]
+
+
+@router.get(
+    "/models/{collection_name}/",
+    response_model=List[TrainedModelListResponse],
+    summary="List Trained Models by Collection",
+    tags=["Trained Models"],
+)
+async def list_trained_models_by_collection(
+    collection_name: str,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max records to return"),
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_jwt_token),
+):
+    """List all trained models in a specific collection owned by the user."""
+    # First verify the collection exists and user has access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection or not user_has_collection_access(collection, auth):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    org_ids = user_auth_org_ids(auth)
+    
+    # Get models in the collection
+    stmt = (
+        select(TrainedModel)
+        .join(Collection, TrainedModel.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .where(TrainedModel.entity_type == "trained_model")
+        .where(Collection.auth_org_id.in_(org_ids))
+        .options(selectinload(TrainedModel.collection))
+        .offset(skip)
+        .limit(limit)
+        .order_by(TrainedModel.id)
+    )
+    result = await db.execute(stmt)
+    models = result.scalars().all()
+
+    return [
+        TrainedModelListResponse(
+            id=model.id,
+            name=model.name,
+            model_path=model.model_path,
+            collection_id=model.collection_id,
+            collection_name=model.collection.name if model.collection else None,
+            metadata_version=model.metadata_version,
+            model_metadata=model.model_metadata,
+            asset_origin=model.asset_origin,
+            long_description=model.long_description,
+            model_attributes=model.model_attributes,
+            entity_type=model.entity_type,
+        )
+        for model in models
+    ]
 
 
 @router.get(
@@ -236,6 +370,7 @@ async def get_trained_model_by_name(
     collection_name: str, 
     model_name: str, 
     db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """
     Get a specific trained model by its collection name and model name.
@@ -243,6 +378,17 @@ async def get_trained_model_by_name(
     - **collection_name**: Name of the collection the model belongs to.
     - **model_name**: Name of the model.
     """
+    # First verify the collection exists and user has access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection or not user_has_collection_access(collection, auth):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
     db_trained_model = await _find_model_by_name(collection_name, model_name, db)
     if not db_trained_model:
         raise HTTPException(
