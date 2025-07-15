@@ -126,7 +126,8 @@ async def verify_admin_token(
     return {
         "auth_type": "admin",
         "access_level": AccessLevel.ADMIN,
-        "identifier": "admin"
+        "identifier": "admin",
+        "org_id": "*"
     }
 
 # New hybrid dependency functions that allow admin token to supersede JWT access

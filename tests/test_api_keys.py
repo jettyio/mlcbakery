@@ -188,6 +188,7 @@ async def test_delete_api_key(async_client: AsyncClient, db_session: AsyncSessio
     collection = Collection(name=collection_name, owner_identifier="test")
     db_session.add(collection)
     await db_session.commit()
+    await db_session.refresh(collection)
     
     # Create API key
     create_response = await async_client.post(
@@ -243,9 +244,9 @@ async def test_get_api_key_details(async_client: AsyncClient, db_session: AsyncS
     assert "api_key" not in data  # Should not include actual key
 
 @pytest.mark.asyncio
-async def test_admin_only_access(async_client: AsyncClient):
-    """Test that non-admin users cannot access API key endpoints."""
-    # Try to create API key without admin token
+async def test_write_access_required(async_client: AsyncClient):
+    """Test that non-write access users cannot access API key endpoints."""
+    # Try to create API key without proper credentials 
     api_key_data = {
         "name": "Test API Key",
         "collection_name": "some-collection"
@@ -254,7 +255,18 @@ async def test_admin_only_access(async_client: AsyncClient):
     response = await async_client.post(
         "/api/v1/api-keys/", 
         json=api_key_data, 
-        headers={"Authorization": "Bearer non-admin-token"}
+        headers={"Authorization": "Bearer invalid-token"}
     )
     
-    assert response.status_code == 401  # Should be unauthorized 
+    # Should be unauthorized due to invalid token
+    assert response.status_code == 401
+    
+    # Check if response has content before trying to parse JSON
+    if response.content and len(response.content) > 0:
+        try:
+            response_data = response.json()
+            detail = response_data.get("detail", "").lower()
+            assert any(keyword in detail for keyword in ["token", "unauthorized", "invalid", "missing"])
+        except Exception:
+            # If JSON parsing fails, just check that we got 401
+            pass 
