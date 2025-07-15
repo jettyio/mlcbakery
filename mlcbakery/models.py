@@ -17,6 +17,8 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy_continuum import make_versioned
 from .database import Base
+import hashlib
+import secrets
 
 # Initialize versioning BEFORE any model definitions
 # Pass Agent as the user class for transaction tracking
@@ -218,7 +220,6 @@ class Entity(Base):
 
     def _compute_content_hash(self, content):
         """Compute SHA-256 hash of content."""
-        import hashlib
         import json
         content_str = json.dumps(content, sort_keys=True, default=str)
         return hashlib.sha256(content_str.encode()).hexdigest()
@@ -341,6 +342,7 @@ class Collection(Base):
     # Relationships
     entities = relationship("Entity", back_populates="collection")
     agents = relationship("Agent", back_populates="collection")
+    api_keys = relationship("ApiKey", back_populates="collection", cascade="all, delete-orphan")
 
 
 class Activity(Base):
@@ -372,6 +374,46 @@ class Agent(Base):
     #     back_populates="agents",
     # )
     # performed_links is now available via backref from EntityRelationship
+
+
+class ApiKey(Base):
+    """Represents an API key for a collection."""
+    
+    __tablename__ = "api_keys"
+    
+    id = Column(Integer, primary_key=True)
+    collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)  # User-friendly label
+    key_hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash
+    key_prefix = Column(String(8), nullable=False)  # First 8 chars for identification
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by_agent_id = Column(Integer, ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    
+    # Relationships
+    collection = relationship("Collection", back_populates="api_keys")
+    created_by = relationship("Agent")
+    
+    @staticmethod
+    def generate_api_key() -> str:
+        """Generate a secure API key."""
+        return f"mlc_{''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(32))}"
+    
+    @staticmethod
+    def hash_key(api_key: str) -> str:
+        """Hash an API key using SHA-256."""
+        return hashlib.sha256(api_key.encode()).hexdigest()
+    
+    @classmethod
+    def create_from_plaintext(cls, api_key: str, collection_id: int, name: str, created_by_agent_id: int | None = None):
+        """Create an ApiKey instance from a plaintext key."""
+        return cls(
+            collection_id=collection_id,
+            name=name,
+            key_hash=cls.hash_key(api_key),
+            key_prefix=api_key[:8],
+            created_by_agent_id=created_by_agent_id
+        )
 
 
 # Custom models for git-style versioning (not versioned themselves)
