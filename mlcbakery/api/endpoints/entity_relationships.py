@@ -9,7 +9,7 @@ from mlcbakery.models import Entity, Activity, EntityRelationship, Collection # 
 from mlcbakery.schemas.activity import EntityRelationshipResponse # Reusing from activity schemas
 from mlcbakery.schemas.entity_relationship import EntityLinkCreateRequest # New request schema
 from fastapi.security import HTTPAuthorizationCredentials # For consistency with other endpoints
-from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access # Adjusted import path
+from mlcbakery.api.dependencies import verify_auth_token, verify_auth_with_write_access # Adjusted import path
 
 # Added imports for the new endpoint
 from mlcbakery.schemas.dataset import ProvenanceEntityNode
@@ -62,7 +62,7 @@ async def _resolve_entity_from_string(entity_str: Optional[str], db: AsyncSessio
 async def create_entity_link(
     link_request: EntityLinkCreateRequest,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """
     Create a new relationship (link) between two entities via an activity name.
@@ -108,7 +108,7 @@ async def get_entity_upstream_tree(
     collection_name: str,
     entity_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_auth_token),
 ) -> ProvenanceEntityNode:
     """
     Get the provenance tree for any specified entity.

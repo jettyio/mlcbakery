@@ -1,4 +1,5 @@
-from abc import ABC, abstractmethod
+from abc import ABC
+from gzip import READ
 
 from mlcbakery.api.access_level import AccessLevel
 
@@ -10,19 +11,22 @@ class JWTStrategy(ABC):
     """
 
 
-    def parse_token(self, token: str, auth_org_id: str | None = None):
-      payload = self.decode_token(token)
+    def parse_token(self, token: str, required_access_level: AccessLevel = AccessLevel.READ):
+      try:
+        payload = self.decode_token(token)
+      except Exception as e:
+        return None
 
       if not payload:
         return None
   
       user_id = payload.get("sub", None)
       org_id = payload.get("org_id", None)
-      org_slug = payload.get("org_slug", None)
       org_role = payload.get("org_role", None)
 
       identifier = org_id if org_id else user_id
-      is_organization = org_id is not None
+      is_organization_scope = org_id is not None
+      is_personal_scope = org_id is None
 
       # Map org_role to access level
       if org_role == ADMIN_ROLE_NAME:
@@ -34,10 +38,13 @@ class JWTStrategy(ABC):
       else:
           access_level = AccessLevel.READ
 
+      has_access = is_personal_scope or access_level.value >= required_access_level.value
+
+      print(f"JWTStrategy.parse_token: returning payload")
       return {
         "verified": True,
-        "organization": is_organization,
-        "org_name": org_slug,
+        "has_access": has_access,
+        "organization": is_organization_scope,
         "org_id": org_id,
         "identifier": identifier,
         "access_level": access_level,

@@ -280,5 +280,4 @@ async def test_create_entity_link_unauthorized(db_session: AsyncSession):
         response = await ac.post("/api/v1/entity-relationships/", json=payload) # No AUTH_HEADERS
         
     assert response.status_code == 403 # Unauthorized
-    # Or 403 Forbidden, depending on your verify_admin_token implementation for missing token
     assert "Not authenticated" in response.json()["detail"] or "Forbidden" in response.json()["detail"] 

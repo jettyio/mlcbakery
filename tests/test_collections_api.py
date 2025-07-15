@@ -1,11 +1,8 @@
 import pytest
 from httpx import AsyncClient
-from typing import Dict, Any
 import uuid
-import json
 
 from mlcbakery.main import app
-from mlcbakery.schemas.collection import CollectionCreate
 from mlcbakery.auth.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
 # Assuming conftest.py provides async_client fixture
 
@@ -230,3 +227,97 @@ async def test_list_collections(async_client: AsyncClient):
 
 # TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
 # TODO: Add tests for invalid inputs (e.g., missing name) 
+
+@pytest.mark.asyncio
+async def test_get_collection_with_admin_token(async_client, admin_token_auth_headers):
+    """Test retrieving a collection using the admin token."""
+    # First, create a collection
+    unique_name = f"test-collection-admin-get-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for admin get."
+    }
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
+    )
+    assert create_response.status_code == 200
+    # Now, get the collection
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}", headers=admin_token_auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == unique_name
+    assert data["description"] == collection_data["description"]
+
+@pytest.mark.asyncio
+async def test_create_collection_with_admin_token(async_client, admin_token_auth_headers):
+    """Test successful creation of a new collection using the admin token."""
+    unique_name = f"test-collection-admin-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection created with admin token."
+    }
+    response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
+    )
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == collection_data["name"]
+    assert response_data["description"] == collection_data["description"]
+    assert "id" in response_data
+
+@pytest.mark.asyncio
+async def test_list_collections_with_admin_token(async_client, admin_token_auth_headers):
+    """Test listing all collections using the admin token."""
+    # Create a collection to ensure at least one exists
+    unique_name = f"test-collection-admin-list-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for admin list."
+    }
+    await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
+    )
+    response = await async_client.get("/api/v1/list-collections/", headers=admin_token_auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert any(coll["name"] == unique_name for coll in data)
+
+@pytest.mark.asyncio
+async def test_get_collection_storage_with_admin_token(async_client, admin_token_auth_headers):
+    """Test getting collection storage properties using the admin token."""
+    unique_name = f"test-collection-admin-storage-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for admin storage."
+    }
+    await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
+    )
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}/storage", headers=admin_token_auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == unique_name
+
+@pytest.mark.asyncio
+async def test_update_collection_storage_with_admin_token(async_client, admin_token_auth_headers):
+    """Test updating collection storage properties using the admin token."""
+    unique_name = f"test-collection-admin-update-storage-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for admin update storage."
+    }
+    await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
+    )
+    update_data = {"storage_info": {"bucket": "admin-bucket"}}
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/storage", json=update_data, headers=admin_token_auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["storage_info"] == update_data["storage_info"]

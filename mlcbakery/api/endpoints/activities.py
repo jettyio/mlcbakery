@@ -8,7 +8,6 @@ from fastapi.security import HTTPAuthorizationCredentials
 from ...database import get_async_db
 from ...models import Activity
 from ...schemas.activity import ActivityCreate, ActivityResponse
-from mlcbakery.api.dependencies import verify_admin_token
 
 router = APIRouter()
 

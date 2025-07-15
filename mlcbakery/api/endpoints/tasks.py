@@ -16,7 +16,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access, verify_jwt_token
+from mlcbakery.api.dependencies import verify_auth_token, user_auth_org_ids, user_has_collection_access
 from opentelemetry import trace
 
 router = APIRouter()
@@ -86,7 +86,7 @@ async def search_tasks(
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     """Create a new workflow Task."""
     # Find collection by name and verify ownership
@@ -137,7 +137,7 @@ async def update_task(
     task_id: int,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     # Get task and verify ownership
     stmt = (
@@ -189,7 +189,7 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     # Get task and verify ownership
     stmt = (
@@ -222,7 +222,7 @@ async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     # Admin users can see all tasks, regular users only see their own
     if auth.get("auth_type") == "admin":
@@ -290,7 +290,7 @@ async def list_tasks_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     """List all tasks in a specific collection owned by the user."""
     # First verify the collection exists and user has access
@@ -342,7 +342,7 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_token),
+    auth = Depends(verify_auth_token),
 ):
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:

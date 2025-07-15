@@ -2,11 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
-from fastapi.security import HTTPAuthorizationCredentials
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_auth_token, verify_auth_with_write_access
 from mlcbakery.models import Collection
 
 router = APIRouter()
@@ -16,7 +15,7 @@ router = APIRouter()
 async def create_agent(
     agent: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Create a new agent (async)."""
     # Create the agent with all provided fields (including collection_id if present)
@@ -44,7 +43,7 @@ async def list_agents(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
+    auth = Depends(verify_auth_token)
 ):
     """List all agents owned by the authenticated user (async)."""
     # Filter agents by collections owned by the user
@@ -61,7 +60,7 @@ async def list_agents(
 
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_jwt_token)):
+async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_auth_token)):
     """Get a specific agent by ID, only if owned by the authenticated user (async)."""
     # Filter agent by collection ownership
     stmt = (
@@ -84,7 +83,7 @@ async def update_agent(
     agent_id: int,
     agent_update: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Update an agent, only if owned by the authenticated user (async)."""
     # Get agent and verify ownership
@@ -127,7 +126,7 @@ async def update_agent(
 async def delete_agent(
     agent_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Delete an agent, only if owned by the authenticated user (async)."""
     # Get agent and verify ownership

@@ -28,7 +28,7 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_auth_with_write_access
 from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
@@ -74,7 +74,7 @@ async def search_datasets(
 async def create_dataset(
     dataset: DatasetCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_jwt_with_write_access),
+    _: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
 ):
     """Create a new dataset (async)."""
     if dataset.collection_id:
@@ -205,7 +205,7 @@ async def update_dataset(
     dataset_id: int,
     dataset_update: DatasetUpdate,
     db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_jwt_with_write_access),
+    _ = Depends(verify_auth_with_write_access),
 ):
     """Update a dataset (async)."""
     stmt_get = (
@@ -242,7 +242,7 @@ async def update_dataset(
 async def delete_dataset(
     dataset_id: int,
     db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_jwt_with_write_access),
+    _ = Depends(verify_auth_with_write_access),
 ):
     """Delete a dataset (async)."""
     stmt = (
@@ -266,7 +266,7 @@ async def update_dataset_metadata(
     dataset_id: int,
     metadata: dict,
     db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_jwt_with_write_access),
+    _ = Depends(verify_auth_with_write_access),
 ):
     """Update just the metadata of a dataset (async)."""
     stmt_get = (
@@ -301,7 +301,7 @@ async def update_dataset_preview(
     dataset_id: int,
     preview_update: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_jwt_with_write_access),
+    _ = Depends(verify_auth_with_write_access),
 ):
     """Update a dataset's preview (async) using file upload."""
     stmt_get = (
