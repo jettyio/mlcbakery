@@ -9,7 +9,7 @@ from mlcbakery.models import Entity, Activity, EntityRelationship, Collection # 
 from mlcbakery.schemas.activity import EntityRelationshipResponse # Reusing from activity schemas
 from mlcbakery.schemas.entity_relationship import EntityLinkCreateRequest # New request schema
 from fastapi.security import HTTPAuthorizationCredentials # For consistency with other endpoints
-from mlcbakery.api.dependencies import verify_auth_token, verify_auth_with_write_access # Adjusted import path
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access # Adjusted import path
 
 # Added imports for the new endpoint
 from mlcbakery.schemas.dataset import ProvenanceEntityNode
@@ -108,7 +108,7 @@ async def get_entity_upstream_tree(
     collection_name: str,
     entity_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ) -> ProvenanceEntityNode:
     """
     Get the provenance tree for any specified entity.

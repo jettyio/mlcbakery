@@ -14,7 +14,7 @@ from mlcbakery.schemas.collection import (
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
 from mlcbakery.database import get_async_db  # Use async dependency
-from mlcbakery.api.dependencies import verify_auth_token, verify_auth_with_write_access, user_has_collection_access, user_auth_org_ids
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access, user_has_collection_access, user_auth_org_ids
 
 router = fastapi.APIRouter()
 
@@ -70,7 +70,7 @@ async def create_collection(
 async def get_collection(
     collection_name: str, 
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth_token)
+    auth = fastapi.Depends(verify_auth)
 ):
     """Get a collection by name (async)."""
     stmt_coll = select(Collection).where(Collection.name == collection_name)
@@ -84,7 +84,7 @@ async def get_collection(
 @router.get("/list-collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth_token),
+    auth = fastapi.Depends(verify_auth),
 ):
     """
     Get collections from the database with pagination (async).
@@ -113,7 +113,7 @@ async def list_collections(
 async def get_collection_storage_info(
     collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth_token),
+    auth = fastapi.Depends(verify_auth),
 ):
     """Get storage information for a specific collection.
     This endpoint requires authentication with collection access.
@@ -169,7 +169,7 @@ async def list_datasets_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth_token)
+    auth = fastapi.Depends(verify_auth)
 ):
     """Get a list of datasets for a specific collection with pagination (async)."""
     # First verify the collection exists and user has access
@@ -207,7 +207,7 @@ async def list_agents_by_collection(
         default=100, description="Maximum number of records to return"
     ),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth_token)
+    auth = fastapi.Depends(verify_auth)
 ):
     """Get a list of agents for a specific collection with pagination (async)."""
     # First verify the collection exists and user has access

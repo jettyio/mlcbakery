@@ -5,7 +5,7 @@ from typing import List
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse
-from mlcbakery.api.dependencies import verify_auth_token, verify_auth_with_write_access
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access
 from mlcbakery.models import Collection
 
 router = APIRouter()
@@ -43,7 +43,7 @@ async def list_agents(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token)
+    auth = Depends(verify_auth)
 ):
     """List all agents owned by the authenticated user (async)."""
     # Filter agents by collections owned by the user
@@ -60,7 +60,7 @@ async def list_agents(
 
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_auth_token)):
+async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_auth)):
     """Get a specific agent by ID, only if owned by the authenticated user (async)."""
     # Filter agent by collection ownership
     stmt = (

@@ -1,6 +1,6 @@
 import os
 import secrets
-from mlcbakery.api.access_level import AccessLevel
+from mlcbakery.api.access_level import AccessLevel, AccessType
 
 class AdminTokenStrategy:
     """
@@ -19,7 +19,7 @@ class AdminTokenStrategy:
 
         return {
             "verified": True,
-            "has_access": True,
+            "access_type": AccessType.ADMIN,
             "auth_type": "admin",
             "access_level": AccessLevel.ADMIN,
             "identifier": "admin",

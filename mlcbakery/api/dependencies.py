@@ -22,12 +22,26 @@ logging.basicConfig(level=logging.INFO)
 # Define the bearer scheme
 bearer_scheme = HTTPBearer()
 
-async def verify_auth_token(
+async def get_auth(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    auth_strategies = Depends(auth_strategies)
+):
+    """
+    Parse the auth token based on provided auth strategies.
+    """
+    possible_auth_payloads = [
+        strategy.parse_token(credentials.credentials)
+        for strategy in auth_strategies
+    ]
+
+    return next((payload for payload in possible_auth_payloads if payload), None)
+
+async def verify_auth(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     auth_strategies = Depends(auth_strategies),
 ) -> dict:
     """
-    Dependency that verifies based on provided auth strategies.
+    Verify bearer token based on provided auth strategies.
     Returns a standardized payload format for any auth methods.
     """
 
@@ -53,15 +67,7 @@ async def verify_auth_with_access_level(
     Admin token supersedes JWT token access, granting maximum privileges.
     For JWT tokens, requires the specified access level or higher.
     """
-    print(f"verify_auth_with_ access level")
-    possible_auth_payloads = [
-        strategy.parse_token(credentials.credentials, required_access_level)
-        for strategy in auth_strategies
-    ]
-    print(f"possible_auth_payloads: {possible_auth_payloads}")
-    auth_payload = next((payload for payload in possible_auth_payloads if payload), None)
-
-    print(f"auth_payload: {auth_payload}")
+    auth_payload = await get_auth(credentials, auth_strategies)
 
     if not auth_payload:
         raise HTTPException(
@@ -70,7 +76,7 @@ async def verify_auth_with_access_level(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not auth_payload["has_access"]:
+    if auth_payload["access_level"].value < required_access_level.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access level {required_access_level.name} required.",

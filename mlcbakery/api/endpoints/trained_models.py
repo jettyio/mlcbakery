@@ -15,7 +15,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth_token, user_auth_org_ids, user_has_collection_access
+from mlcbakery.api.dependencies import verify_auth, user_auth_org_ids, user_has_collection_access
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -82,7 +82,7 @@ async def search_models(
 async def create_trained_model(
     trained_model_in: TrainedModelCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """
     Create a new trained model in the database.
@@ -143,7 +143,7 @@ async def update_trained_model(
     model_id: int,
     trained_model_in: TrainedModelUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """
     Update an existing trained model in the database.
@@ -201,7 +201,7 @@ async def update_trained_model(
 async def delete_trained_model(
     model_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """
     Delete a trained model from the database.
@@ -238,7 +238,7 @@ async def list_trained_models(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """List all trained models accessible to the user."""
     # Admin users can see all models, regular users only see their own
@@ -311,7 +311,7 @@ async def list_trained_models_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """List all trained models in a specific collection owned by the user."""
     # First verify the collection exists and user has access
@@ -370,7 +370,7 @@ async def get_trained_model_by_name(
     collection_name: str, 
     model_name: str, 
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_token),
+    auth = Depends(verify_auth),
 ):
     """
     Get a specific trained model by its collection name and model name.
