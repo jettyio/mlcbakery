@@ -5,7 +5,7 @@ import logging
 
 from mlcbakery.auth.jwks_strategy import JWKSStrategy
 from mlcbakery.models import Collection
-from mlcbakery.api.access_level import AccessLevel
+from mlcbakery.api.access_level import AccessLevel, AccessType
 from mlcbakery.auth.admin_token_strategy import AdminTokenStrategy
 
 ADMIN_AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN", "")
@@ -84,28 +84,8 @@ async def verify_auth_with_access_level(
 
     return auth_payload
 
-def user_auth_org_ids(auth: dict) -> list[str]:
-    """
-    Get the organization IDs for the authenticated user.
-    """
-    # Handle both new format (claims.organizations) and old format (org_id)
-    if "claims" in auth and "organizations" in auth["claims"]:
-        return list(auth["claims"]["organizations"].keys())
-    elif "org_id" in auth and auth["org_id"]:
-        return [auth["org_id"]]
+def apply_auth_to_stmt(stmt, auth):
+    if auth.get("access_type") == AccessType.ADMIN:
+        return stmt
     else:
-        return []
-
-def user_has_collection_access(collection: Collection, auth: dict) -> bool:
-    """
-    Check if the authenticated user has access to the collection.
-    Global admin users (auth_type="admin") have access to all collections.
-    Organization users (including org admins) only have access to collections in their org.
-    """
-    # Global admin users have access to all collections
-    if auth.get("auth_type") == "admin":
-        return True
-    
-    # Organization users (including org admins) only have access to collections in their org
-    user_org_ids = user_auth_org_ids(auth)
-    return collection.auth_org_id in user_org_ids
+        return stmt.where(Collection.owner_identifier == auth["identifier"])

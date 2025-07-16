@@ -6,10 +6,12 @@ from sqlalchemy.future import select
 from mlcbakery.main import app # Your FastAPI app instance
 from mlcbakery.database import get_async_db, Base, engine # Assuming these are your DB setup
 from mlcbakery.models import Collection, Entity, Activity, EntityRelationship, Dataset
-from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers
+from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers, ADMIN_ROLE_NAME
 
-# Define headers globally or pass them around
-AUTH_HEADERS = authorization_headers(sample_org_token())
+TEST_OWNER_1 = "test-owner-1"
+TEST_OWNER_2 = "test-owner-2"
+AUTH_HEADERS_1 = authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_1))
+AUTH_HEADERS_2 = authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_2))
 
 
 # pytest-asyncio decorator for async test functions
@@ -76,8 +78,8 @@ async def clear_db(session: AsyncSession):
 #     # If you created all tables: await conn.run_sync(Base.metadata.drop_all) inside engine.begin()
 
 async def _setup_test_data_collections(db_session: AsyncSession) -> tuple[Collection, Collection]:
-    coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking", owner_identifier="test-owner-1")
-    coll2 = Collection(name=TEST_COLLECTION_NAME_2, description="Test collection 2 for linking", owner_identifier="test-owner-2")
+    coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking", owner_identifier=TEST_OWNER_1)
+    coll2 = Collection(name=TEST_COLLECTION_NAME_2, description="Test collection 2 for linking", owner_identifier=TEST_OWNER_2)
     db_session.add_all([coll1, coll2])
     await db_session.commit()
     await db_session.refresh(coll1)
@@ -115,7 +117,7 @@ async def test_create_entity_link_success(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
             "activity_name": ACTIVITY_NAME_GENERATED
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 201
     data = response.json()
@@ -140,7 +142,7 @@ async def test_create_entity_link_no_source_success(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
             "activity_name": ACTIVITY_NAME_INGESTED
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 201
     data = response.json()
@@ -170,7 +172,7 @@ async def test_create_entity_link_reuse_activity(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
             "activity_name": activity_to_reuse
         }
-        response1 = await ac.post("/api/v1/entity-relationships/", json=payload1, headers=AUTH_HEADERS)
+        response1 = await ac.post("/api/v1/entity-relationships/", json=payload1, headers=AUTH_HEADERS_1)
         assert response1.status_code == 201
         response1_data = response1.json()
         assert response1_data["activity_name"] == activity_to_reuse
@@ -182,7 +184,7 @@ async def test_create_entity_link_reuse_activity(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
             "activity_name": activity_to_reuse # Same activity name
         }
-        response2 = await ac.post("/api/v1/entity-relationships/", json=payload2, headers=AUTH_HEADERS)
+        response2 = await ac.post("/api/v1/entity-relationships/", json=payload2, headers=AUTH_HEADERS_1)
         assert response2.status_code == 201
         response2_data = response2.json()
         assert response2_data["activity_name"] == activity_to_reuse
@@ -206,7 +208,7 @@ async def test_create_entity_link_target_not_found(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/non_existent_target",
             "activity_name": "test_fail_activity"
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 404
     assert "Target entity 'non_existent_target'" in response.json()["detail"]
@@ -221,7 +223,7 @@ async def test_create_entity_link_source_not_found(db_session: AsyncSession):
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
             "activity_name": "test_fail_activity"
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 404
     assert "Source entity 'non_existent_source'" in response.json()["detail"]
@@ -235,7 +237,7 @@ async def test_create_entity_link_collection_not_found_for_target(db_session: As
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/non_existent_collection/{TARGET_ENTITY_NAME_1}",
             "activity_name": "test_fail_activity"
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 404
     assert "Collection 'non_existent_collection' for target entity" in response.json()["detail"]
@@ -248,7 +250,7 @@ async def test_create_entity_link_invalid_format_target(db_session: AsyncSession
             "target_entity_str": "invalid_format",
             "activity_name": "test_fail_activity"
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 400 # Bad Request
     assert "Invalid target entity string format: 'invalid_format'" in response.json()["detail"]
@@ -262,7 +264,7 @@ async def test_create_entity_link_invalid_format_source(db_session: AsyncSession
             "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
             "activity_name": "test_fail_activity"
         }
-        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS)
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
         
     assert response.status_code == 400 # Bad Request
     assert "Invalid source entity string format: 'invalid_format'" in response.json()["detail"]

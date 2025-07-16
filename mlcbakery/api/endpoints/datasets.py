@@ -28,7 +28,7 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth_with_write_access
+from mlcbakery.api.dependencies import verify_auth_with_write_access, apply_auth_to_stmt
 from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
@@ -74,11 +74,12 @@ async def search_datasets(
 async def create_dataset(
     dataset: DatasetCreate,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
+    auth: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
 ):
     """Create a new dataset (async)."""
     if dataset.collection_id:
         stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
+        stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
         result_coll = await db.execute(stmt_coll)
         if not result_coll.scalar_one_or_none():
             raise HTTPException(

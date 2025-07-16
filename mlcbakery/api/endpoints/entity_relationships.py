@@ -8,8 +8,7 @@ from mlcbakery.database import get_async_db # Adjusted import path based on typi
 from mlcbakery.models import Entity, Activity, EntityRelationship, Collection # Adjusted import path
 from mlcbakery.schemas.activity import EntityRelationshipResponse # Reusing from activity schemas
 from mlcbakery.schemas.entity_relationship import EntityLinkCreateRequest # New request schema
-from fastapi.security import HTTPAuthorizationCredentials # For consistency with other endpoints
-from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access # Adjusted import path
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access, apply_auth_to_stmt # Adjusted import path
 
 # Added imports for the new endpoint
 from mlcbakery.schemas.dataset import ProvenanceEntityNode

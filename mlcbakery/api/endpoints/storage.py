@@ -9,7 +9,7 @@ import logging
 from mlcbakery.models import Collection, Dataset, Entity
 from mlcbakery.schemas.storage import DataUploadResponse, DataDownloadResponse
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access, apply_auth_to_stmt
 from mlcbakery.storage.gcp import (
     create_gcs_client,
     get_next_file_number,
@@ -24,7 +24,6 @@ _MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024  # 1GB
 
 router = APIRouter()
 
-
 @router.post(
     "/datasets/{collection_name}/{dataset_name}/data", response_model=DataUploadResponse
 )
@@ -33,7 +32,7 @@ async def upload_dataset_data(
     dataset_name: str,
     data_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
+    auth: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
 ):
     """Upload a dataset's data as a tar.gz file.
 
@@ -69,6 +68,7 @@ async def upload_dataset_data(
     collection_stmt = (
         select(Collection).where(Collection.name == collection_name).limit(1)
     )
+    collection_stmt = apply_auth_to_stmt(collection_stmt, auth)
     collection_result = await db.execute(collection_stmt)
     collection = collection_result.scalars().one_or_none()
 
@@ -190,7 +190,7 @@ async def get_dataset_data_download_url(
     dataset_name: str,
     file_number: int,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_auth),
+    auth: HTTPAuthorizationCredentials = Depends(verify_auth),
 ):
     """Get a temporary download URL for a dataset's data file.
 
@@ -203,6 +203,7 @@ async def get_dataset_data_download_url(
     collection_stmt = (
         select(Collection).where(Collection.name == collection_name).limit(1)
     )
+    collection_stmt = apply_auth_to_stmt(collection_stmt, auth)
     collection_result = await db.execute(collection_stmt)
     collection = collection_result.scalars().one_or_none()
 
@@ -305,7 +306,7 @@ async def download_latest_dataset_data(
     collection_name: str,
     dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
-    _: HTTPAuthorizationCredentials = Depends(verify_auth),
+    auth: HTTPAuthorizationCredentials = Depends(verify_auth),
 ) -> Response:
     """Download the latest data file for a dataset directly.
 
@@ -328,6 +329,7 @@ async def download_latest_dataset_data(
             selectinload(Dataset.collection),
         )
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     entity = result.scalars().unique().one_or_none()
 

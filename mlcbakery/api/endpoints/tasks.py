@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -16,7 +15,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, user_auth_org_ids, user_has_collection_access
+from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt
 from opentelemetry import trace
 
 router = APIRouter()
@@ -47,6 +46,7 @@ async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSess
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
 
 
 # --------------------------------------------
@@ -90,9 +90,8 @@ async def create_task(
 ):
     """Create a new workflow Task."""
     # Find collection by name and verify ownership
-    stmt_collection = select(Collection).where(
-        Collection.name == task_in.collection_name,
-    ).where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
+    stmt_collection = select(Collection).where(Collection.name == task_in.collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
@@ -143,11 +142,11 @@ async def update_task(
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
-        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(
             Task.id == task_id,
         )
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     db_task = result.scalar_one_or_none()
 
@@ -195,9 +194,9 @@ async def delete_task(
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
-        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(Task.id == task_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     db_task = result.scalar_one_or_none()
 
@@ -225,43 +224,18 @@ async def list_tasks(
     auth = Depends(verify_auth),
 ):
     # Admin users can see all tasks, regular users only see their own
-    if auth.get("auth_type") == "admin":
-        stmt = (
-            select(Task)
-            .join(Collection, Task.collection_id == Collection.id)
-            .where(Task.entity_type == "task")
-            .options(selectinload(Task.collection))
-            .offset(skip)
-            .limit(limit)
-            .order_by(Task.id)
-        )
-    else:
-        org_ids = user_auth_org_ids(auth)
-        if org_ids:
-            stmt = (
-                select(Task)
-                .join(Collection, Task.collection_id == Collection.id)
-                .where(Task.entity_type == "task")
-                .where(Collection.auth_org_id.in_(org_ids))
-                .options(selectinload(Task.collection))
-                .offset(skip)
-                .limit(limit)
-                .order_by(Task.id)
-            )
-        else:
-            # Handle case where user has no org_id (use owner_identifier)
-            user_identifier = auth.get("sub")
-            stmt = (
-                select(Task)
-                .join(Collection, Task.collection_id == Collection.id)
-                .where(Task.entity_type == "task")
-                .where(Collection.owner_identifier == user_identifier)
-                .options(selectinload(Task.collection))
-                .offset(skip)
-                .limit(limit)
-                .order_by(Task.id)
-            )
-    
+    stmt = (
+        select(Task)
+        .join(Collection, Task.collection_id == Collection.id)
+        .where(Task.entity_type == "task")
+        .options(selectinload(Task.collection))
+        .offset(skip)
+        .limit(limit)
+        .order_by(Task.id)
+    )
+
+    stmt = apply_auth_to_stmt(stmt, auth)
+
     result = await db.execute(stmt)
     tasks = result.scalars().all()
 
@@ -295,10 +269,11 @@ async def list_tasks_by_collection(
     """List all tasks in a specific collection owned by the user."""
     # First verify the collection exists and user has access
     stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{collection_name}' not found",

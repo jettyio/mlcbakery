@@ -4,7 +4,10 @@ import tempfile
 
 from mlcbakery.bakery_client import Client
 from mlcbakery.models import Collection, Dataset
-from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers
+from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers, ADMIN_ROLE_NAME
+
+# Add a constant for the test owner identifier
+TEST_OWNER_IDENTIFIER = "test-owner"
 
 
 @pytest.mark.asyncio
@@ -19,7 +22,7 @@ async def test_upload_dataset_data(
         name="test_storage_collection",
         description="Test collection for storage",
         storage_provider="gcp",
-        owner_identifier="test-owner",
+        owner_identifier=TEST_OWNER_IDENTIFIER,
         storage_info={
             "bucket": "test-bucket",
             "type": "service_account",
@@ -58,7 +61,7 @@ async def test_upload_dataset_data(
             response = await test_client.post(
                 f"/api/v1/datasets/{collection.name}/{dataset.name}/data",
                 files={"data_file": ("test.tar.gz", f, "application/gzip")},
-                headers=authorization_headers(sample_org_token()),
+                headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_IDENTIFIER)),
             )
 
         # Assert response
@@ -72,7 +75,7 @@ async def test_upload_dataset_data(
         # Test the download endpoint
         response = await test_client.get(
             f"/api/v1/datasets/{collection.name}/{dataset.name}/data/0",
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_IDENTIFIER)),
         )
 
         # Assert response

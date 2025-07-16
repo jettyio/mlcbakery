@@ -36,7 +36,6 @@ class JWTStrategy(ABC):
       else:
           access_level = AccessLevel.READ
 
-      print(f"JWTStrategy.parse_token: returning payload")
       return {
         "verified": True,
         "org_id": org_id,

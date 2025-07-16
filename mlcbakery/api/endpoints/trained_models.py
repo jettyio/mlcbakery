@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -15,7 +14,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, user_auth_org_ids, user_has_collection_access
+from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -98,10 +97,11 @@ async def create_trained_model(
     """
     # Find collection by name and verify access
     stmt_collection = select(Collection).where(Collection.name == trained_model_in.collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{trained_model_in.collection_name}' not found",
@@ -163,9 +163,9 @@ async def update_trained_model(
     stmt = (
         select(TrainedModel)
         .join(Collection, TrainedModel.collection_id == Collection.id)
-        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(TrainedModel.id == model_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     db_trained_model = result.scalar_one_or_none()
 
@@ -214,10 +214,11 @@ async def delete_trained_model(
         .join(Collection, TrainedModel.collection_id == Collection.id)
         .where(TrainedModel.id == model_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     db_trained_model = result.scalar_one_or_none()
 
-    if not db_trained_model or not user_has_collection_access(db_trained_model.collection, auth):
+    if not db_trained_model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Trained model with id {model_id} not found",
@@ -242,43 +243,17 @@ async def list_trained_models(
 ):
     """List all trained models accessible to the user."""
     # Admin users can see all models, regular users only see their own
-    if auth.get("auth_type") == "admin":
-        stmt = (
-            select(TrainedModel)
-            .join(Collection, TrainedModel.collection_id == Collection.id)
-            .where(TrainedModel.entity_type == "trained_model")
-            .options(selectinload(TrainedModel.collection))
-            .offset(skip)
-            .limit(limit)
-            .order_by(TrainedModel.id)
-        )
-    else:
-        org_ids = user_auth_org_ids(auth)
-        if org_ids:
-            stmt = (
-                select(TrainedModel)
-                .join(Collection, TrainedModel.collection_id == Collection.id)
-                .where(TrainedModel.entity_type == "trained_model")
-                .where(Collection.auth_org_id.in_(org_ids))
-                .options(selectinload(TrainedModel.collection))
-                .offset(skip)
-                .limit(limit)
-                .order_by(TrainedModel.id)
-            )
-        else:
-            # Handle case where user has no org_id (use owner_identifier)
-            user_identifier = auth.get("sub")
-            stmt = (
-                select(TrainedModel)
-                .join(Collection, TrainedModel.collection_id == Collection.id)
-                .where(TrainedModel.entity_type == "trained_model")
-                .where(Collection.owner_identifier == user_identifier)
-                .options(selectinload(TrainedModel.collection))
-                .offset(skip)
-                .limit(limit)
-                .order_by(TrainedModel.id)
-            )
-    
+    stmt = (
+        select(TrainedModel)
+        .join(Collection, TrainedModel.collection_id == Collection.id)
+        .where(TrainedModel.entity_type == "trained_model")
+        .options(selectinload(TrainedModel.collection))
+        .offset(skip)
+        .limit(limit)
+        .order_by(TrainedModel.id)
+    )
+
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     models = result.scalars().all()
 
@@ -316,16 +291,15 @@ async def list_trained_models_by_collection(
     """List all trained models in a specific collection owned by the user."""
     # First verify the collection exists and user has access
     stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{collection_name}' not found",
         )
-
-    org_ids = user_auth_org_ids(auth)
     
     # Get models in the collection
     stmt = (
@@ -333,12 +307,12 @@ async def list_trained_models_by_collection(
         .join(Collection, TrainedModel.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(TrainedModel.entity_type == "trained_model")
-        .where(Collection.auth_org_id.in_(org_ids))
         .options(selectinload(TrainedModel.collection))
         .offset(skip)
         .limit(limit)
         .order_by(TrainedModel.id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     models = result.scalars().all()
 
@@ -380,10 +354,11 @@ async def get_trained_model_by_name(
     """
     # First verify the collection exists and user has access
     stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
     result_collection = await db.execute(stmt_collection)
     collection = result_collection.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection with name '{collection_name}' not found",

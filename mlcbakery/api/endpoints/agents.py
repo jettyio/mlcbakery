@@ -5,7 +5,7 @@ from typing import List
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse
-from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access, apply_auth_to_stmt
 from mlcbakery.models import Collection
 
 router = APIRouter()
@@ -23,10 +23,8 @@ async def create_agent(
     
     # If collection_id is provided, validate it exists and is owned by the user
     if agent.collection_id is not None:
-        stmt = select(Collection).where(
-            Collection.id == agent.collection_id,
-            Collection.owner_identifier == auth['identifier']
-        )
+        stmt = select(Collection).where(Collection.id == agent.collection_id)
+        stmt = apply_auth_to_stmt(stmt, auth)
         result = await db.execute(stmt)
         collection = result.scalar_one_or_none()
         if not collection:
@@ -50,10 +48,10 @@ async def list_agents(
     stmt = (
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
-        .where(Collection.owner_identifier == auth['identifier'])
         .offset(skip)
         .limit(limit)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     agents = result.scalars().all()
     return agents
@@ -67,8 +65,7 @@ async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), aut
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result = await db.execute(stmt)
@@ -91,8 +88,7 @@ async def update_agent(
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result_get = await db.execute(stmt_get)
@@ -103,10 +99,8 @@ async def update_agent(
     
     # If collection_id is being updated, validate it exists and is owned by the user
     if agent_update.collection_id is not None and agent_update.collection_id != db_agent.collection_id:
-        stmt = select(Collection).where(
-            Collection.id == agent_update.collection_id,
-            Collection.owner_identifier == auth['identifier']
-        )
+        stmt = select(Collection).where(Collection.id == agent_update.collection_id)
+        stmt = apply_auth_to_stmt(stmt, auth)
         result = await db.execute(stmt)
         collection = result.scalar_one_or_none()
         if not collection:
@@ -134,8 +128,7 @@ async def delete_agent(
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result = await db.execute(stmt)
