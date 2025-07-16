@@ -34,9 +34,9 @@ def _get_access_level_from_token(jwt_payload: dict) -> AccessLevel:
     
     # Map org_role to access level
     org_role = jwt_payload.get("org_role")
-    if org_role == "Admin":
+    if org_role == "org:admin":
         return AccessLevel.ADMIN
-    elif org_role == "Member":
+    elif org_role == "org:member":
         return AccessLevel.READ
     else:
         # Default to read access for authenticated users

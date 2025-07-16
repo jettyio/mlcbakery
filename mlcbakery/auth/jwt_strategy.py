@@ -27,9 +27,9 @@ class JWTStrategy(ABC):
       # Map org_role to access level
       if org_role == ADMIN_ROLE_NAME:
           access_level = AccessLevel.ADMIN
-      elif org_role == "Writer":
+      elif org_role == "org:admin":
           access_level = AccessLevel.WRITE
-      elif org_role == "Member":
+      elif org_role == "org:member":
           access_level = AccessLevel.READ
       else:
           access_level = AccessLevel.READ

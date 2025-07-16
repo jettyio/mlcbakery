@@ -89,7 +89,6 @@ async def list_api_keys_for_collection(
     auth = Depends(verify_admin_or_jwt_with_write_access)
 ):
     """List all API keys for a collection."""
-    
     # Find collection by name
     stmt = select(Collection).where(
         func.lower(Collection.name) == func.lower(collection_name)
@@ -112,7 +111,6 @@ async def list_api_keys_for_collection(
     )
     result = await db.execute(stmt)
     api_keys = result.scalars().all()
-    
     # Convert to response format
     return [
         ApiKeyResponse(

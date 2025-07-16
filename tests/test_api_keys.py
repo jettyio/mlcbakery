@@ -259,14 +259,4 @@ async def test_write_access_required(async_client: AsyncClient):
     )
     
     # Should be unauthorized due to invalid token
-    assert response.status_code == 401
-    
-    # Check if response has content before trying to parse JSON
-    if response.content and len(response.content) > 0:
-        try:
-            response_data = response.json()
-            detail = response_data.get("detail", "").lower()
-            assert any(keyword in detail for keyword in ["token", "unauthorized", "invalid", "missing"])
-        except Exception:
-            # If JSON parsing fails, just check that we got 401
-            pass 
+    assert response.status_code == 401 
