@@ -9,7 +9,7 @@ from mlcbakery.models import Entity, Activity, EntityRelationship, Collection # 
 from mlcbakery.schemas.activity import EntityRelationshipResponse # Reusing from activity schemas
 from mlcbakery.schemas.entity_relationship import EntityLinkCreateRequest # New request schema
 from fastapi.security import HTTPAuthorizationCredentials # For consistency with other endpoints
-from mlcbakery.api.dependencies import verify_jwt_token, verify_jwt_with_write_access # Adjusted import path
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_jwt_token, verify_jwt_with_write_access # Adjusted import path
 
 # Added imports for the new endpoint
 from mlcbakery.schemas.dataset import ProvenanceEntityNode
@@ -62,7 +62,7 @@ async def _resolve_entity_from_string(entity_str: Optional[str], db: AsyncSessio
 async def create_entity_link(
     link_request: EntityLinkCreateRequest,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """
     Create a new relationship (link) between two entities via an activity name.
@@ -79,12 +79,18 @@ async def create_entity_link(
         raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
 
     # check if the relationship already exists
+    where_conditions = [
+        EntityRelationship.target_entity_id == target_entity.id,
+        EntityRelationship.activity_name == link_request.activity_name
+    ]
+    
+    if source_entity:
+        where_conditions.append(EntityRelationship.source_entity_id == source_entity.id)
+    else:
+        where_conditions.append(EntityRelationship.source_entity_id.is_(None))
+    
     existing_relationship = await db.execute(
-        select(EntityRelationship).where(
-            EntityRelationship.source_entity_id == source_entity.id if source_entity else None,
-            EntityRelationship.target_entity_id == target_entity.id,
-            EntityRelationship.activity_name == link_request.activity_name
-        )
+        select(EntityRelationship).where(*where_conditions)
     )
     existing_relationship = existing_relationship.scalar_one_or_none()
     if existing_relationship:
@@ -102,13 +108,56 @@ async def create_entity_link(
     
     return db_entity_relationship 
 
+@router.delete("/", status_code=204)
+async def delete_entity_link(
+    link_request: EntityLinkCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_admin_or_jwt_token),
+):
+    """
+    Delete an existing relationship (link) between two entities via an activity name.
+    - Source and target entities are identified by a string: {entity_type}/{collection_name}/{entity_name}.
+    - Target entity is required. Source entity is optional.
+    - The activity_name is taken directly from the request.
+    """
+    source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source")
+    # Target entity must resolve, _resolve_entity_from_string will raise HTTPException if not found or format is bad.
+    target_entity = await _resolve_entity_from_string(link_request.target_entity_str, db, entity_role="target")
+
+    if not target_entity: # Should be caught by _resolve, but as a safeguard.
+        raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
+
+    # Find the existing relationship to delete
+    where_conditions = [
+        EntityRelationship.target_entity_id == target_entity.id,
+        EntityRelationship.activity_name == link_request.activity_name
+    ]
+    
+    if source_entity:
+        where_conditions.append(EntityRelationship.source_entity_id == source_entity.id)
+    else:
+        where_conditions.append(EntityRelationship.source_entity_id.is_(None))
+    
+    stmt = select(EntityRelationship).where(*where_conditions)
+    result = await db.execute(stmt)
+    existing_relationship = result.scalar_one_or_none()
+    
+    if not existing_relationship:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Entity relationship not found for the specified entities and activity '{link_request.activity_name}'."
+        )
+
+    await db.delete(existing_relationship)
+    await db.commit()
+
 @router.get("/{entity_type}/{collection_name}/{entity_name}/upstream", response_model=ProvenanceEntityNode)
 async def get_entity_upstream_tree(
     entity_type: str,
     collection_name: str,
     entity_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_admin_or_jwt_token),
 ) -> ProvenanceEntityNode:
     """
     Get the provenance tree for any specified entity.
