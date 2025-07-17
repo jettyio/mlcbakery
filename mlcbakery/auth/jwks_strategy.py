@@ -24,8 +24,8 @@ class JWKSStrategy(JWTStrategy):
         """
         Decode the JWT token using the signing key.
         """
-        signing_key = self.get_signing_key(token)
         try:
+          signing_key = self.get_signing_key(token)
           return jwt.decode(
               token,
               signing_key,

@@ -9,6 +9,12 @@ class JWTStrategy(ABC):
     Abstract base class for JWT strategies.
     """
 
+    @abstractmethod
+    def decode_token(self, token: str) -> dict:
+        """
+        Decode the JWT token using the signing key.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
 
     def parse_token(self, token: str, auth_org_id: str | None = None):
       payload = self.decode_token(token)
