@@ -143,7 +143,7 @@ async def update_trained_model(
     model_id: int,
     trained_model_in: TrainedModelUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """
     Update an existing trained model in the database.
@@ -158,14 +158,17 @@ async def update_trained_model(
 
     The model name and collection cannot be changed.
     """
-    
+
     # Get model and verify access
+    
     stmt = (
         select(TrainedModel)
         .join(Collection, TrainedModel.collection_id == Collection.id)
-        .where(Collection.auth_org_id.in_(user_auth_org_ids(auth)))
         .where(TrainedModel.id == model_id)
     )
+    if not auth.get("auth_type") == "admin":
+        stmt = stmt.where(Collection.auth_org_id == auth.get("org_id"))
+
     result = await db.execute(stmt)
     db_trained_model = result.scalar_one_or_none()
 
