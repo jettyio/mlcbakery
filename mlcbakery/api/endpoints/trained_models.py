@@ -311,7 +311,7 @@ async def list_trained_models_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token),
+    auth = Depends(verify_admin_or_jwt_token),
 ):
     """List all trained models in a specific collection owned by the user."""
     # First verify the collection exists and user has access
@@ -325,15 +325,11 @@ async def list_trained_models_by_collection(
             detail=f"Collection with name '{collection_name}' not found",
         )
 
-    org_ids = user_auth_org_ids(auth)
-    
     # Get models in the collection
     stmt = (
         select(TrainedModel)
         .join(Collection, TrainedModel.collection_id == Collection.id)
         .where(Collection.name == collection_name)
-        .where(TrainedModel.entity_type == "trained_model")
-        .where(Collection.auth_org_id.in_(org_ids))
         .options(selectinload(TrainedModel.collection))
         .offset(skip)
         .limit(limit)
