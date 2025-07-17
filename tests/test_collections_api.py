@@ -142,14 +142,14 @@ async def test_get_collection_storage_mismatched_owner_fails_with_404(async_clie
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin", "org1"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1"))
     )
     assert create_response.status_code == 200
 
     # Attempt to retrieve storage with a different org's token
     response = await async_client.get(
         f"/api/v1/collections/{unique_name}/storage",
-        headers=authorization_headers(sample_org_token("Admin", "org2"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2"))
     )
 
     assert response.status_code == 404

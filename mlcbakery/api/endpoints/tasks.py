@@ -15,7 +15,7 @@ from mlcbakery.schemas.task import (
     TaskListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt
+from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, verify_auth_with_write_access
 from opentelemetry import trace
 
 router = APIRouter()
@@ -85,7 +85,7 @@ async def search_tasks(
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Create a new workflow Task."""
     # Find collection by name and verify ownership
@@ -135,7 +135,7 @@ async def update_task(
     task_id: int,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     # Get task and verify ownership
     stmt = (
@@ -187,7 +187,7 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     # Get task and verify ownership
     stmt = (
@@ -314,7 +314,7 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    _ = Depends(verify_auth),
 ):
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:

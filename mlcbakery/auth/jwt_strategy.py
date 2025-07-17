@@ -2,7 +2,7 @@ from abc import ABC
 
 from mlcbakery.api.access_level import AccessLevel, AccessType
 
-ADMIN_ROLE_NAME = "Admin"
+ADMIN_ROLE_NAME = "org:admin"
 
 class JWTStrategy(ABC):
     """
