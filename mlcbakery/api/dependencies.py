@@ -3,6 +3,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
+from sqlalchemy import Select
+
 from mlcbakery.auth.jwks_strategy import JWKSStrategy
 from mlcbakery.models import Collection
 from mlcbakery.api.access_level import AccessLevel, AccessType
@@ -84,7 +86,7 @@ async def verify_auth_with_access_level(
 
     return auth_payload
 
-def apply_auth_to_stmt(stmt, auth):
+def apply_auth_to_stmt(stmt : Select, auth: dict) -> Select:
     if auth.get("access_type") == AccessType.ADMIN:
         return stmt
     else:

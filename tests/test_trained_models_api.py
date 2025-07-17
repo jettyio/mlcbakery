@@ -182,3 +182,9 @@ async def test_create_trained_model_duplicate_name_case_insensitive(async_client
     assert "already exists" in response_detail, \
         f"Expected 'trained model with name ... already exists' in detail, but got: {response_detail}. \
         Current model name check is likely case-sensitive."
+
+# test put
+# test delete
+# test get 
+# test list
+# test search

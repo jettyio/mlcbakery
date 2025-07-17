@@ -29,7 +29,6 @@ async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSess
         .join(Collection, Task.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(func.lower(Task.name) == func.lower(task_name))
-        .where(Task.entity_type == "task")
         .options(
             selectinload(Task.collection),
             selectinload(Task.upstream_links).options(
@@ -227,7 +226,6 @@ async def list_tasks(
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
-        .where(Task.entity_type == "task")
         .options(selectinload(Task.collection))
         .offset(skip)
         .limit(limit)
@@ -284,7 +282,6 @@ async def list_tasks_by_collection(
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
         .where(Collection.name == collection_name)
-        .where(Task.entity_type == "task")
         .options(selectinload(Task.collection))
         .offset(skip)
         .limit(limit)

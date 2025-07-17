@@ -119,7 +119,6 @@ async def list_datasets(
         )
     stmt = (
         select(Dataset)
-        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
             
@@ -166,7 +165,6 @@ async def _find_dataset_by_name(collection_name: str, dataset_name: str, db: Asy
         .join(Collection, Dataset.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
             selectinload(Dataset.upstream_links).options(
@@ -212,7 +210,6 @@ async def update_dataset(
     stmt_get = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
-        .where(Dataset.entity_type == "dataset")
     )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -249,7 +246,6 @@ async def delete_dataset(
     stmt = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
-        .where(Dataset.entity_type == "dataset")
     )
     result = await db.execute(stmt)
     db_dataset = result.scalar_one_or_none()
@@ -273,7 +269,6 @@ async def update_dataset_metadata(
     stmt_get = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
-        .where(Dataset.entity_type == "dataset")
     )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -308,7 +303,6 @@ async def update_dataset_preview(
     stmt_get = (
         select(Dataset)
         .where(Dataset.id == dataset_id)
-        .where(Dataset.entity_type == "dataset")
     )
     result_get = await db.execute(stmt_get)
     db_dataset = result_get.scalar_one_or_none()
@@ -509,7 +503,6 @@ async def get_dataset_mlcroissant(
         .join(Collection, Dataset.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(Dataset.name == dataset_name)
-        .where(Dataset.entity_type == "dataset")
         .options(
             selectinload(Dataset.collection),
         )

@@ -14,7 +14,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt
+from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, get_auth, verify_auth_with_write_access
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -28,7 +28,6 @@ async def _find_model_by_name(collection_name: str, model_name: str, db: AsyncSe
         .join(Collection, TrainedModel.collection_id == Collection.id)
         .where(Collection.name == collection_name)
         .where(func.lower(TrainedModel.name) == func.lower(model_name)) # Case-insensitive name match
-        .where(TrainedModel.entity_type == "trained_model") # Ensure it is a trained model
         .options(
             selectinload(TrainedModel.collection),
             # Add other selectinloads if needed in the future, e.g., for relationships
@@ -54,6 +53,7 @@ async def search_models(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts = Depends(search.setup_and_get_typesense_client),
+    auth = Depends(get_auth),
 ):
     """Search models using Typesense based on query term."""
     # Get the current span
@@ -81,7 +81,7 @@ async def search_models(
 async def create_trained_model(
     trained_model_in: TrainedModelCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """
     Create a new trained model in the database.
@@ -143,7 +143,7 @@ async def update_trained_model(
     model_id: int,
     trained_model_in: TrainedModelUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """
     Update an existing trained model in the database.
@@ -201,7 +201,7 @@ async def update_trained_model(
 async def delete_trained_model(
     model_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """
     Delete a trained model from the database.
@@ -246,7 +246,6 @@ async def list_trained_models(
     stmt = (
         select(TrainedModel)
         .join(Collection, TrainedModel.collection_id == Collection.id)
-        .where(TrainedModel.entity_type == "trained_model")
         .options(selectinload(TrainedModel.collection))
         .offset(skip)
         .limit(limit)
@@ -306,7 +305,6 @@ async def list_trained_models_by_collection(
         select(TrainedModel)
         .join(Collection, TrainedModel.collection_id == Collection.id)
         .where(Collection.name == collection_name)
-        .where(TrainedModel.entity_type == "trained_model")
         .options(selectinload(TrainedModel.collection))
         .offset(skip)
         .limit(limit)

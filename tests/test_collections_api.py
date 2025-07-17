@@ -321,3 +321,7 @@ async def test_update_collection_storage_with_admin_token(async_client, admin_to
     assert response.status_code == 200
     data = response.json()
     assert data["storage_info"] == update_data["storage_info"]
+
+# test delete
+# list datasets
+# list agents
