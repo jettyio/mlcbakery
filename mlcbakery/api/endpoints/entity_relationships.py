@@ -108,24 +108,36 @@ async def create_entity_link(
     
     return db_entity_relationship 
 
-@router.delete("/{relationship_id}", status_code=204)
+@router.delete("/{target_entity_id}", status_code=204)
 async def delete_entity_link(
-    relationship_id: int,
+    target_entity_id: int,
+    source_entity_id: Optional[int] = None,
     db: AsyncSession = Depends(get_async_db),
     auth = Depends(verify_admin_or_jwt_token),
 ):
     """
-    Delete an existing relationship (link) between entities by its ID.
+    Delete an existing relationship (link) between entities by their IDs.
+    - target_entity_id: Required target entity ID (path parameter)
+    - source_entity_id: Optional source entity ID (query parameter)
     """
+    # Build where conditions for the relationship lookup
+    where_conditions = [EntityRelationship.target_entity_id == target_entity_id]
+    
+    if source_entity_id is not None:
+        where_conditions.append(EntityRelationship.source_entity_id == source_entity_id)
+    else:
+        where_conditions.append(EntityRelationship.source_entity_id.is_(None))
+    
     # Find the existing relationship to delete
-    stmt = select(EntityRelationship).where(EntityRelationship.id == relationship_id)
+    stmt = select(EntityRelationship).where(*where_conditions)
     result = await db.execute(stmt)
     existing_relationship = result.scalar_one_or_none()
     
     if not existing_relationship:
+        source_desc = f"source entity ID {source_entity_id}" if source_entity_id else "no source entity"
         raise HTTPException(
             status_code=404, 
-            detail=f"Entity relationship with ID {relationship_id} not found."
+            detail=f"Entity relationship not found between {source_desc} and target entity ID {target_entity_id}."
         )
 
     await db.delete(existing_relationship)
