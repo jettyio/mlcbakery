@@ -108,44 +108,24 @@ async def create_entity_link(
     
     return db_entity_relationship 
 
-@router.delete("/", status_code=204)
+@router.delete("/{relationship_id}", status_code=204)
 async def delete_entity_link(
-    link_request: EntityLinkCreateRequest,
+    relationship_id: int,
     db: AsyncSession = Depends(get_async_db),
     auth = Depends(verify_admin_or_jwt_token),
 ):
     """
-    Delete an existing relationship (link) between two entities via an activity name.
-    - Source and target entities are identified by a string: {entity_type}/{collection_name}/{entity_name}.
-    - Target entity is required. Source entity is optional.
-    - The activity_name is taken directly from the request.
+    Delete an existing relationship (link) between entities by its ID.
     """
-    source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source")
-    # Target entity must resolve, _resolve_entity_from_string will raise HTTPException if not found or format is bad.
-    target_entity = await _resolve_entity_from_string(link_request.target_entity_str, db, entity_role="target")
-
-    if not target_entity: # Should be caught by _resolve, but as a safeguard.
-        raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
-
     # Find the existing relationship to delete
-    where_conditions = [
-        EntityRelationship.target_entity_id == target_entity.id,
-        EntityRelationship.activity_name == link_request.activity_name
-    ]
-    
-    if source_entity:
-        where_conditions.append(EntityRelationship.source_entity_id == source_entity.id)
-    else:
-        where_conditions.append(EntityRelationship.source_entity_id.is_(None))
-    
-    stmt = select(EntityRelationship).where(*where_conditions)
+    stmt = select(EntityRelationship).where(EntityRelationship.id == relationship_id)
     result = await db.execute(stmt)
     existing_relationship = result.scalar_one_or_none()
     
     if not existing_relationship:
         raise HTTPException(
             status_code=404, 
-            detail=f"Entity relationship not found for the specified entities and activity '{link_request.activity_name}'."
+            detail=f"Entity relationship with ID {relationship_id} not found."
         )
 
     await db.delete(existing_relationship)
