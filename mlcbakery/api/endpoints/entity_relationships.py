@@ -20,7 +20,7 @@ router = APIRouter(
     tags=["Entity Relationships"],
 )
 
-async def _resolve_entity_from_string(entity_str: Optional[str], db: AsyncSession, entity_role: str) -> Optional[Entity]:
+async def _resolve_entity_from_string(entity_str: Optional[str], db: AsyncSession, entity_role: str, auth = None) -> Optional[Entity]:
     """Helper to resolve an Entity from its string identifier."""
     if not entity_str:
         return None
@@ -36,6 +36,9 @@ async def _resolve_entity_from_string(entity_str: Optional[str], db: AsyncSessio
 
     # Find collection
     coll_stmt = select(Collection).where(Collection.name == collection_name)
+    if auth:
+        coll_stmt = apply_auth_to_stmt(coll_stmt, auth)
+
     collection = (await db.execute(coll_stmt)).scalar_one_or_none()
     if not collection:
         raise HTTPException(
@@ -70,7 +73,7 @@ async def create_entity_link(
     - The activity_name is taken directly from the request.
     - Agent ID is set to NULL for now.
     """
-    source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source")
+    source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source", auth=auth)
     # Target entity must resolve, _resolve_entity_from_string will raise HTTPException if not found or format is bad.
     target_entity = await _resolve_entity_from_string(link_request.target_entity_str, db, entity_role="target")
 

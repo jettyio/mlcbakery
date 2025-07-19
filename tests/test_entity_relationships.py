@@ -209,12 +209,27 @@ async def test_create_entity_link_target_not_found(db_session: AsyncSession):
             "activity_name": "test_fail_activity"
         }
         response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_1)
-        
+
     assert response.status_code == 404
     assert "Target entity 'non_existent_target'" in response.json()["detail"]
     assert "not found in collection" in response.json()["detail"]
 
 async def test_create_entity_link_source_not_found(db_session: AsyncSession):
+    """Test error when source entity is not found."""
+    await _setup_test_data_entities(db_session, *(await _setup_test_data_collections(db_session)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
+            "activity_name": "test_fail_activity"
+        }
+        response = await ac.post("/api/v1/entity-relationships/", json=payload, headers=AUTH_HEADERS_2)
+
+    assert response.status_code == 404
+    assert "Collection 'test_link_coll_1' for source entity" in response.json()["detail"]
+    assert "not found" in response.json()["detail"]
+
+async def test_create_entity_link_source_exists_but_not_owned(db_session: AsyncSession):
     """Test error when source entity is not found."""
     await _setup_test_data_entities(db_session, *(await _setup_test_data_collections(db_session)))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
