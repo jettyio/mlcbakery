@@ -9,6 +9,12 @@ class JWTStrategy(ABC):
     Abstract base class for JWT strategies.
     """
 
+    @abstractmethod
+    def decode_token(self, token: str) -> dict:
+        """
+        Decode the JWT token using the signing key.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
 
     def parse_token(self, token: str):
       try:
@@ -29,9 +35,9 @@ class JWTStrategy(ABC):
       # Map org_role to access level
       if org_role == ADMIN_ROLE_NAME:
           access_level = AccessLevel.ADMIN
-      elif org_role == "Writer":
+      elif org_role == "org:admin":
           access_level = AccessLevel.WRITE
-      elif org_role == "Member":
+      elif org_role == "org:member":
           access_level = AccessLevel.READ
       else:
           access_level = AccessLevel.READ

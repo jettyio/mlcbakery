@@ -7,12 +7,14 @@ class PassthroughStrategy(JWTStrategy):
     This is useful for testing purposes or when no specific JWT processing is required.
     """
 
-    def decode_token(self, jwt_payload: str) -> dict:
+    def decode_token(self, jwt_payload: str) -> dict | None:
         """
         Process the JWT payload without any modifications.
         """
-        print(jwt_payload)
-        return json.loads(jwt_payload)
+        try:
+            return json.loads(jwt_payload)
+        except (json.JSONDecodeError, ValueError):
+            return None
 
 def sample_user_token(user_sub: str = "user_12345") -> str:
   return json.dumps({
