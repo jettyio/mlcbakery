@@ -4,9 +4,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
 from sqlalchemy import Select
+from mlcbakery.database import get_async_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from mlcbakery.auth.jwks_strategy import JWKSStrategy
-from mlcbakery.models import Collection
+from mlcbakery.models import Collection, ApiKey
 from mlcbakery.api.access_level import AccessLevel, AccessType
 from mlcbakery.auth.admin_token_strategy import AdminTokenStrategy
 
@@ -85,6 +89,46 @@ async def verify_auth_with_access_level(
         )
 
     return auth_payload
+
+async def verify_api_key_for_collection(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_async_db)
+) -> tuple[Collection, ApiKey]:
+    """
+    Verify API key and return the associated collection and API key.
+    For use with API key protected endpoints.
+    """
+    api_key = credentials.credentials
+
+    if not api_key or not api_key.startswith('mlc_'):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Hash the provided key
+    key_hash = ApiKey.hash_key(api_key)
+
+    # Look up the API key
+    stmt = select(ApiKey).options(
+        selectinload(ApiKey.collection)
+    ).where(
+        ApiKey.key_hash == key_hash,
+        ApiKey.is_active == True
+    )
+
+    result = await db.execute(stmt)
+    api_key_obj = result.scalar_one_or_none()
+
+    if not api_key_obj:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or inactive API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return api_key_obj.collection, api_key_obj
 
 def apply_auth_to_stmt(stmt : Select, auth: dict) -> Select:
     if auth.get("access_type") == AccessType.ADMIN:

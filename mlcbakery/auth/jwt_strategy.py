@@ -1,4 +1,5 @@
 from abc import ABC
+from abc import abstractmethod
 
 from mlcbakery.api.access_level import AccessLevel, AccessType
 
@@ -35,10 +36,8 @@ class JWTStrategy(ABC):
       # Map org_role to access level
       if org_role == ADMIN_ROLE_NAME:
           access_level = AccessLevel.ADMIN
-      elif org_role == "org:admin":
+      elif org_role == ADMIN_ROLE_NAME:
           access_level = AccessLevel.WRITE
-      elif org_role == "org:member":
-          access_level = AccessLevel.READ
       else:
           access_level = AccessLevel.READ
 
