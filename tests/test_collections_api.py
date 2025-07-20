@@ -896,14 +896,14 @@ async def test_create_collection_fails_without_auth(async_client: AsyncClient):
     }
 
     response = await async_client.post("/api/v1/collections/", json=collection_data)
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_get_environment_fails_without_auth(async_client: AsyncClient):
     """Test that getting environment variables fails without authentication."""
     response = await async_client.get("/api/v1/collections/some-collection/environment")
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -911,14 +911,14 @@ async def test_update_environment_fails_without_auth(async_client: AsyncClient):
     """Test that updating environment variables fails without authentication."""
     env_data = {"environment_variables": {"TEST": "value"}}
     response = await async_client.patch("/api/v1/collections/some-collection/environment", json=env_data)
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_get_storage_fails_without_auth(async_client: AsyncClient):
     """Test that getting storage info fails without authentication."""
     response = await async_client.get("/api/v1/collections/some-collection/storage")
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -926,7 +926,7 @@ async def test_update_storage_fails_without_auth(async_client: AsyncClient):
     """Test that updating storage info fails without authentication."""
     storage_data = {"storage_info": {"bucket": "test"}}
     response = await async_client.patch("/api/v1/collections/some-collection/storage", json=storage_data)
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 # TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
