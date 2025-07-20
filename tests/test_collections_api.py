@@ -228,5 +228,706 @@ async def test_list_collections(async_client: AsyncClient):
     assert isinstance(response_data, list)
     assert len(response_data) == 1
 
+@pytest.mark.asyncio
+async def test_create_collection_with_storage_info(async_client: AsyncClient):
+    """Test successful creation of a collection with storage information."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with storage info.",
+        "storage_info": {
+            "bucket": "my-test-bucket",
+            "credentials": {"key": "value"},
+            "region": "us-west-2"
+        },
+        "storage_provider": "aws"
+    }
+
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == collection_data["name"]
+    assert response_data["description"] == collection_data["description"]
+    assert "id" in response_data
+
+
+@pytest.mark.asyncio
+async def test_create_collection_with_environment_variables(async_client: AsyncClient):
+    """Test successful creation of a collection with environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with environment variables.",
+        "environment_variables": {
+            "API_KEY": "test-key-123",
+            "DATABASE_URL": "postgresql://localhost:5432/test",
+            "DEBUG": "true"
+        }
+    }
+
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == collection_data["name"]
+    assert response_data["description"] == collection_data["description"]
+    assert "id" in response_data
+
+
+@pytest.mark.asyncio
+async def test_create_collection_with_both_storage_and_environment(async_client: AsyncClient):
+    """Test successful creation of a collection with both storage info and environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with both storage and environment.",
+        "storage_info": {
+            "bucket": "my-test-bucket",
+            "region": "us-west-2"
+        },
+        "storage_provider": "aws",
+        "environment_variables": {
+            "API_KEY": "test-key-123",
+            "ENVIRONMENT": "test"
+        }
+    }
+
+    response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == collection_data["name"]
+    assert response_data["description"] == collection_data["description"]
+    assert "id" in response_data
+
+
+@pytest.mark.asyncio
+async def test_update_collection_storage_success(async_client: AsyncClient):
+    """Test successful update of collection storage information."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for storage testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update storage information
+    storage_data = {
+        "storage_info": {
+            "bucket": "updated-bucket",
+            "credentials": {"api_key": "new-key"},
+            "region": "eu-west-1"
+        },
+        "storage_provider": "gcp"
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["storage_info"] == storage_data["storage_info"]
+    assert response_data["storage_provider"] == storage_data["storage_provider"]
+
+
+@pytest.mark.asyncio
+async def test_update_collection_storage_partial_update(async_client: AsyncClient):
+    """Test partial update of collection storage information."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for storage testing.",
+        "storage_info": {"bucket": "original-bucket"},
+        "storage_provider": "aws"
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update only storage_provider
+    storage_data = {
+        "storage_provider": "azure"
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["storage_provider"] == "azure"
+    # storage_info should remain unchanged
+    assert "storage_info" in response_data
+
+
+@pytest.mark.asyncio
+async def test_update_collection_storage_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that updating storage for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for storage testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update storage with a different org's token
+    storage_data = {
+        "storage_info": {"bucket": "updated-bucket"}
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_collection_storage_fails_with_member_access_level(async_client: AsyncClient):
+    """Test that updating storage fails with member access level."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for storage testing."
+    }
+
+    # Create the collection with admin access
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update storage with member access level
+    storage_data = {
+        "storage_info": {"bucket": "updated-bucket"}
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token("Member"))
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_collection_environment_success(async_client: AsyncClient):
+    """Test successful retrieval of collection environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Now retrieve the collection environment variables
+    response = await async_client.get(f"/api/v1/collections/{created_collection['name']}/environment", headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["description"] == collection_data["description"]
+    assert "environment_variables" in response_data
+    assert response_data["environment_variables"] is None  # Should be None initially
+
+
+@pytest.mark.asyncio
+async def test_get_collection_environment_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that retrieving environment variables for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to retrieve environment variables with a different org's token
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}/environment",
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_success(async_client: AsyncClient):
+    """Test successful update of collection environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update environment variables
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123",
+            "DATABASE_URL": "postgresql://localhost:5432/test",
+            "DEBUG": "true"
+        }
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["environment_variables"] == env_data["environment_variables"]
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that updating environment variables for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update environment variables with a different org's token
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_fails_with_member_access_level(async_client: AsyncClient):
+    """Test that updating environment variables fails with member access level."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with admin access
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update environment variables with member access level
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token("Member"))
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_empty_variables(async_client: AsyncClient):
+    """Test updating collection environment variables with empty dict."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update with empty environment variables
+    env_data = {
+        "environment_variables": {}
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["environment_variables"] == {}
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_clear_variables(async_client: AsyncClient):
+    """Test clearing collection environment variables by setting to null."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # First set some environment variables
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert update_response.status_code == 200
+
+    # Now clear them by setting to null
+    clear_data = {
+        "environment_variables": None
+    }
+
+    clear_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=clear_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert clear_response.status_code == 200
+    response_data = clear_response.json()
+    assert response_data["environment_variables"] is None
+
+
+@pytest.mark.asyncio
+async def test_environment_variables_with_complex_data_types(async_client: AsyncClient):
+    """Test environment variables with various data types."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for complex environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update with complex environment variables
+    env_data = {
+        "environment_variables": {
+            "STRING_VAR": "simple_string",
+            "NUMERIC_STRING": "12345",
+            "BOOLEAN_STRING": "true",
+            "JSON_CONFIG": {"nested": {"key": "value"}, "array": [1, 2, 3]},
+            "EMPTY_STRING": "",
+            "NULL_VALUE": None,
+            "SPECIAL_CHARS": "!@#$%^&*()_+-=[]{}|;':\",./<>?"
+        }
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["environment_variables"] == env_data["environment_variables"]
+
+
+@pytest.mark.asyncio
+async def test_update_environment_variables_invalid_json_body(async_client: AsyncClient):
+    """Test updating environment variables with invalid request body."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for validation testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update with invalid body (missing environment_variables key)
+    invalid_data = {
+        "invalid_key": {"VAR": "value"}
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=invalid_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    # Should succeed but not update anything since environment_variables key is missing
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    # environment_variables should still be None since it wasn't updated
+    assert response_data["environment_variables"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_environment_variables_nonexistent_collection(async_client: AsyncClient):
+    """Test retrieving environment variables for a collection that doesn't exist."""
+    nonexistent_name = f"nonexistent-collection-{uuid.uuid4().hex[:8]}"
+    
+    response = await async_client.get(
+        f"/api/v1/collections/{nonexistent_name}/environment",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_environment_variables_nonexistent_collection(async_client: AsyncClient):
+    """Test updating environment variables for a collection that doesn't exist."""
+    nonexistent_name = f"nonexistent-collection-{uuid.uuid4().hex[:8]}"
+    
+    env_data = {
+        "environment_variables": {"TEST": "value"}
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{nonexistent_name}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_get_storage_info_nonexistent_collection(async_client: AsyncClient):
+    """Test retrieving storage info for a collection that doesn't exist."""
+    nonexistent_name = f"nonexistent-collection-{uuid.uuid4().hex[:8]}"
+    
+    response = await async_client.get(
+        f"/api/v1/collections/{nonexistent_name}/storage",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_storage_info_nonexistent_collection(async_client: AsyncClient):
+    """Test updating storage info for a collection that doesn't exist."""
+    nonexistent_name = f"nonexistent-collection-{uuid.uuid4().hex[:8]}"
+    
+    storage_data = {
+        "storage_info": {"bucket": "test-bucket"}
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{nonexistent_name}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_environment_variables_persistence_after_storage_update(async_client: AsyncClient):
+    """Test that environment variables persist when storage info is updated."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for persistence testing.",
+        "environment_variables": {
+            "PERSISTENT_VAR": "should_remain"
+        }
+    }
+
+    # Create the collection with environment variables
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update storage info
+    storage_data = {
+        "storage_info": {"bucket": "new-bucket"},
+        "storage_provider": "aws"
+    }
+
+    storage_update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/storage",
+        json=storage_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert storage_update_response.status_code == 200
+
+    # Check that environment variables are still there
+    env_response = await async_client.get(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert env_response.status_code == 200
+    env_data = env_response.json()
+    assert env_data["environment_variables"]["PERSISTENT_VAR"] == "should_remain"
+
+
+@pytest.mark.asyncio
+async def test_storage_info_persistence_after_environment_update(async_client: AsyncClient):
+    """Test that storage info persists when environment variables are updated."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for persistence testing.",
+        "storage_info": {"bucket": "persistent-bucket"},
+        "storage_provider": "gcp"
+    }
+
+    # Create the collection with storage info
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update environment variables
+    env_data = {
+        "environment_variables": {
+            "NEW_VAR": "new_value"
+        }
+    }
+
+    env_update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert env_update_response.status_code == 200
+
+    # Check that storage info is still there
+    storage_response = await async_client.get(
+        f"/api/v1/collections/{created_collection['name']}/storage",
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert storage_response.status_code == 200
+    storage_data = storage_response.json()
+    assert storage_data["storage_info"]["bucket"] == "persistent-bucket"
+    assert storage_data["storage_provider"] == "gcp"
+
+
+@pytest.mark.asyncio
+async def test_create_collection_fails_without_auth(async_client: AsyncClient):
+    """Test that collection creation fails without authentication."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "Should fail without auth."
+    }
+
+    response = await async_client.post("/api/v1/collections/", json=collection_data)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_environment_fails_without_auth(async_client: AsyncClient):
+    """Test that getting environment variables fails without authentication."""
+    response = await async_client.get("/api/v1/collections/some-collection/environment")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_environment_fails_without_auth(async_client: AsyncClient):
+    """Test that updating environment variables fails without authentication."""
+    env_data = {"environment_variables": {"TEST": "value"}}
+    response = await async_client.patch("/api/v1/collections/some-collection/environment", json=env_data)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_storage_fails_without_auth(async_client: AsyncClient):
+    """Test that getting storage info fails without authentication."""
+    response = await async_client.get("/api/v1/collections/some-collection/storage")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_storage_fails_without_auth(async_client: AsyncClient):
+    """Test that updating storage info fails without authentication."""
+    storage_data = {"storage_info": {"bucket": "test"}}
+    response = await async_client.patch("/api/v1/collections/some-collection/storage", json=storage_data)
+    assert response.status_code == 403
+
+
 # TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
 # TODO: Add tests for invalid inputs (e.g., missing name) 

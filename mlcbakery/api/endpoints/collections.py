@@ -10,6 +10,7 @@ from mlcbakery.schemas.collection import (
     CollectionCreate,
     CollectionResponse,
     CollectionStorageResponse,
+    CollectionEnvironmentResponse,
 )
 from mlcbakery.schemas.dataset import DatasetResponse
 from mlcbakery.schemas.agent import AgentResponse
@@ -45,6 +46,7 @@ async def create_collection(
         description=collection.description,
         storage_info=collection.storage_info,
         storage_provider=collection.storage_provider,
+        environment_variables=collection.environment_variables,
         owner_identifier=user_identifier,
         auth_org_id=auth_org_id
     )
@@ -152,6 +154,56 @@ async def update_collection_storage_info(
         collection.storage_info = storage_info["storage_info"]
     if "storage_provider" in storage_info:
         collection.storage_provider = storage_info["storage_provider"]
+
+    await db.commit()
+    await db.refresh(collection)
+
+    return collection
+
+
+@router.get(
+    "/collections/{collection_name}/environment", response_model=CollectionEnvironmentResponse
+)
+async def get_collection_environment_variables(
+    collection_name: str,
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    auth = fastapi.Depends(verify_admin_or_jwt_token),
+):
+    """Get environment variables for a specific collection.
+    This endpoint requires authentication with collection access.
+    """
+    # First verify the collection exists
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection or not user_has_collection_access(collection, auth):
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    return collection
+
+
+@router.patch(
+    "/collections/{collection_name}/environment", response_model=CollectionEnvironmentResponse
+)
+async def update_collection_environment_variables(
+    collection_name: str,
+    environment_variables: dict = fastapi.Body(...),
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    auth = fastapi.Depends(verify_admin_or_jwt_with_write_access),
+):
+    """Update environment variables for a specific collection.
+    This endpoint requires write access to the collection.
+    """
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection or not user_has_collection_access(collection, auth):
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    if "environment_variables" in environment_variables:
+        collection.environment_variables = environment_variables["environment_variables"]
 
     await db.commit()
     await db.refresh(collection)
