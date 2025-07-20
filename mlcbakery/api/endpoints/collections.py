@@ -31,6 +31,7 @@ async def create_collection(
 
     # check if the collection already exists (case-insensitive)
     stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection.name))
+    stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
     result_coll = await db.execute(stmt_coll)
     existing_collection = result_coll.scalar_one_or_none()
     if existing_collection:
@@ -161,17 +162,18 @@ async def update_collection_storage_info(
 async def get_collection_environment_variables(
     collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_admin_or_jwt_token),
+    auth = fastapi.Depends(verify_auth),
 ):
     """Get environment variables for a specific collection.
     This endpoint requires authentication with collection access.
     """
     # First verify the collection exists
     stmt_coll = select(Collection).where(Collection.name == collection_name)
+    stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     return collection
@@ -184,16 +186,17 @@ async def update_collection_environment_variables(
     collection_name: str,
     environment_variables: dict = fastapi.Body(...),
     db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_admin_or_jwt_with_write_access),
+    auth = fastapi.Depends(verify_auth_with_write_access),
 ):
     """Update environment variables for a specific collection.
     This endpoint requires write access to the collection.
     """
     stmt_coll = select(Collection).where(Collection.name == collection_name)
+    stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
     result_coll = await db.execute(stmt_coll)
     collection = result_coll.scalar_one_or_none()
 
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise fastapi.HTTPException(status_code=404, detail="Collection not found")
 
     if "environment_variables" in environment_variables:

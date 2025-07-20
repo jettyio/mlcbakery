@@ -93,7 +93,7 @@ async def list_api_keys_for_collection(
     result = await db.execute(stmt)
     collection = result.scalar_one_or_none()
     
-    if not collection or not user_has_collection_access(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection '{collection_name}' not found"
@@ -142,7 +142,7 @@ async def update_api_key(
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not user_has_collection_access(api_key.collection, auth):
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"

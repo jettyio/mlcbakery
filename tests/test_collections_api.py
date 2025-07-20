@@ -384,7 +384,7 @@ async def test_update_collection_storage_mismatched_owner_fails_with_404(async_c
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin", "org1"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1"))
     )
     assert create_response.status_code == 200
 
@@ -396,7 +396,7 @@ async def test_update_collection_storage_mismatched_owner_fails_with_404(async_c
     response = await async_client.patch(
         f"/api/v1/collections/{unique_name}/storage",
         json=storage_data,
-        headers=authorization_headers(sample_org_token("Admin", "org2"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2"))
     )
 
     assert response.status_code == 404
@@ -416,7 +416,7 @@ async def test_update_collection_storage_fails_with_member_access_level(async_cl
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin"))
+        headers=authorization_headers(sample_org_token())
     )
     assert create_response.status_code == 200
 
@@ -473,14 +473,14 @@ async def test_get_collection_environment_mismatched_owner_fails_with_404(async_
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin", "org1"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1"))
     )
     assert create_response.status_code == 200
 
     # Attempt to retrieve environment variables with a different org's token
     response = await async_client.get(
         f"/api/v1/collections/{unique_name}/environment",
-        headers=authorization_headers(sample_org_token("Admin", "org2"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2"))
     )
 
     assert response.status_code == 404
@@ -536,7 +536,7 @@ async def test_update_collection_environment_mismatched_owner_fails_with_404(asy
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin", "org1"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1"))
     )
     assert create_response.status_code == 200
 
@@ -550,7 +550,7 @@ async def test_update_collection_environment_mismatched_owner_fails_with_404(asy
     response = await async_client.patch(
         f"/api/v1/collections/{unique_name}/environment",
         json=env_data,
-        headers=authorization_headers(sample_org_token("Admin", "org2"))
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2"))
     )
 
     assert response.status_code == 404
@@ -570,7 +570,7 @@ async def test_update_collection_environment_fails_with_member_access_level(asyn
     create_response = await async_client.post(
         "/api/v1/collections/",
         json=collection_data,
-        headers=authorization_headers(sample_org_token("Admin"))
+        headers=authorization_headers(sample_org_token())
     )
     assert create_response.status_code == 200
 
