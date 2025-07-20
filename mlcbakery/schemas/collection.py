@@ -10,6 +10,7 @@ class CollectionBase(BaseModel):
 class CollectionCreate(CollectionBase):
     storage_info: Optional[Dict[str, Any]] = None
     storage_provider: Optional[str] = None
+    environment_variables: Optional[Dict[str, Any]] = None
 
 
 class CollectionResponse(CollectionBase):
@@ -22,5 +23,11 @@ class CollectionResponse(CollectionBase):
 class CollectionStorageResponse(CollectionResponse):
     storage_info: Optional[Dict[str, Any]] = None
     storage_provider: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CollectionEnvironmentResponse(CollectionResponse):
+    environment_variables: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)

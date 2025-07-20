@@ -13,12 +13,7 @@ from mlcbakery.schemas.api_key import (
     ApiKeyUpdate
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth_with_write_access
-
-def _can_access_collection(collection: Collection, auth: dict) -> bool:
-    if auth.get("org_id") == "*":
-        return True
-    return collection.auth_org_id == auth.get("org_id")
+from mlcbakery.api.dependencies import apply_auth_to_stmt, verify_auth
 
 router = APIRouter()
 
@@ -26,7 +21,7 @@ router = APIRouter()
 async def create_api_key(
     api_key_data: ApiKeyCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access)
+    auth = Depends(verify_auth)
 ):
     """Create a new API key for a collection."""
     
@@ -34,10 +29,11 @@ async def create_api_key(
     stmt = select(Collection).where(
         func.lower(Collection.name) == func.lower(api_key_data.collection_name)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     collection = result.scalar_one_or_none()
     
-    if not collection or not _can_access_collection(collection, auth):
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection '{api_key_data.collection_name}' not found"
@@ -86,17 +82,18 @@ async def create_api_key(
 async def list_api_keys_for_collection(
     collection_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access)
+    auth = Depends(verify_auth)
 ):
     """List all API keys for a collection."""
     # Find collection by name
     stmt = select(Collection).where(
         func.lower(Collection.name) == func.lower(collection_name)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     collection = result.scalar_one_or_none()
     
-    if not collection or not _can_access_collection(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection '{collection_name}' not found"
@@ -109,6 +106,7 @@ async def list_api_keys_for_collection(
         .where(ApiKey.collection_id == collection.id)
         .order_by(ApiKey.created_at.desc())
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     api_keys = result.scalars().all()
     # Convert to response format
@@ -131,7 +129,7 @@ async def update_api_key(
     api_key_id: int,
     update_data: ApiKeyUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access)
+    auth = Depends(verify_auth)
 ):
     """Update an API key (name or active status)."""
     
@@ -140,10 +138,11 @@ async def update_api_key(
         .options(selectinload(ApiKey.collection))
         .where(ApiKey.id == api_key_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key or not user_has_collection_access(api_key.collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"
@@ -186,7 +185,7 @@ async def update_api_key(
 async def delete_api_key(
     api_key_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access)
+    auth = Depends(verify_auth)
 ):
     """Delete an API key."""
     
@@ -195,10 +194,11 @@ async def delete_api_key(
         .options(selectinload(ApiKey.collection))
         .where(ApiKey.id == api_key_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"
@@ -213,7 +213,7 @@ async def delete_api_key(
 async def get_api_key(
     api_key_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access)
+    auth = Depends(verify_auth)
 ):
     """Get details of a specific API key."""
     
@@ -222,10 +222,11 @@ async def get_api_key(
         .options(selectinload(ApiKey.collection))
         .where(ApiKey.id == api_key_id)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"

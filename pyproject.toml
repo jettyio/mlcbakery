@@ -89,11 +89,6 @@ ipykernel = "^6.29.0"
 [tool.poetry.group.mcp.dependencies]
 fastmcp = "^2.3.4"
 
-[tool.poetry.group.webclient.dependencies]
-streamlit = "^1.32.0"
-pandas = "^2.2.0"
-mlcroissant = "^1.0.15"
-
 [tool.uv.workspace]
 members = [
     "venv",
