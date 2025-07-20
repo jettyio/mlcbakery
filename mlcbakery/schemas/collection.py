@@ -24,3 +24,9 @@ class CollectionStorageResponse(CollectionResponse):
     storage_provider: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CollectionEnvironmentResponse(CollectionResponse):
+    environment_variables: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)

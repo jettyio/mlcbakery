@@ -228,5 +228,235 @@ async def test_list_collections(async_client: AsyncClient):
     assert isinstance(response_data, list)
     assert len(response_data) == 1
 
+@pytest.mark.asyncio
+async def test_get_collection_environment_success(async_client: AsyncClient):
+    """Test successful retrieval of collection environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Now retrieve the collection environment variables
+    response = await async_client.get(f"/api/v1/collections/{created_collection['name']}/environment", headers=authorization_headers(sample_org_token()))
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["description"] == collection_data["description"]
+    assert "environment_variables" in response_data
+    assert response_data["environment_variables"] is None  # Should be None initially
+
+
+@pytest.mark.asyncio
+async def test_get_collection_environment_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that retrieving environment variables for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to retrieve environment variables with a different org's token
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}/environment",
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_success(async_client: AsyncClient):
+    """Test successful update of collection environment variables."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update environment variables
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123",
+            "DATABASE_URL": "postgresql://localhost:5432/test",
+            "DEBUG": "true"
+        }
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["environment_variables"] == env_data["environment_variables"]
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_mismatched_owner_fails_with_404(async_client: AsyncClient):
+    """Test that updating environment variables for a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin", "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update environment variables with a different org's token
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token("Admin", "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_fails_with_member_access_level(async_client: AsyncClient):
+    """Test that updating environment variables fails with member access level."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection with admin access
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token("Admin"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to update environment variables with member access level
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    response = await async_client.patch(
+        f"/api/v1/collections/{unique_name}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token("Member"))
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_empty_variables(async_client: AsyncClient):
+    """Test updating collection environment variables with empty dict."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Update with empty environment variables
+    env_data = {
+        "environment_variables": {}
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["environment_variables"] == {}
+
+
+@pytest.mark.asyncio
+async def test_update_collection_environment_clear_variables(async_client: AsyncClient):
+    """Test clearing collection environment variables by setting to null."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # First set some environment variables
+    env_data = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123"
+        }
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert update_response.status_code == 200
+
+    # Now clear them by setting to null
+    clear_data = {
+        "environment_variables": None
+    }
+
+    clear_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=clear_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert clear_response.status_code == 200
+    response_data = clear_response.json()
+    assert response_data["environment_variables"] is None
+
+
 # TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
 # TODO: Add tests for invalid inputs (e.g., missing name) 

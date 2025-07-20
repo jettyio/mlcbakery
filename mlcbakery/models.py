@@ -324,6 +324,7 @@ class Collection(Base):
         description: A description of what the collection contains.
         storage_info: JSON field containing storage credentials and location information.
         storage_provider: String identifying the storage provider (e.g., 'aws', 'gcp', 'azure').
+        environment_variables: JSON field containing environment variables for the collection.
         entities: Relationship to associated entities (datasets and models).
         agents: Relationship to associated agents.
         auth_org_id: Optional organization identifier for authentication purposes.
@@ -336,6 +337,7 @@ class Collection(Base):
     description = Column(Text)
     storage_info = Column(JSONB, nullable=True)
     storage_provider = Column(String, nullable=True)
+    environment_variables = Column(JSONB, nullable=True)
     owner_identifier = Column(String, nullable=False)  # Identifier for the owner (user or organization)
     auth_org_id = Column(String, nullable=True)  # Optional organization identifier for authentication
 
