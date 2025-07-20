@@ -46,6 +46,7 @@ async def create_collection(
         description=collection.description,
         storage_info=collection.storage_info,
         storage_provider=collection.storage_provider,
+        environment_variables=collection.environment_variables,
         owner_identifier=user_identifier,
         auth_org_id=auth_org_id
     )

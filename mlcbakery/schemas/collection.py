@@ -10,6 +10,7 @@ class CollectionBase(BaseModel):
 class CollectionCreate(CollectionBase):
     storage_info: Optional[Dict[str, Any]] = None
     storage_provider: Optional[str] = None
+    environment_variables: Optional[Dict[str, Any]] = None
 
 
 class CollectionResponse(CollectionBase):
