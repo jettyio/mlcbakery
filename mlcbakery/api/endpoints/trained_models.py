@@ -15,7 +15,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_or_jwt_token, verify_admin_or_jwt_with_write_access, user_auth_org_ids, user_has_collection_access, verify_jwt_token
+from mlcbakery.api.dependencies import verify_admin_or_jwt_token, user_auth_org_ids, user_has_collection_access
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload

@@ -15,7 +15,7 @@ RUN pip install poetry
 COPY pyproject.toml poetry.lock* ./
 
 # Install core dependencies using poetry (adjust --no-dev or add --only main if needed)
-# Exclude optional groups like webclient unless mcp_server requires them
+# Include optional groups like mcp as needed for the mcp_server
 RUN poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi --no-root --with mcp
 

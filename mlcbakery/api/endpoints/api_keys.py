@@ -13,12 +13,7 @@ from mlcbakery.schemas.api_key import (
     ApiKeyUpdate
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_admin_or_jwt_with_write_access
-
-def _can_access_collection(collection: Collection, auth: dict) -> bool:
-    if auth.get("org_id") == "*":
-        return True
-    return collection.auth_org_id == auth.get("org_id")
+from mlcbakery.api.dependencies import user_has_collection_access, verify_admin_or_jwt_token
 
 router = APIRouter()
 
@@ -26,7 +21,7 @@ router = APIRouter()
 async def create_api_key(
     api_key_data: ApiKeyCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access)
+    auth = Depends(verify_admin_or_jwt_token)
 ):
     """Create a new API key for a collection."""
     
@@ -37,7 +32,7 @@ async def create_api_key(
     result = await db.execute(stmt)
     collection = result.scalar_one_or_none()
     
-    if not collection or not _can_access_collection(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection '{api_key_data.collection_name}' not found"
@@ -86,7 +81,7 @@ async def create_api_key(
 async def list_api_keys_for_collection(
     collection_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access)
+    auth = Depends(verify_admin_or_jwt_token)
 ):
     """List all API keys for a collection."""
     # Find collection by name
@@ -96,7 +91,7 @@ async def list_api_keys_for_collection(
     result = await db.execute(stmt)
     collection = result.scalar_one_or_none()
     
-    if not collection or not _can_access_collection(collection, auth):
+    if not collection or not user_has_collection_access(collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Collection '{collection_name}' not found"
@@ -131,7 +126,7 @@ async def update_api_key(
     api_key_id: int,
     update_data: ApiKeyUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access)
+    auth = Depends(verify_admin_or_jwt_token)
 ):
     """Update an API key (name or active status)."""
     
@@ -143,7 +138,7 @@ async def update_api_key(
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key or not user_has_collection_access(api_key.collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"
@@ -186,7 +181,7 @@ async def update_api_key(
 async def delete_api_key(
     api_key_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access)
+    auth = Depends(verify_admin_or_jwt_token)
 ):
     """Delete an API key."""
     
@@ -198,7 +193,7 @@ async def delete_api_key(
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key or not user_has_collection_access(api_key.collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"
@@ -213,7 +208,7 @@ async def delete_api_key(
 async def get_api_key(
     api_key_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_admin_or_jwt_with_write_access)
+    auth = Depends(verify_admin_or_jwt_token)
 ):
     """Get details of a specific API key."""
     
@@ -225,7 +220,7 @@ async def get_api_key(
     result = await db.execute(stmt)
     api_key = result.scalar_one_or_none()
     
-    if not api_key or not _can_access_collection(api_key.collection, auth):
+    if not api_key or not user_has_collection_access(api_key.collection, auth):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found"
