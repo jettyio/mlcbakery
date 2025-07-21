@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 from .entity import EntityBase
@@ -47,5 +47,9 @@ class TaskListResponse(TaskBase):
 class TaskResponse(TaskBase):
     id: int
     created_at: datetime
+    # Collection environment variables and storage details
+    environment_variables: Optional[Dict[str, Any]] = None
+    storage_info: Optional[Dict[str, Any]] = None
+    storage_provider: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True) 

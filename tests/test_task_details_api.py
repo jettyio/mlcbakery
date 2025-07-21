@@ -221,4 +221,140 @@ async def test_api_key_authentication_security(async_client: AsyncClient, db_ses
     assert db_api_key.key_prefix == plaintext_key[:8]  # Prefix should match
     
     # Verify the hash matches what we expect
-    assert db_api_key.key_hash == ApiKey.hash_key(plaintext_key) 
+    assert db_api_key.key_hash == ApiKey.hash_key(plaintext_key)
+
+@pytest.mark.asyncio
+async def test_get_task_details_includes_collection_environment_and_storage(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that task details include collection environment variables and storage info."""
+    # Setup collection with environment variables and storage info
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    collection = Collection(
+        name=collection_name, 
+        owner_identifier="test",
+        environment_variables={
+            "API_KEY": "test-key-123",
+            "DATABASE_URL": "postgresql://localhost:5432/test",
+            "DEBUG": "true"
+        },
+        storage_info={
+            "bucket": "test-bucket",
+            "region": "us-west-2",
+            "credentials": {"access_key": "test-access"}
+        },
+        storage_provider="aws"
+    )
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1", "step2"]},
+        entity_type="task",
+        description="Test task with environment variables"
+    )
+    db_session.add(task)
+    
+    # Create API key
+    plaintext_key = ApiKey.generate_api_key()
+    api_key = ApiKey.create_from_plaintext(
+        api_key=plaintext_key,
+        collection_id=collection.id,
+        name="Environment Test Key"
+    )
+    db_session.add(api_key)
+    await db_session.commit()
+    
+    # Get task details
+    api_headers = {"Authorization": f"Bearer {plaintext_key}"}
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=api_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verify basic task information
+    assert data["name"] == "test-task"
+    assert data["collection_id"] == collection.id
+    assert data["workflow"] == {"steps": ["step1", "step2"]}
+    assert data["description"] == "Test task with environment variables"
+    
+    # Verify collection environment variables are included
+    assert "environment_variables" in data
+    assert data["environment_variables"] is not None
+    assert data["environment_variables"]["API_KEY"] == "test-key-123"
+    assert data["environment_variables"]["DATABASE_URL"] == "postgresql://localhost:5432/test"
+    assert data["environment_variables"]["DEBUG"] == "true"
+    
+    # Verify collection storage details are included
+    assert "storage_info" in data
+    assert data["storage_info"] is not None
+    assert data["storage_info"]["bucket"] == "test-bucket"
+    assert data["storage_info"]["region"] == "us-west-2"
+    assert data["storage_info"]["credentials"]["access_key"] == "test-access"
+    
+    assert "storage_provider" in data
+    assert data["storage_provider"] == "aws"
+
+@pytest.mark.asyncio
+async def test_get_task_details_null_collection_environment_and_storage(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that task details handle null environment variables and storage info gracefully."""
+    # Setup collection without environment variables or storage info
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    collection = Collection(
+        name=collection_name, 
+        owner_identifier="test",
+        environment_variables=None,
+        storage_info=None,
+        storage_provider=None
+    )
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    
+    # Create API key
+    plaintext_key = ApiKey.generate_api_key()
+    api_key = ApiKey.create_from_plaintext(
+        api_key=plaintext_key,
+        collection_id=collection.id,
+        name="Null Test Key"
+    )
+    db_session.add(api_key)
+    await db_session.commit()
+    
+    # Get task details
+    api_headers = {"Authorization": f"Bearer {plaintext_key}"}
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=api_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verify basic task information
+    assert data["name"] == "test-task"
+    assert data["collection_id"] == collection.id
+    
+    # Verify null values are handled properly
+    assert "environment_variables" in data
+    assert data["environment_variables"] is None
+    
+    assert "storage_info" in data
+    assert data["storage_info"] is None
+    
+    assert "storage_provider" in data
+    assert data["storage_provider"] is None 

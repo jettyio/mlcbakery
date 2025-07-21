@@ -52,4 +52,13 @@ async def get_task_details_with_api_key(
             detail=f"Task '{task_name}' not found in collection '{collection_name}'"
         )
     
-    return task 
+    # Create TaskResponse with collection environment variables and storage details
+    task_response = TaskResponse.model_validate(task)
+    
+    # Populate collection-specific fields
+    if task.collection:
+        task_response.environment_variables = task.collection.environment_variables
+        task_response.storage_info = task.collection.storage_info
+        task_response.storage_provider = task.collection.storage_provider
+    
+    return task_response 
