@@ -144,3 +144,6 @@ async def test_list_tasks(async_client: AsyncClient):
     # This is a weak assertion, but confirms the endpoint works.
     # A better test would check for the specific tasks created if the DB was clean.
     assert len(tasks) >= 2 
+
+# test search
+# test list tasks by collection

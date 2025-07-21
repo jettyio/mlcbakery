@@ -2,11 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
-from fastapi.security import HTTPAuthorizationCredentials
 from ...database import get_async_db
 from ...models import Agent
 from ...schemas.agent import AgentCreate, AgentResponse
-from mlcbakery.api.dependencies import verify_admin_token, verify_jwt_token, verify_jwt_with_write_access
+from mlcbakery.api.dependencies import verify_auth, verify_auth_with_write_access, apply_auth_to_stmt
 from mlcbakery.models import Collection
 
 router = APIRouter()
@@ -16,7 +15,7 @@ router = APIRouter()
 async def create_agent(
     agent: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Create a new agent (async)."""
     # Create the agent with all provided fields (including collection_id if present)
@@ -24,10 +23,8 @@ async def create_agent(
     
     # If collection_id is provided, validate it exists and is owned by the user
     if agent.collection_id is not None:
-        stmt = select(Collection).where(
-            Collection.id == agent.collection_id,
-            Collection.owner_identifier == auth['identifier']
-        )
+        stmt = select(Collection).where(Collection.id == agent.collection_id)
+        stmt = apply_auth_to_stmt(stmt, auth)
         result = await db.execute(stmt)
         collection = result.scalar_one_or_none()
         if not collection:
@@ -44,32 +41,31 @@ async def list_agents(
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_token)
+    auth = Depends(verify_auth)
 ):
     """List all agents owned by the authenticated user (async)."""
     # Filter agents by collections owned by the user
     stmt = (
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
-        .where(Collection.owner_identifier == auth['identifier'])
         .offset(skip)
         .limit(limit)
     )
+    stmt = apply_auth_to_stmt(stmt, auth)
     result = await db.execute(stmt)
     agents = result.scalars().all()
     return agents
 
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_jwt_token)):
+async def get_agent(agent_id: int, db: AsyncSession = Depends(get_async_db), auth = Depends(verify_auth)):
     """Get a specific agent by ID, only if owned by the authenticated user (async)."""
     # Filter agent by collection ownership
     stmt = (
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result = await db.execute(stmt)
@@ -84,7 +80,7 @@ async def update_agent(
     agent_id: int,
     agent_update: AgentCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Update an agent, only if owned by the authenticated user (async)."""
     # Get agent and verify ownership
@@ -92,8 +88,7 @@ async def update_agent(
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result_get = await db.execute(stmt_get)
@@ -104,10 +99,8 @@ async def update_agent(
     
     # If collection_id is being updated, validate it exists and is owned by the user
     if agent_update.collection_id is not None and agent_update.collection_id != db_agent.collection_id:
-        stmt = select(Collection).where(
-            Collection.id == agent_update.collection_id,
-            Collection.owner_identifier == auth['identifier']
-        )
+        stmt = select(Collection).where(Collection.id == agent_update.collection_id)
+        stmt = apply_auth_to_stmt(stmt, auth)
         result = await db.execute(stmt)
         collection = result.scalar_one_or_none()
         if not collection:
@@ -127,7 +120,7 @@ async def update_agent(
 async def delete_agent(
     agent_id: int,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_jwt_with_write_access),
+    auth = Depends(verify_auth_with_write_access),
 ):
     """Delete an agent, only if owned by the authenticated user (async)."""
     # Get agent and verify ownership
@@ -135,8 +128,7 @@ async def delete_agent(
         select(Agent)
         .join(Collection, Agent.collection_id == Collection.id)
         .where(
-            Agent.id == agent_id,
-            Collection.owner_identifier == auth['identifier']
+            Agent.id == agent_id
         )
     )
     result = await db.execute(stmt)
