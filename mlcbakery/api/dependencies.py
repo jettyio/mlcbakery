@@ -136,7 +136,7 @@ async def verify_api_key_for_collection(
     return api_key_obj.collection, api_key_obj
 
 def apply_auth_to_stmt(stmt : Select, auth: dict) -> Select:
-    if auth.get("access_level") == AccessLevel.ADMIN:
+    if auth.get("access_type") == AccessType.ADMIN:
         return stmt
     else:
         return stmt.where(Collection.owner_identifier == auth["identifier"])

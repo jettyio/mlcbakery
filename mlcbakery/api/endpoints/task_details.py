@@ -9,6 +9,7 @@ from mlcbakery.models import Task, Collection, ApiKey
 from mlcbakery.schemas.task import TaskResponse
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_api_key_for_collection, verify_auth, apply_auth_to_stmt, auth_strategies
+from mlcbakery.api.access_level import AccessLevel
 
 router = APIRouter()
 
@@ -125,7 +126,7 @@ async def get_task_details_with_flexible_auth(
             )
     
     elif auth_type == 'jwt':
-        # Handle JWT authentication - user can only access their own collections
+        # Handle JWT authentication
         stmt = (
             select(Task)
             .join(Collection, Task.collection_id == Collection.id)
@@ -135,8 +136,15 @@ async def get_task_details_with_flexible_auth(
                 selectinload(Task.collection),
             )
         )
-        # Apply auth filtering to restrict to user's collections
-        stmt = apply_auth_to_stmt(stmt, auth_payload)
+        
+        # Apply auth filtering based on access level
+        if auth_payload.get("access_level") == AccessLevel.ADMIN:
+            # Admin level access - no additional filtering needed
+            # The task will be found if it exists in the specified collection
+            pass
+        else:
+            # Regular user access - restrict to user's collections
+            stmt = apply_auth_to_stmt(stmt, auth_payload)
     
     else:
         raise HTTPException(
