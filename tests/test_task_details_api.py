@@ -5,6 +5,7 @@ import uuid
 
 from mlcbakery.models import Collection, Task, ApiKey
 from conftest import TEST_ADMIN_TOKEN
+from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
 
 AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
@@ -358,3 +359,237 @@ async def test_get_task_details_null_collection_environment_and_storage(async_cl
     
     assert "storage_provider" in data
     assert data["storage_provider"] is None 
+
+
+# JWT Authentication Tests
+
+@pytest.mark.asyncio
+async def test_get_task_details_with_jwt_user_token_own_collection(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting task details with JWT user token for their own collection."""
+    user_identifier = "test_user_123"
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection with specific owner
+    collection = Collection(name=collection_name, owner_identifier=user_identifier)
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    await db_session.commit()
+    
+    # Test JWT authentication with user token
+    jwt_token = sample_user_token(user_sub=user_identifier)
+    jwt_headers = authorization_headers(jwt_token)
+    
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=jwt_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "test-task"
+    assert data["collection_id"] == collection.id
+
+
+@pytest.mark.asyncio
+async def test_get_task_details_with_jwt_user_token_other_collection(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that JWT user token cannot access other users' collections."""
+    user_identifier = "test_user_123"
+    other_user_identifier = "other_user_456"
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection owned by different user
+    collection = Collection(name=collection_name, owner_identifier=other_user_identifier)
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    await db_session.commit()
+    
+    # Test JWT authentication with user token (different user)
+    jwt_token = sample_user_token(user_sub=user_identifier)
+    jwt_headers = authorization_headers(jwt_token)
+    
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=jwt_headers
+    )
+    
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_task_details_with_jwt_org_admin_token(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting task details with JWT org admin token (should access all collections)."""
+    user_identifier = "any_user"
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection with any owner
+    collection = Collection(name=collection_name, owner_identifier="some_other_user")
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    await db_session.commit()
+    
+    # Test JWT authentication with org admin token
+    jwt_token = sample_org_token(user_sub=user_identifier)
+    jwt_headers = authorization_headers(jwt_token)
+    
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=jwt_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "test-task"
+    assert data["collection_id"] == collection.id
+
+
+@pytest.mark.asyncio
+async def test_get_task_details_with_invalid_jwt_token(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting task details with invalid JWT token."""
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection
+    collection = Collection(name=collection_name, owner_identifier="test_user")
+    db_session.add(collection)
+    await db_session.commit()
+    
+    # Test with invalid JWT token
+    invalid_headers = {"Authorization": "Bearer invalid_jwt_token"}
+    
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=invalid_headers
+    )
+    
+    assert response.status_code == 401
+    data = response.json()
+    assert "Invalid API key or JWT token" in data["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_task_details_jwt_with_collection_environment_and_storage(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that JWT auth returns collection environment variables and storage info."""
+    user_identifier = "test_user_123"
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection with environment and storage info
+    collection = Collection(
+        name=collection_name,
+        owner_identifier=user_identifier,
+        environment_variables={"TEST_VAR": "test_value", "API_URL": "https://api.test.com"},
+        storage_info={"bucket": "test-bucket", "region": "us-west-2"},
+        storage_provider="gcp"
+    )
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    await db_session.commit()
+    
+    # Get task details with JWT token
+    jwt_token = sample_user_token(user_sub=user_identifier)
+    jwt_headers = authorization_headers(jwt_token)
+    
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=jwt_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "test-task"
+    
+    # Verify environment variables are included
+    assert "environment_variables" in data
+    assert data["environment_variables"]["TEST_VAR"] == "test_value"
+    assert data["environment_variables"]["API_URL"] == "https://api.test.com"
+    
+    # Verify storage info is included
+    assert "storage_info" in data
+    assert data["storage_info"]["bucket"] == "test-bucket"
+    assert data["storage_info"]["region"] == "us-west-2"
+    
+    assert "storage_provider" in data
+    assert data["storage_provider"] == "gcp"
+
+
+@pytest.mark.asyncio
+async def test_get_task_details_backward_compatibility_api_key_still_works(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that existing API key authentication still works after JWT implementation."""
+    collection_name = f"test-coll-{uuid.uuid4().hex[:8]}"
+    
+    # Setup collection
+    collection = Collection(name=collection_name, owner_identifier="test")
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+    
+    # Create task
+    task = Task(
+        name="test-task",
+        collection_id=collection.id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    
+    # Create API key
+    plaintext_key = ApiKey.generate_api_key()
+    api_key = ApiKey.create_from_plaintext(
+        api_key=plaintext_key,
+        collection_id=collection.id,
+        name="Test Key"
+    )
+    db_session.add(api_key)
+    await db_session.commit()
+    
+    # Test that API key authentication still works
+    api_headers = {"Authorization": f"Bearer {plaintext_key}"}
+    response = await async_client.get(
+        f"/api/v1/task-details/{collection_name}/test-task",
+        headers=api_headers
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "test-task"
+    assert data["collection_id"] == collection.id 
