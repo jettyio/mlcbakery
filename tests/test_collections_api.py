@@ -1023,6 +1023,42 @@ async def test_update_collection_storage_with_admin_token(async_client, admin_to
     data = response.json()
     assert data["storage_info"] == update_data["storage_info"]
 
+@pytest.mark.asyncio
+async def test_update_collection_owner_success(async_client: AsyncClient):
+    """Test successful update of collection owner identifier."""
+    unique_name = f"test-collection-owner-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for owner update testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+    
+    # Verify initial owner identifier
+    assert created_collection["owner_identifier"] is not None
+    original_owner = created_collection["owner_identifier"]
+
+    # Update owner identifier
+    owner_data = {
+        "owner_identifier": "new-owner-123"
+    }
+
+    update_response = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/owner",
+        json=owner_data,
+        headers=authorization_headers(sample_org_token())
+    )
+    
+    assert update_response.status_code == 200
+    response_data = update_response.json()
+    assert response_data["id"] == created_collection["id"]
+    assert response_data["name"] == unique_name
+    assert response_data["owner_identifier"] == owner_data["owner_identifier"]
+    assert response_data["owner_identifier"] != original_owner
+
 # test delete
 # list datasets
 # list agents

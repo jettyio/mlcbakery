@@ -339,7 +339,7 @@ class Collection(Base):
     storage_provider = Column(String, nullable=True)
     environment_variables = Column(JSONB, nullable=True)
     owner_identifier = Column(String, nullable=False)  # Identifier for the owner (user or organization)
-    auth_org_id = Column(String, nullable=True)  # Optional organization identifier for authentication
+    auth_org_id = Column(String, nullable=True)  # TODO(jon): deprecate this
 
     # Relationships
     entities = relationship("Entity", back_populates="collection")
