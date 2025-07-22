@@ -7,7 +7,3 @@ http://bakery.localhost {
 http://mcp.localhost {
    reverse_proxy mcp:8080
 }
-
-http://web.localhost {
-    reverse_proxy streamlit:8000
-}

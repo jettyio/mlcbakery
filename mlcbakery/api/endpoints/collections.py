@@ -208,6 +208,35 @@ async def update_collection_environment_variables(
     return collection
 
 
+@router.patch(
+    "/collections/{collection_name}/owner", response_model=CollectionResponse
+)
+async def update_collection_owner(
+    collection_name: str,
+    owner_data: dict = fastapi.Body(...),
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    auth = fastapi.Depends(verify_auth_with_write_access),
+):
+    """Update owner identifier for a specific collection.
+    This endpoint requires write access to the collection.
+    """
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    if "owner_identifier" in owner_data:
+        collection.owner_identifier = owner_data["owner_identifier"]
+
+    await db.commit()
+    await db.refresh(collection)
+
+    return collection
+
+
 @router.get(
     "/collections/{collection_name}/datasets/", response_model=List[DatasetResponse]
 )

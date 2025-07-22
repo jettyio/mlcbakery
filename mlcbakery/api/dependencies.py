@@ -93,12 +93,17 @@ async def verify_auth_with_access_level(
 async def verify_api_key_for_collection(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_async_db)
-) -> tuple[Collection, ApiKey]:
+) -> tuple[Collection, ApiKey] | None:
     """
     Verify API key and return the associated collection and API key.
     For use with API key protected endpoints.
     """
     api_key = credentials.credentials
+
+    # check if the api key is the admin api key
+    if api_key == ADMIN_AUTH_TOKEN:
+        # pass through the admin api key
+        return None
 
     if not api_key or not api_key.startswith('mlc_'):
         raise HTTPException(

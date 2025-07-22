@@ -15,33 +15,44 @@ async def get_task_details_with_api_key(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth_data: tuple[Collection, ApiKey] = Depends(verify_api_key_for_collection)
+    auth_data: tuple[Collection, ApiKey] | None = Depends(verify_api_key_for_collection)
 ):
     """
     Get task details using API key authentication.
     The API key must belong to the collection containing the task.
     """
-    collection, api_key = auth_data
-    
-    # Verify the collection name matches the API key's collection
-    if collection.name != collection_name:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="API key not valid for this collection"
+
+    if auth_data is None:
+        # is admin api key
+
+        stmt = (
+            select(Task)
+            .where(Task.name == task_name)
+            .where(Collection.name == collection_name)
+            .options(
+                selectinload(Task.collection),
+            )
         )
-    
-    # Find the task
-    stmt = (
-        select(Task)
-        .where(Task.collection_id == collection.id)
-        .where(Task.name == task_name)
-        .where(Task.entity_type == "task")
-        .options(
-            selectinload(Task.collection),
-            selectinload(Task.upstream_links),
-            selectinload(Task.downstream_links)
+
+    else:
+        collection, api_key = auth_data
+        
+        # Verify the collection name matches the API key's collection
+        if collection.name != collection_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key not valid for this collection"
+            )
+        
+        # Find the task
+        stmt = (
+            select(Task)
+            .where(Task.collection_id == collection.id)
+            .where(Task.name == task_name)
+            .options(
+                selectinload(Task.collection),
+            )
         )
-    )
     
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
