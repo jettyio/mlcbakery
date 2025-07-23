@@ -404,7 +404,7 @@ class Client:
             )
 
             dataset = self.create_dataset(
-                collection.id,
+                collection.name,
                 dataset_name,
                 entity_payload.copy(),
             )
@@ -523,13 +523,12 @@ class Client:
             return None
 
     def create_dataset(
-        self, collection_id: str, dataset_name: str, params: dict = dict()
+        self, collection_name: str, dataset_name: str, params: dict = dict()
     ) -> BakeryDataset:
         """Create a dataset in a collection."""
-        endpoint = "/datasets/"  # Ensure trailing slash
+        endpoint = f"/datasets/{collection_name}"
         payload = {
             "name": dataset_name,
-            "collection_id": collection_id,
             "entity_type": "dataset",
             **params,
         }
@@ -544,9 +543,8 @@ class Client:
             return BakeryDataset(
                 id=json_response["id"],
                 name=json_response["name"],
-                collection_id=json_response.get(
-                    "collection_id", collection_id
-                ),  # Use provided collection_id if not in response
+                collection_id=json_response.get("collection_id"),
+                collection_name=collection_name,
                 # Include other fields if the API returns them on creation
                 metadata=None,  # Metadata likely not set on creation
                 preview=None,  # Preview not set on creation
@@ -556,7 +554,7 @@ class Client:
             )
         except Exception as e:
             raise Exception(
-                f"Failed to create dataset {dataset_name} in collection {collection_id}: {e}"
+                f"Failed to create dataset {dataset_name} in collection {collection_name}: {e}"
             ) from e
 
     def update_dataset(self, dataset_id: str, params: dict) -> BakeryDataset:

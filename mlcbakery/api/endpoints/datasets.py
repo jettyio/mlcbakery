@@ -70,59 +70,56 @@ async def search_datasets(
     return await search.run_search_query(search_parameters, ts)
 
 
-@router.post("/datasets/", response_model=DatasetResponse)
+@router.post("/datasets/{collection_name}", response_model=DatasetResponse)
 async def create_dataset(
+    collection_name: str,
     dataset: DatasetCreate,
     db: AsyncSession = Depends(get_async_db),
     auth: HTTPAuthorizationCredentials = Depends(verify_auth_with_write_access),
 ):
     """Create a new dataset (async)."""
-    if dataset.collection_id:
-        stmt_coll = select(Collection).where(Collection.id == dataset.collection_id)
-        stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
-        result_coll = await db.execute(stmt_coll)
-        if not result_coll.scalar_one_or_none():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Collection with id {dataset.collection_id} not found",
-            )
-    else:
-        raise HTTPException(status_code=400, detail="Collection ID is required")
-
+    # Find the collection by name
+    stmt_coll = select(Collection).where(Collection.name == collection_name)
+    stmt_coll = apply_auth_to_stmt(stmt_coll, auth)
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+    if not collection:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
     # Check for duplicate dataset name (case-insensitive) within the same collection
     stmt_check = (
         select(Dataset)
         .where(func.lower(Dataset.name) == func.lower(dataset.name))
-        .where(Dataset.collection_id == dataset.collection_id)
+        .where(Dataset.collection_id == collection.id)
     )
     result_check = await db.execute(stmt_check)
     if result_check.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Dataset already exists")
-
-    db_dataset = Dataset(**dataset.model_dump())
+    db_dataset = Dataset(**dataset.model_dump(exclude={"collection_id"}), collection_id=collection.id)
     db.add(db_dataset)
     await db.commit()
     await db.flush([db_dataset])
     return db_dataset
 
-
-@router.get("/datasets/", response_model=list[DatasetListResponse])
+@router.get("/datasets/{collection_name}", response_model=list[DatasetListResponse])
 async def list_datasets(
+    collection_name: str,
     skip: int = Query(default=0, description="Number of records to skip"),
     limit: int = Query(default=100, description="Maximum number of records to return"),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Get a list of datasets with pagination (async)."""
+    """Get a list of datasets in a collection with pagination (async)."""
     if skip < 0 or limit < 0:
         raise HTTPException(
             status_code=400, detail="Offset and limit must be non-negative"
         )
     stmt = (
         select(Dataset)
-        .options(
-            selectinload(Dataset.collection),
-            
-        )
+        .join(Collection, Dataset.collection_id == Collection.id)
+        .where(Collection.name == collection_name)
+        .options(selectinload(Dataset.collection))
         .offset(skip)
         .limit(limit)
         .order_by(Dataset.id)
@@ -199,137 +196,96 @@ async def _find_entity_by_id(entity_id: int, db: AsyncSession) -> Entity:
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
-@router.put("/datasets/{dataset_id}", response_model=DatasetResponse)
+@router.put("/datasets/{collection_name}/{dataset_name}", response_model=DatasetResponse)
 async def update_dataset(
-    dataset_id: int,
+    collection_name: str,
+    dataset_name: str,
     dataset_update: DatasetUpdate,
     db: AsyncSession = Depends(get_async_db),
     _ = Depends(verify_auth_with_write_access),
 ):
     """Update a dataset (async)."""
-    stmt_get = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-    )
-    result_get = await db.execute(stmt_get)
-    db_dataset = result_get.scalar_one_or_none()
-
-    if not db_dataset:
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
     update_data = dataset_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(db_dataset, field, value)
-
-    db.add(db_dataset)
+        setattr(dataset, field, value)
+    db.add(dataset)
     await db.commit()
-
-    
-    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
+    result_refresh = await db.execute(await _refresh_dataset(dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-
     if not refreshed_dataset:
         raise HTTPException(
             status_code=500, detail="Failed to reload dataset after update"
         )
-
     return refreshed_dataset
 
-
-@router.delete("/datasets/{dataset_id}", status_code=200)
+@router.delete("/datasets/{collection_name}/{dataset_name}", status_code=200)
 async def delete_dataset(
-    dataset_id: int,
+    collection_name: str,
+    dataset_name: str,
     db: AsyncSession = Depends(get_async_db),
     _ = Depends(verify_auth_with_write_access),
 ):
     """Delete a dataset (async)."""
-    stmt = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-    )
-    result = await db.execute(stmt)
-    db_dataset = result.scalar_one_or_none()
-
-    if not db_dataset:
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
-    await db.delete(db_dataset)
+    await db.delete(dataset)
     await db.commit()
     return {"message": "Dataset deleted successfully"}
 
-
-@router.patch("/datasets/{dataset_id}/metadata", response_model=DatasetResponse)
+@router.patch("/datasets/{collection_name}/{dataset_name}/metadata", response_model=DatasetResponse)
 async def update_dataset_metadata(
-    dataset_id: int,
+    collection_name: str,
+    dataset_name: str,
     metadata: dict,
     db: AsyncSession = Depends(get_async_db),
     _ = Depends(verify_auth_with_write_access),
 ):
     """Update just the metadata of a dataset (async)."""
-    stmt_get = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-    )
-    result_get = await db.execute(stmt_get)
-    db_dataset = result_get.scalar_one_or_none()
-
-    if not db_dataset:
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
-    db_dataset.dataset_metadata = metadata
-    db.add(db_dataset)
+    dataset.dataset_metadata = metadata
+    db.add(dataset)
     await db.commit()
-
-   
-    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
+    result_refresh = await db.execute(await _refresh_dataset(dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-
     if not refreshed_dataset:
         raise HTTPException(
             status_code=500, detail="Failed to reload dataset after metadata update"
         )
-
     return refreshed_dataset
 
-
-@router.put("/datasets/{dataset_id}/preview", response_model=DatasetPreviewResponse)
+@router.put("/datasets/{collection_name}/{dataset_name}/preview", response_model=DatasetPreviewResponse)
 async def update_dataset_preview(
-    dataset_id: int,
+    collection_name: str,
+    dataset_name: str,
     preview_update: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
     _ = Depends(verify_auth_with_write_access),
 ):
     """Update a dataset's preview (async) using file upload."""
-    stmt_get = (
-        select(Dataset)
-        .where(Dataset.id == dataset_id)
-    )
-    result_get = await db.execute(stmt_get)
-    db_dataset = result_get.scalar_one_or_none()
-
-    if not db_dataset:
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-
     preview_data: bytes = await preview_update.read()
-
     if not preview_data:
-        db_dataset.preview = None
-        db_dataset.preview_type = None
+        dataset.preview = None
+        dataset.preview_type = None
     else:
-        db_dataset.preview = preview_data
-        db_dataset.preview_type = preview_update.content_type
-
-    db.add(db_dataset)
+        dataset.preview = preview_data
+        dataset.preview_type = preview_update.content_type
+    db.add(dataset)
     await db.commit()
-
-    result_refresh = await db.execute(await _refresh_dataset(db_dataset))
+    result_refresh = await db.execute(await _refresh_dataset(dataset))
     refreshed_dataset = result_refresh.scalars().unique().one_or_none()
-
     if not refreshed_dataset:
         raise HTTPException(
             status_code=500, detail="Failed to reload dataset after preview update"
         )
-
     return refreshed_dataset
 
 
@@ -341,6 +297,9 @@ async def get_dataset_preview(
 ):
     """Get a dataset's preview (async)."""
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
     preview_data = dataset.preview
     preview_type = dataset.preview_type
 
@@ -355,6 +314,7 @@ async def get_dataset_preview(
     )
 
 
+# The canonical way to fetch a dataset is now by collection_name and dataset_name
 @router.get(
     "/datasets/{collection_name}/{dataset_name}", response_model=DatasetResponse
 )
@@ -498,18 +458,7 @@ async def get_dataset_mlcroissant(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Get a dataset's Croissant metadata (async)."""
-    stmt = (
-        select(Dataset)
-        .join(Collection, Dataset.collection_id == Collection.id)
-        .where(Collection.name == collection_name)
-        .where(Dataset.name == dataset_name)
-        .options(
-            selectinload(Dataset.collection),
-        )
-    )
-    result = await db.execute(stmt)
-    dataset = result.scalars().unique().one_or_none()
-
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 

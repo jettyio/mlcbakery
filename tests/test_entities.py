@@ -24,20 +24,19 @@ async def create_test_collection(
 
 
 async def create_test_dataset(
-    ac: httpx.AsyncClient, collection_id: int, name="Test Dataset API"
+    ac: httpx.AsyncClient, collection_name: str, name="Test Dataset API"
 ) -> dict:
     dataset_data = {
         "name": name,
         "data_path": f"/path/{name.replace(' ', '_')}.csv",
         "format": "csv",
-        "collection_id": collection_id,
         "entity_type": "dataset",
         "metadata_version": "1.0",
         "dataset_metadata": {"description": f"{name} Desc via API"},
     }
     # Add headers to the request
     dataset_resp = await ac.post(
-        "/api/v1/datasets/", json=dataset_data, headers=AUTH_HEADERS
+        f"/api/v1/datasets/{collection_name}", json=dataset_data, headers=AUTH_HEADERS
     )
     assert dataset_resp.status_code == 200, (
         f"Helper failed creating dataset: {dataset_resp.text}"
@@ -74,14 +73,13 @@ async def test_create_dataset():
             "name": "New Dataset via API",
             "data_path": "/path/to/new/api_data.csv",
             "format": "csv",
-            "collection_id": collection_id,
             "entity_type": "dataset",
             "metadata_version": "1.1",
             "dataset_metadata": {"description": "New test dataset via API"},
         }
         # Add headers
         response = await ac.post(
-            "/api/v1/datasets/", json=dataset_data, headers=AUTH_HEADERS
+            f"/api/v1/datasets/{collection['name']}", json=dataset_data, headers=AUTH_HEADERS
         )
         assert response.status_code == 200, f"Create dataset failed: {response.text}"
         data = response.json()
@@ -106,10 +104,10 @@ async def test_list_datasets():
             ac, name="Collection For List Datasets"
         )
         collection_id = collection["id"]
-        ds1 = await create_test_dataset(ac, collection_id, name="List DS 1")
-        ds2 = await create_test_dataset(ac, collection_id, name="List DS 2")
+        ds1 = await create_test_dataset(ac, collection["name"], name="List DS 1")
+        ds2 = await create_test_dataset(ac, collection["name"], name="List DS 2")
 
-        response = await ac.get("/api/v1/datasets/", headers=AUTH_HEADERS)
+        response = await ac.get(f"/api/v1/datasets/{collection['name']}", headers=AUTH_HEADERS)
         assert response.status_code == 200
         data = response.json()
 
@@ -133,7 +131,7 @@ async def test_get_dataset():
         collection_id = collection["id"]
         # Need dataset name for the correct GET endpoint
         dataset_name = "Dataset To Get"
-        dataset = await create_test_dataset(ac, collection_id, name=dataset_name)
+        dataset = await create_test_dataset(ac, collection["name"], name=dataset_name)
         dataset_id = dataset["id"]
 
         # Use the name-based GET endpoint
@@ -171,12 +169,12 @@ async def test_delete_dataset():
         collection_id = collection["id"]
         # Need dataset name for the verification GET endpoint
         dataset_name = "Dataset To Delete"
-        dataset = await create_test_dataset(ac, collection_id, name=dataset_name)
+        dataset = await create_test_dataset(ac, collection["name"], name=dataset_name)
         dataset_id = dataset["id"]
 
         # Delete the dataset - Add headers
         response_del = await ac.delete(
-            f"/api/v1/datasets/{dataset_id}", headers=AUTH_HEADERS
+            f"/api/v1/datasets/{collection_name}/{dataset_name}", headers=AUTH_HEADERS
         )
         assert response_del.status_code == 200
         assert response_del.json()["message"] == "Dataset deleted successfully"
@@ -199,8 +197,8 @@ async def test_delete_nonexistent_dataset():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Add headers
         response = await ac.delete(
-            "/api/v1/datasets/99999", headers=AUTH_HEADERS
-        )  # Use a likely non-existent ID
+            "/api/v1/datasets/NonExistentCollection/NonExistentDataset", headers=AUTH_HEADERS
+        )  # Use non-existent collection and dataset names
         assert response.status_code == 404
         # The detail might now be "Dataset not found" instead of auth error
         # assert response.json()["detail"] == "Dataset not found"
