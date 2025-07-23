@@ -53,7 +53,6 @@ async def search_models(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts = Depends(search.setup_and_get_typesense_client),
-    auth = Depends(get_auth),
 ):
     """Search models using Typesense based on query term."""
     # Get the current span
