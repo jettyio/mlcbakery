@@ -1059,6 +1059,123 @@ async def test_update_collection_owner_success(async_client: AsyncClient):
     assert response_data["owner_identifier"] == owner_data["owner_identifier"]
     assert response_data["owner_identifier"] != original_owner
 
+
+@pytest.mark.asyncio
+async def test_admin_can_specify_owner_identifier(async_client, admin_token_auth_headers):
+    """Test that admins can specify any owner_identifier when creating collections."""
+    unique_name = f"test-admin-owner-{uuid.uuid4().hex[:8]}"
+    custom_owner = "custom-owner-12345"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with custom owner.",
+        "owner_identifier": custom_owner
+    }
+
+    response = await async_client.post(
+        "/api/v1/collections/", 
+        json=collection_data, 
+        headers=admin_token_auth_headers
+    )
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == unique_name
+    assert response_data["owner_identifier"] == custom_owner
+
+
+@pytest.mark.asyncio
+async def test_regular_user_cannot_specify_different_owner_identifier(async_client: AsyncClient):
+    """Test that org admins cannot specify a different owner_identifier - it gets ignored."""
+    unique_name = f"test-user-owner-{uuid.uuid4().hex[:8]}"
+    attempted_owner = "malicious-owner-12345"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with attempted custom owner.",
+        "owner_identifier": attempted_owner  # This should be ignored
+    }
+
+    # Use an org admin token (has write access but not system admin privileges)
+    response = await async_client.post(
+        "/api/v1/collections/", 
+        json=collection_data, 
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME))  # Org admin role
+    )
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == unique_name
+    # Should be set to the actual auth identifier, not the attempted one
+    assert response_data["owner_identifier"] != attempted_owner
+    assert response_data["owner_identifier"] == "org_12345"  # The actual org_id from the token
+
+
+@pytest.mark.asyncio 
+async def test_admin_owner_identifier_defaults_to_admin_when_not_specified(async_client, admin_token_auth_headers):
+    """Test that when system admin doesn't specify owner_identifier, it defaults to admin identifier."""
+    unique_name = f"test-admin-default-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection without explicit owner."
+        # No owner_identifier specified
+    }
+
+    response = await async_client.post(
+        "/api/v1/collections/", 
+        json=collection_data, 
+        headers=admin_token_auth_headers
+    )
+    
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["name"] == unique_name
+    assert response_data["owner_identifier"] == "admin"  # Should default to admin identifier
+
+
+@pytest.mark.asyncio
+async def test_only_system_admin_can_specify_custom_owner_identifier(async_client, admin_token_auth_headers):
+    """Test that only system admins can specify custom owner_identifier, org admins cannot."""
+    
+    # Test 1: System admin can specify custom owner
+    unique_name_1 = f"test-system-admin-{uuid.uuid4().hex[:8]}"
+    custom_owner_1 = "custom-owner-system-admin"
+    collection_data_1 = {
+        "name": unique_name_1,
+        "description": "System admin with custom owner.",
+        "owner_identifier": custom_owner_1
+    }
+
+    response_1 = await async_client.post(
+        "/api/v1/collections/", 
+        json=collection_data_1, 
+        headers=admin_token_auth_headers  # System admin
+    )
+    
+    assert response_1.status_code == 200
+    response_data_1 = response_1.json()
+    assert response_data_1["owner_identifier"] == custom_owner_1
+    
+    # Test 2: Org admin cannot specify custom owner
+    unique_name_2 = f"test-org-admin-{uuid.uuid4().hex[:8]}"
+    attempted_custom_owner = "attempted-custom-owner"
+    collection_data_2 = {
+        "name": unique_name_2,
+        "description": "Org admin attempting custom owner.",
+        "owner_identifier": attempted_custom_owner  # This should be ignored
+    }
+
+    response_2 = await async_client.post(
+        "/api/v1/collections/", 
+        json=collection_data_2, 
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME))  # Org admin
+    )
+    
+    assert response_2.status_code == 200
+    response_data_2 = response_2.json()
+    assert response_data_2["owner_identifier"] != attempted_custom_owner
+    assert response_data_2["owner_identifier"] == "org_12345"  # Should be org identifier
+
+# TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
+# TODO: Add tests for invalid inputs (e.g., missing name) 
 # test delete
 # list datasets
 # list agents
