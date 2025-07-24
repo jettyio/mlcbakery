@@ -70,7 +70,7 @@ uv run uvicorn mlcbakery.main:app --reload --host 0.0.0.0 --port 8000
 The Bakery is setup to authenticate requests with two methods: JWT Tokens and a "Master Admin Token". Both are configured in the ENV variables (.env file). Both JWT tokens and the Master Admin Token should be provided as "Bearer" Authorization header values.
 
 - ADMIN_AUTH_TOKEN: A fixed value that is the token a user would need to provide to have admin permissions (unrestricted access to all resources).
-- JWT_VERIFICATION_STRATEGY: The URL of a trusted JWT token issuer, such as Clerk. We have a development instance of Clerk running that you can use in conjunction with the Spot application. You can sign up for an account via Spot, or contact jon@jetty.io or grayden@graydens.ca for access to the Clerk admin portal.
+- JWT_VERIFICATION_STRATEGY: The URL of a trusted JWT token issuer, such as Clerk. We have a development instance of Clerk running that you can use. You can sign up for an account via flows.jetty.io (alpha), or contact dev@jetty.io for access to Jetty's Cloud.
 
 ### Running Tests
 
