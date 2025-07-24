@@ -191,7 +191,7 @@ class TestBakeryClientAuth(unittest.TestCase):
                 else:
                     print("  -> Responding for final GET dataset")
                     return mock_get_dataset_final_resp
-            elif method == "POST" and url == f"{API_URL}/datasets/":
+            elif method == "POST" and url == f"{API_URL}/datasets/{SAMPLE_COLLECTION_NAME}":
                 print("  -> Responding for POST /datasets")
                 return mock_create_dataset_resp
             elif method == "PUT" and "/preview" in url:

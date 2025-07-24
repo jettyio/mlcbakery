@@ -396,7 +396,7 @@ class Client:
             _LOGGER.info(
                 f"Updating dataset {dataset_name} in collection {collection_name}"
             )
-            dataset = self.update_dataset(dataset.id, entity_payload)
+            dataset = self.update_dataset(collection_name, dataset_name, entity_payload)
         else:
             # Create new dataset
             _LOGGER.info(
@@ -404,14 +404,14 @@ class Client:
             )
 
             dataset = self.create_dataset(
-                collection.id,
+                collection.name,
                 dataset_name,
                 entity_payload.copy(),
             )
 
         # Update the preview regardless of create/update
         if preview:
-            self.save_preview(dataset.id, preview)
+            self.save_preview(collection_name, dataset_name, preview)
 
         # Upload data file if provided
         if data_file_path:
@@ -523,13 +523,12 @@ class Client:
             return None
 
     def create_dataset(
-        self, collection_id: str, dataset_name: str, params: dict = dict()
+        self, collection_name: str, dataset_name: str, params: dict = dict()
     ) -> BakeryDataset:
         """Create a dataset in a collection."""
-        endpoint = "/datasets/"  # Ensure trailing slash
+        endpoint = f"/datasets/{collection_name}"
         payload = {
             "name": dataset_name,
-            "collection_id": collection_id,
             "entity_type": "dataset",
             **params,
         }
@@ -544,9 +543,8 @@ class Client:
             return BakeryDataset(
                 id=json_response["id"],
                 name=json_response["name"],
-                collection_id=json_response.get(
-                    "collection_id", collection_id
-                ),  # Use provided collection_id if not in response
+                collection_id=json_response.get("collection_id"),
+                collection_name=collection_name,
                 # Include other fields if the API returns them on creation
                 metadata=None,  # Metadata likely not set on creation
                 preview=None,  # Preview not set on creation
@@ -556,12 +554,12 @@ class Client:
             )
         except Exception as e:
             raise Exception(
-                f"Failed to create dataset {dataset_name} in collection {collection_id}: {e}"
+                f"Failed to create dataset {dataset_name} in collection {collection_name}: {e}"
             ) from e
 
-    def update_dataset(self, dataset_id: str, params: dict) -> BakeryDataset:
+    def update_dataset(self, collection_name: str, dataset_name: str, params: dict) -> BakeryDataset:
         """Update a dataset."""
-        endpoint = f"/datasets/{dataset_id}"
+        endpoint = f"/datasets/{collection_name}/{dataset_name}"
         try:
             response = self._request("PUT", endpoint, json_data=params)
             json_response = response.json()
@@ -586,23 +584,23 @@ class Client:
             )
 
         except Exception as e:
-            raise Exception(f"Failed to update dataset {dataset_id}: {e}") from e
+            raise Exception(f"Failed to update dataset {collection_name}/{dataset_name}: {e}") from e
 
-    def save_metadata(self, dataset_id: str, metadata: dict):
+    def save_metadata(self, collection_name: str, dataset_name: str, metadata: dict):
         """Save metadata to a dataset. Assumes metadata is a JSON-serializable dict."""
-        endpoint = f"/datasets/{dataset_id}/metadata"
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/metadata"
         try:
             # Changed to PUT as per discussion? Or is PATCH correct? Assuming PATCH.
             self._request("PATCH", endpoint, json_data=metadata)
         # No return value needed, just raise on error
         except Exception as e:
             raise Exception(
-                f"Failed to save metadata to dataset {dataset_id}: {e}"
+                f"Failed to save metadata to dataset {collection_name}/{dataset_name}: {e}"
             ) from e
 
-    def save_preview(self, dataset_id: str, preview: bytes):
+    def save_preview(self, collection_name: str, dataset_name: str, preview: bytes):
         """Save a preview (as parquet bytes) to a dataset."""
-        endpoint = f"/datasets/{dataset_id}/preview"
+        endpoint = f"/datasets/{collection_name}/{dataset_name}/preview"
         files = {"preview_update": ("preview.parquet", preview, "application/parquet")}
         try:
             # PUT seems appropriate for replacing/uploading the preview file
@@ -610,7 +608,7 @@ class Client:
             # No return value needed, just raise on error
         except Exception as e:
             raise Exception(
-                f"Failed to save preview to dataset {dataset_id}: {e}"
+                f"Failed to save preview to dataset {collection_name}/{dataset_name}: {e}"
             ) from e
 
     def get_upstream_entities(
