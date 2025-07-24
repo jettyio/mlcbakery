@@ -9,7 +9,7 @@ class CollectionBase(BaseModel):
 
 class CollectionCreate(CollectionBase):
     storage_info: Optional[Dict[str, Any]] = None
-    storage_provider: Optional[str] = None
+    storage_provider: Optional[str] = "default"
     environment_variables: Optional[Dict[str, Any]] = None
     owner_identifier: Optional[str] = None
 

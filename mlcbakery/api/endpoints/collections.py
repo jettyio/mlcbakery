@@ -37,15 +37,13 @@ async def create_collection(
     if existing_collection:
         raise fastapi.HTTPException(status_code=400, detail="Collection already exists")
 
-    owner_identifier = auth.get('identifier', 'unknown')
-
     db_collection = Collection(
         name=collection.name,
         description=collection.description,
         storage_info=collection.storage_info,
         storage_provider=collection.storage_provider,
         environment_variables=collection.environment_variables,
-        owner_identifier=owner_identifier
+        owner_identifier=collection.owner_identifier
     )
 
     db.add(db_collection)
