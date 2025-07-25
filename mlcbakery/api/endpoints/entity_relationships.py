@@ -104,6 +104,46 @@ async def create_entity_link(
     
     return db_entity_relationship 
 
+@router.delete("/", status_code=204)
+async def delete_entity_link(
+    link_request: EntityLinkCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Delete an existing relationship (link) between two entities via an activity name.
+    - Source and target entities are identified by a string: {entity_type}/{collection_name}/{entity_name}.
+    - Target entity is required. Source entity is optional.
+    - The activity_name is taken directly from the request.
+    """
+    source_entity = await _resolve_entity_from_string(link_request.source_entity_str, db, entity_role="source", auth=auth)
+    target_entity = await _resolve_entity_from_string(link_request.target_entity_str, db, entity_role="target")
+
+    if not target_entity:
+        raise HTTPException(status_code=404, detail=f"Target entity '{link_request.target_entity_str}' could not be resolved.")
+
+    # Find the existing relationship
+    existing_relationship_result = await db.execute(
+        select(EntityRelationship).where(
+            EntityRelationship.source_entity_id == (source_entity.id if source_entity else None),
+            EntityRelationship.target_entity_id == target_entity.id,
+            EntityRelationship.activity_name == link_request.activity_name
+        )
+    )
+    existing_relationship = existing_relationship_result.scalar_one_or_none()
+    
+    if not existing_relationship:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Entity relationship not found for the specified source, target, and activity."
+        )
+
+    # Delete the relationship
+    await db.delete(existing_relationship)
+    await db.commit()
+    
+    # 204 No Content is appropriate for successful delete with no response body
+
 @router.get("/{entity_type}/{collection_name}/{entity_name}/upstream", response_model=ProvenanceEntityNode)
 async def get_entity_upstream_tree(
     entity_type: str,
