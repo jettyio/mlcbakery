@@ -1,5 +1,6 @@
 import pytest
 import httpx # For making async HTTP requests
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -13,7 +14,6 @@ TEST_OWNER_2 = "test-owner-2"
 AUTH_HEADERS_1 = authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_1))
 AUTH_HEADERS_2 = authorization_headers(sample_org_token(ADMIN_ROLE_NAME, TEST_OWNER_2))
 
-
 # pytest-asyncio decorator for async test functions
 pytestmark = pytest.mark.asyncio
 
@@ -26,7 +26,6 @@ ENTITY_TYPE_DATASET = "dataset"
 ACTIVITY_NAME_GENERATED = "generated_test_link"
 ACTIVITY_NAME_INGESTED = "ingested_test_link"
 
-
 async def clear_db(session: AsyncSession):
     await session.execute(select(EntityRelationship).delete())
     await session.execute(select(Activity).delete())
@@ -34,48 +33,6 @@ async def clear_db(session: AsyncSession):
     await session.execute(select(Collection).delete())
     # Add other tables if necessary to clean up, be careful with order due to FKs
     await session.commit()
-
-# @pytest.fixture(scope="function", autouse=True)
-# async def db_session_for_tests():
-#     """Override get_async_db dependency for tests and handle setup/teardown."""
-#     async with engine.begin() as conn:
-#         await conn.run_sync(Base.metadata.create_all)
-#         # Ensure admin user exists for endpoints requiring auth
-#         # This might need to be adjusted based on how your admin user is created/checked
-#         temp_session_generator = get_async_db()
-#         temp_session = await anext(temp_session_generator)
-#         await temp_session.commit()
-#         await temp_session.close()
-
-    
-#     # # This session is what your test functions will use
-#     db = get_async_db()
-#     session = await anext(db)
-#     await clear_db(session) # Clear relevant tables before each test
-
-#     # # Create initial test data
-#     # coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking")
-#     # coll2 = Collection(name=TEST_COLLECTION_NAME_2, description="Test collection 2 for linking")
-#     # session.add_all([coll1, coll2])
-#     # await session.commit()
-#     # await session.refresh(coll1)
-#     # await session.refresh(coll2)
-
-#     # source_entity = Entity(name=SOURCE_ENTITY_NAME, entity_type=ENTITY_TYPE_DATASET, collection_id=coll1.id)
-#     # target_entity1 = Entity(name=TARGET_ENTITY_NAME_1, entity_type=ENTITY_TYPE_DATASET, collection_id=coll1.id)
-#     # target_entity2 = Entity(name=TARGET_ENTITY_NAME_2, entity_type=ENTITY_TYPE_DATASET, collection_id=coll2.id)
-#     # session.add_all([source_entity, target_entity1, target_entity2])
-#     # await session.commit()
-#     # await session.refresh(source_entity)
-#     # await session.refresh(target_entity1)
-#     # await session.refresh(target_entity2)
-    
-#     yield session # This is where the test runs
-
-#     # # Teardown: Clear data after tests if needed, or drop tables
-#     # await clear_db(session)
-#     # await session.close()
-#     # If you created all tables: await conn.run_sync(Base.metadata.drop_all) inside engine.begin()
 
 async def _setup_test_data_collections(db_session: AsyncSession) -> tuple[Collection, Collection]:
     coll1 = Collection(name=TEST_COLLECTION_NAME_1, description="Test collection 1 for linking", owner_identifier=TEST_OWNER_1)
@@ -298,3 +255,222 @@ async def test_create_entity_link_unauthorized(db_session: AsyncSession):
         
     assert response.status_code == 403 # Unauthorized
     assert "Not authenticated" in response.json()["detail"] or "Forbidden" in response.json()["detail"] 
+
+# Delete endpoint tests
+@pytest.mark.asyncio
+async def test_delete_entity_link_success(db_session: AsyncSession):
+    """Test successful deletion of an entity link."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    # First create a link
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        create_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_delete_activity"
+        }
+        create_response = await ac.post("/api/v1/entity-relationships/", json=create_payload, headers=AUTH_HEADERS_1)
+        assert create_response.status_code == 201
+        link_id = create_response.json()["id"]
+        
+        # Verify the link exists in the database
+        link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one()
+        assert link is not None
+        assert link.activity_name == "test_delete_activity"
+        
+        # Now delete the link
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_delete_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 204
+    
+    # Verify the link is deleted from the database
+    deleted_link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one_or_none()
+    assert deleted_link is None
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_no_source_success(db_session: AsyncSession):
+    """Test successful deletion of an entity link with no source entity."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    # First create a link with no source
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        create_payload = {
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
+            "activity_name": "test_delete_no_source_activity"
+        }
+        create_response = await ac.post("/api/v1/entity-relationships/", json=create_payload, headers=AUTH_HEADERS_1)
+        assert create_response.status_code == 201
+        link_id = create_response.json()["id"]
+        
+        # Verify the link exists in the database
+        link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one()
+        assert link is not None
+        assert link.source_entity_id is None
+        assert link.activity_name == "test_delete_no_source_activity"
+        
+        # Now delete the link
+        delete_payload = {
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
+            "activity_name": "test_delete_no_source_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 204
+    
+    # Verify the link is deleted from the database
+    deleted_link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one_or_none()
+    assert deleted_link is None
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_not_found(db_session: AsyncSession):
+    """Test deletion of a non-existent entity link."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "non_existent_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 404
+    assert "Entity relationship not found" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_target_not_found(db_session: AsyncSession):
+    """Test deletion when target entity is not found."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/non_existent_target",
+            "activity_name": "test_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 404
+    assert "Target entity 'non_existent_target'" in delete_response.json()["detail"]
+    assert "not found in collection" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_source_not_found(db_session: AsyncSession):
+    """Test deletion when source entity is not found."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/non_existent_source",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 404
+    assert "Source entity 'non_existent_source'" in delete_response.json()["detail"]
+    assert "not found in collection" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_collection_not_found(db_session: AsyncSession):
+    """Test deletion when collection is not found."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/non_existent_collection/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 404
+    assert "Collection 'non_existent_collection' for source entity" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_invalid_format(db_session: AsyncSession):
+    """Test deletion with invalid entity string format."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": "invalid_format",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_1)
+        
+    assert delete_response.status_code == 400
+    assert "Invalid source entity string format: 'invalid_format'" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_unauthorized(db_session: AsyncSession):
+    """Test deletion without authorization header."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload)  # No AUTH_HEADERS
+        
+    assert delete_response.status_code == 403
+    assert "Not authenticated" in delete_response.json()["detail"] or "Forbidden" in delete_response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_delete_entity_link_access_control(db_session: AsyncSession):
+    """Test access control for entity link deletion."""
+    # Setup test data with different owners
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+    
+    # Create a link owned by TEST_OWNER_1
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        create_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_access_control_activity"
+        }
+        create_response = await ac.post("/api/v1/entity-relationships/", json=create_payload, headers=AUTH_HEADERS_1)
+        assert create_response.status_code == 201
+        link_id = create_response.json()["id"]
+        
+        # Try to delete with different owner (TEST_OWNER_2) - should fail
+        delete_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_access_control_activity"
+        }
+        delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload, headers=AUTH_HEADERS_2)
+        
+    assert delete_response.status_code == 404
+    assert "Collection 'test_link_coll_1' for source entity" in delete_response.json()["detail"]
+    assert "not found" in delete_response.json()["detail"]
+    
+    # Verify the link still exists in the database
+    link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one()
+    assert link is not None
+    assert link.activity_name == "test_access_control_activity" 
