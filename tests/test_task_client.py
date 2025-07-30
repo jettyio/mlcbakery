@@ -35,6 +35,7 @@ class TestTaskClient:
             "workflow": self.sample_workflow,
             "version": "1.0",
             "description": "Test task",
+            "has_file_uploads": False,
             "entity_type": "task",
             "created_at": "2024-01-01T00:00:00Z"
         }
@@ -55,6 +56,7 @@ class TestTaskClient:
         assert task.workflow == self.sample_workflow
         assert task.version == "1.0"
         assert task.description == "Test task"
+        assert task.has_file_uploads == False
         
         # Verify request was made correctly
         mock_request.assert_called_once()
@@ -77,6 +79,7 @@ class TestTaskClient:
             "workflow": self.sample_workflow,
             "version": "1.0",
             "description": "Test task",
+            "has_file_uploads": False,
             "entity_type": "task",
             "created_at": "2024-01-01T00:00:00Z"
         }
@@ -130,6 +133,7 @@ class TestTaskClient:
             "workflow": self.sample_workflow,
             "version": "1.1",
             "description": "Updated test task",
+            "has_file_uploads": False,
             "entity_type": "task",
             "created_at": "2024-01-01T00:00:00Z"
         }
@@ -166,6 +170,7 @@ class TestTaskClient:
                 "collection_name": "test-collection",
                 "workflow": self.sample_workflow,
                 "version": "1.0",
+                "has_file_uploads": False,
                 "entity_type": "task",
                 "created_at": "2024-01-01T00:00:00Z"
             },
@@ -176,6 +181,7 @@ class TestTaskClient:
                 "collection_name": "test-collection",
                 "workflow": self.sample_workflow,
                 "version": "1.0",
+                "has_file_uploads": False,
                 "entity_type": "task",
                 "created_at": "2024-01-01T00:00:00Z"
             }

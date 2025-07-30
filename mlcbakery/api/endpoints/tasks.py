@@ -244,6 +244,7 @@ async def list_tasks(
             workflow=task.workflow,
             version=task.version,
             description=task.description,
+            has_file_uploads=task.has_file_uploads,
             collection_id=task.collection_id,
             collection_name=task.collection.name if task.collection else None,
         )
@@ -297,6 +298,7 @@ async def list_tasks_by_collection(
             workflow=task.workflow,
             version=task.version,
             description=task.description,
+            has_file_uploads=task.has_file_uploads,
             collection_id=task.collection_id,
             collection_name=task.collection.name if task.collection else None,
         )

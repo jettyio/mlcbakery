@@ -50,6 +50,7 @@ async def test_create_task_success(async_client: AsyncClient):
     res_data = response.json()
     assert res_data["name"] == task_data["name"]
     assert res_data["collection_id"] == collection["id"]
+    assert res_data["has_file_uploads"] == False  # Default value
     assert "id" in res_data
 
 @pytest.mark.asyncio

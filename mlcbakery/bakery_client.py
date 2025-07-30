@@ -121,6 +121,7 @@ class BakeryTask:
     collection_name: str | None = None
     version: str | None = None
     description: str | None = None
+    has_file_uploads: bool = False
     entity_type: str = "task"
     asset_origin: str | None = None
     created_at: str | None = None

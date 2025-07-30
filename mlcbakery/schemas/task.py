@@ -13,6 +13,7 @@ class TaskBase(EntityBase):
     collection_id: Optional[int] = None
     version: Optional[str] = None
     description: Optional[str] = None
+    has_file_uploads: bool = False
     entity_type: str = "task"
 
 
@@ -25,6 +26,7 @@ class TaskCreate(BaseModel):
     collection_name: str
     version: Optional[str] = None
     description: Optional[str] = None
+    has_file_uploads: bool = False
     entity_type: str = "task"
 
 
@@ -35,6 +37,7 @@ class TaskUpdate(TaskBase):
     workflow: Optional[dict] = None
     version: Optional[str] = None
     description: Optional[str] = None
+    has_file_uploads: Optional[bool] = None
 
 
 class TaskListResponse(TaskBase):
