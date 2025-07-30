@@ -17,6 +17,7 @@ def test_task_create_valid():
     assert task.collection_name == data["collection_name"]
     assert task.version == data["version"]
     assert task.description == data["description"]
+    assert task.has_file_uploads == False  # Default value
     assert task.entity_type == "task"
 
 def test_task_create_missing_required_fields():
@@ -39,6 +40,18 @@ def test_task_create_optional_fields_none():
     task = TaskCreate(**data)
     assert task.version is None
     assert task.description is None
+    assert task.has_file_uploads == False  # Default value
+
+def test_task_create_with_file_uploads():
+    """Test TaskCreate with has_file_uploads set to True."""
+    data = {
+        "name": "File Upload Task",
+        "workflow": {"steps": ["upload", "process"]},
+        "collection_name": "test-collection",
+        "has_file_uploads": True,
+    }
+    task = TaskCreate(**data)
+    assert task.has_file_uploads == True
 
 def test_task_update_all_fields():
     """Test TaskUpdate with all fields."""
@@ -46,7 +59,8 @@ def test_task_update_all_fields():
         "name": "Updated Task",
         "workflow": {"new_steps": []},
         "version": "1.1",
-        "description": "Updated desc"
+        "description": "Updated desc",
+        "has_file_uploads": True
     }
     update_schema = TaskUpdate(**data)
     for key, value in data.items():
@@ -54,9 +68,10 @@ def test_task_update_all_fields():
 
 def test_task_update_some_fields():
     """Test TaskUpdate with a subset of fields."""
-    data = {"description": "Only updating description"}
+    data = {"description": "Only updating description", "has_file_uploads": True}
     update_schema = TaskUpdate(**data)
     assert update_schema.description == data["description"]
+    assert update_schema.has_file_uploads == data["has_file_uploads"]
     assert update_schema.name is None
     assert update_schema.workflow is None
 
@@ -67,6 +82,7 @@ def test_task_update_no_fields():
     assert update_schema.workflow is None
     assert update_schema.version is None
     assert update_schema.description is None
+    assert update_schema.has_file_uploads is None
 
 def test_task_create_invalid_types():
     """Test TaskCreate with invalid data types."""

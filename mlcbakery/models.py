@@ -299,6 +299,7 @@ class Task(Entity):
     workflow = Column(JSONB, nullable=False)
     version = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    has_file_uploads = Column(Boolean, nullable=False, default=False)
 
     def _serialize_for_hash(self):
         """Override to include Task-specific fields."""
@@ -307,6 +308,7 @@ class Task(Entity):
             'workflow': self.workflow,
             'version': self.version,
             'description': self.description,
+            'has_file_uploads': self.has_file_uploads,
         })
         return base_data
 
