@@ -88,16 +88,19 @@ async def test_update_task_success(async_client: AsyncClient):
     assert updated_task["version"] == update_data["version"]
 
 @pytest.mark.asyncio
-async def test_delete_task_success(async_client: AsyncClient):
-    """Test successfully deleting a task."""
-    unique_collection_name = f"test-coll-delete-task-{uuid.uuid4().hex[:8]}"
+async def test_delete_task_by_name_success(async_client: AsyncClient):
+    """Test successfully deleting a task by collection name and task name."""
+    unique_collection_name = f"test-coll-delete-task-name-{uuid.uuid4().hex[:8]}"
     collection = await _create_test_collection(async_client, unique_collection_name)
-    task_name = f"DeleteMeTask-{uuid.uuid4().hex[:8]}"
+    task_name = f"DeleteMeByNameTask-{uuid.uuid4().hex[:8]}"
     created_task = await _create_test_task(async_client, collection["name"], task_name)
 
-    del_response = await async_client.delete(f"/api/v1/tasks/{created_task['id']}", headers=AUTH_HEADERS)
-    assert del_response.status_code == 204
+    # Delete using collection_name/task_name pattern
+    del_response = await async_client.delete(f"/api/v1/tasks/{collection['name']}/{task_name}", headers=AUTH_HEADERS)
+    assert del_response.status_code == 200
+    assert del_response.json()["message"] == "Task deleted successfully"
 
+    # Verify it's deleted
     get_response = await async_client.get(f"/api/v1/tasks/{collection['name']}/{task_name}", headers=AUTH_HEADERS)
     assert get_response.status_code == 404
 
@@ -124,11 +127,21 @@ async def test_update_task_not_found(async_client: AsyncClient):
     response = await async_client.put("/api/v1/tasks/999999", json={"description": "wont work"}, headers=AUTH_HEADERS)
     assert response.status_code == 404
 
+
 @pytest.mark.asyncio
-async def test_delete_task_not_found(async_client: AsyncClient):
-    """Test that deleting a non-existent task returns 404."""
-    response = await async_client.delete("/api/v1/tasks/999999", headers=AUTH_HEADERS)
+async def test_delete_task_by_name_not_found(async_client: AsyncClient):
+    """Test that deleting a non-existent task by name returns 404."""
+    response = await async_client.delete("/api/v1/tasks/NonExistentCollection/NonExistentTask", headers=AUTH_HEADERS)
     assert response.status_code == 404
+    assert response.json()["detail"] == "Task not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_task_by_name_nonexistent_collection(async_client: AsyncClient):
+    """Test that deleting a task from a non-existent collection returns 404."""
+    response = await async_client.delete("/api/v1/tasks/NonExistentCollection/SomeTask", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Task not found"
 
 @pytest.mark.asyncio
 async def test_list_tasks(async_client: AsyncClient):

@@ -178,36 +178,20 @@ async def update_task(
     return db_task
 
 
-@router.delete(
-    "/tasks/{task_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a Task",
-    tags=["Tasks"],
-)
-async def delete_task(
-    task_id: int,
+@router.delete("/tasks/{collection_name}/{task_name}", status_code=200)
+async def delete_task_by_name(
+    collection_name: str,
+    task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
+    _ = Depends(verify_auth_with_write_access),
 ):
-    # Get task and verify ownership
-    stmt = (
-        select(Task)
-        .join(Collection, Task.collection_id == Collection.id)
-        .where(Task.id == task_id)
-    )
-    stmt = apply_auth_to_stmt(stmt, auth)
-    result = await db.execute(stmt)
-    db_task = result.scalar_one_or_none()
-
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {task_id} not found",
-        )
-
-    await db.delete(db_task)
+    """Delete a task by collection name and task name (async)."""
+    task = await _find_task_by_name(collection_name, task_name, db)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await db.delete(task)
     await db.commit()
-    return None
+    return {"message": "Task deleted successfully"}
 
 
 @router.get(

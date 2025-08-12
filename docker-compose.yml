@@ -38,6 +38,10 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
   db:
     image: postgres:16-alpine
     container_name: mlcbakery_db
