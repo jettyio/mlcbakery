@@ -193,7 +193,7 @@ async def update_trained_model(
 
 @router.delete(
     "/models/{model_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     summary="Delete a Trained Model",
     tags=["Trained Models"],
 )
@@ -223,9 +223,41 @@ async def delete_trained_model(
             detail=f"Trained model with id {model_id} not found",
         )
 
-    await db.delete(db_trained_model)
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(db_trained_model, db)
     await db.commit()
-    return None
+    return {"message": "Trained model deleted successfully"}
+
+
+@router.delete(
+    "/models/{collection_name}/{model_name}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a Trained Model by Collection and Model Name",
+    tags=["Trained Models"],
+)
+async def delete_trained_model_by_name(
+    collection_name: str,
+    model_name: str,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Delete a trained model by its collection name and model name.
+
+    - **collection_name**: Name of the collection the model belongs to.
+    - **model_name**: Name of the model to delete.
+    """
+    trained_model = await _find_model_by_name(collection_name, model_name, db)
+    if not trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trained model not found"
+        )
+
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(trained_model, db)
+    await db.commit()
+    return {"message": "Trained model deleted successfully"}
 
 
 @router.get(

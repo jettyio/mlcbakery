@@ -23,6 +23,9 @@ router = APIRouter()
 # --------------------------------------------
 # Helper utilities
 # --------------------------------------------
+
+
+
 async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSession) -> Task | None:
     stmt = (
         select(Task)
@@ -189,7 +192,8 @@ async def delete_task_by_name(
     task = await _find_task_by_name(collection_name, task_name, db)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    await db.delete(task)
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(task, db)
     await db.commit()
     return {"message": "Task deleted successfully"}
 

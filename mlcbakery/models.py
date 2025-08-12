@@ -31,8 +31,8 @@ class EntityRelationship(Base):
     __tablename__ = "entity_relationships"
 
     id = Column(Integer, primary_key=True, index=True)
-    source_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
-    target_entity_id = Column(Integer, ForeignKey("entities.id"), index=True, nullable=True)
+    source_entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), index=True, nullable=True)
+    target_entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), index=True, nullable=True)
     activity_name = Column(String, nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True, index=True)
 
@@ -427,7 +427,7 @@ class EntityVersionHash(Base):
     __tablename__ = "entity_version_hashes"
     
     id = Column(Integer, primary_key=True)
-    entity_id = Column(Integer, ForeignKey("entities.id"), nullable=False)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
     transaction_id = Column(Integer, nullable=False)  # Continuum's transaction ID
     content_hash = Column(String(64), nullable=False, unique=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

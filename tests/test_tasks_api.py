@@ -143,6 +143,44 @@ async def test_delete_task_by_name_nonexistent_collection(async_client: AsyncCli
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
 
+
+@pytest.mark.asyncio
+async def test_delete_task_with_entity_relationships(async_client: AsyncClient):
+    """Test that deleting a task with entity relationships works correctly (cascade delete)."""
+    # Create two collections for testing relationships
+    unique_collection_name_1 = f"test-coll-rel-1-{uuid.uuid4().hex[:8]}"
+    unique_collection_name_2 = f"test-coll-rel-2-{uuid.uuid4().hex[:8]}"
+    collection_1 = await _create_test_collection(async_client, unique_collection_name_1)
+    collection_2 = await _create_test_collection(async_client, unique_collection_name_2)
+    
+    # Create two tasks
+    task_name_1 = f"SourceTask-{uuid.uuid4().hex[:8]}"
+    task_name_2 = f"TargetTask-{uuid.uuid4().hex[:8]}"
+    task_1 = await _create_test_task(async_client, collection_1["name"], task_name_1)
+    task_2 = await _create_test_task(async_client, collection_2["name"], task_name_2)
+    
+    # Create an entity relationship between the tasks
+    relationship_data = {
+        "source_entity_str": f"task/{collection_1['name']}/{task_name_1}",
+        "target_entity_str": f"task/{collection_2['name']}/{task_name_2}",
+        "activity_name": "test_relationship"
+    }
+    rel_response = await async_client.post("/api/v1/entity-relationships/", json=relationship_data, headers=AUTH_HEADERS)
+    assert rel_response.status_code == 201
+    
+    # Delete the source task - this should work with cascade delete
+    del_response = await async_client.delete(f"/api/v1/tasks/{collection_1['name']}/{task_name_1}", headers=AUTH_HEADERS)
+    assert del_response.status_code == 200
+    assert del_response.json()["message"] == "Task deleted successfully"
+    
+    # Verify the task is deleted
+    get_response = await async_client.get(f"/api/v1/tasks/{collection_1['name']}/{task_name_1}", headers=AUTH_HEADERS)
+    assert get_response.status_code == 404
+    
+    # Verify the target task still exists
+    get_response_2 = await async_client.get(f"/api/v1/tasks/{collection_2['name']}/{task_name_2}", headers=AUTH_HEADERS)
+    assert get_response_2.status_code == 200
+
 @pytest.mark.asyncio
 async def test_list_tasks(async_client: AsyncClient):
     """Test listing all tasks."""

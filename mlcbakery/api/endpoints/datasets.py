@@ -44,6 +44,8 @@ from mlcbakery.metrics import get_metric, NAME_SEARCH_QUERIES_TOTAL
 
 router = APIRouter()
 
+
+
 @router.get("/datasets/search")
 async def search_datasets(
     q: str = Query(..., min_length=1, description="Search query term"),
@@ -232,7 +234,8 @@ async def delete_dataset(
     dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    await db.delete(dataset)
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(dataset, db)
     await db.commit()
     return {"message": "Dataset deleted successfully"}
 
