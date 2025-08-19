@@ -167,13 +167,6 @@ async def get_task_details_with_flexible_auth(
     collection_stmt = select(Collection).where(Collection.id == task.collection_id)
     collection_result = await db.execute(collection_stmt)
     collection = collection_result.scalar_one_or_none()
-    if collection:
-        task_response.collection = collection
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Collection not found for task '{task_name}'"
-        )
     
     task_response.environment_variables = collection.environment_variables
     task_response.storage_info = collection.storage_info
