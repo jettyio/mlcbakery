@@ -782,7 +782,7 @@ class Client:
 
     def get_collections(self) -> list[BakeryCollection]:
         """List all available collections."""
-        endpoint = "/list-collections/"
+        endpoint = "/collections/"
         collections = []
         try:
             response = self._request("GET", endpoint)
