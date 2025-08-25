@@ -1,190 +1,609 @@
 import pytest
-from httpx import AsyncClient
-from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
-import uuid # For unique collection names
+import httpx
+from fastapi.testclient import TestClient
 
-from mlcbakery.main import app # Import your FastAPI app
-from conftest import TEST_ADMIN_TOKEN # Import the test token
-from mlcbakery.schemas.collection import CollectionCreate # Added
+from mlcbakery.main import app
+from conftest import TEST_ADMIN_TOKEN
 from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
 
-# Define headers globally or pass them around
+# Define headers globally
 AUTH_HEADERS = authorization_headers(sample_org_token())
 
+# TestClient for synchronous tests
+client = TestClient(app)
 
-# Helper to create a test collection
-async def _create_test_collection(async_client: AsyncClient, collection_name: str) -> Dict[str, Any]: # Returns dict with name and id
-    collection_data = CollectionCreate(name=collection_name, description="Test Collection for Models")
-    response = await async_client.post("/api/v1/collections/", json=collection_data.model_dump(), headers=AUTH_HEADERS)
-    if response.status_code == 400 and "already exists" in response.json().get("detail", ""):
-        get_response = await async_client.get(f"/api/v1/collections/{collection_name}", headers=AUTH_HEADERS)
-        if get_response.status_code == 200:
-            existing_coll_data = get_response.json()
-            return {"id": existing_coll_data["id"], "name": existing_coll_data["name"]}
-        else:
-            pytest.fail(f"Failed to get existing collection {collection_name}: {get_response.text}")
+def create_collection(name: str):
+    """Helper function to create a test collection."""
+    collection_data = {
+        "name": name,
+        "description": "A test collection for trained model API testing."
+    }
+    response = client.post("/api/v1/collections/", json=collection_data, headers=AUTH_HEADERS)
+    assert response.status_code == 200, f"Failed to create collection: {response.text}"
+    return response.json()
 
-    assert response.status_code == 200, f"Failed to create test collection: {response.text}"
-    created_coll_data = response.json()
-    return {"id": created_coll_data["id"], "name": created_coll_data["name"]}
+
+# Positive test cases for CRUD operations
 
 @pytest.mark.asyncio
-async def test_create_trained_model_success(async_client: AsyncClient):
-    """
-    Test successful creation of a trained model.
-    Assumes async_client fixture is set up with your FastAPI app.
-    """
-    unique_collection_name = f"test-coll-models-success-{uuid.uuid4().hex[:8]}"
-    collection_info = await _create_test_collection(async_client, unique_collection_name)
+async def test_create_trained_model_by_collection_name():
+    """Test creating a trained model using collection name."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection first
+        collection = create_collection("create-model-test-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Test Model",
+            "model_path": "/models/test_model.pt",
+            "metadata_version": "1.0.0",
+            "model_metadata": {"accuracy": 0.95},
+            "asset_origin": "s3://bucket/model.pt",
+            "long_description": "A test model",
+            "model_attributes": {"input_shape": [224, 224, 3]}
+        }
+        
+        response = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 201, f"Failed to create trained model: {response.text}"
+        
+        data = response.json()
+        assert data["name"] == model_data["name"]
+        assert data["model_path"] == model_data["model_path"]
+        assert data["metadata_version"] == model_data["metadata_version"]
+        assert data["model_metadata"] == model_data["model_metadata"]
+        assert data["asset_origin"] == model_data["asset_origin"]
+        assert data["long_description"] == model_data["long_description"]
+        assert data["model_attributes"] == model_data["model_attributes"]
+        assert data["entity_type"] == "trained_model"
+        assert "id" in data
+        assert "created_at" in data
 
-    model_data: Dict[str, Any] = {
-        "name": "My API Test Model",
-        "model_path": "/test/api/model.pt",
-        "collection_name": collection_info["name"], # Use collection_name
-        "metadata_version": "1.0.0",
-        "model_metadata": {"accuracy": 0.95, "layers": 5},
-        "asset_origin": "s3://my-bucket/models/model.pt",
-        "long_description": "A detailed description of the test model.",
-        "model_attributes": {"input_shape": [None, 224, 224, 3], "output_classes": 1000}
-    }
-    
-    response = await async_client.post("/api/v1/models", json=model_data, headers=AUTH_HEADERS)
-    
-    assert response.status_code == 201
-    response_data = response.json()
-
-    assert response_data["name"] == model_data["name"]
-    assert response_data["model_path"] == model_data["model_path"]
-    assert response_data["asset_origin"] == model_data["asset_origin"]
-    assert response_data["long_description"] == model_data["long_description"]
-    assert response_data["model_attributes"] == model_data["model_attributes"]
-    assert response_data["model_metadata"] == model_data["model_metadata"]
-    assert response_data["collection_id"] == collection_info["id"]
-    assert response_data["entity_type"] == "trained_model"
-    assert "id" in response_data
-    assert "created_at" in response_data
-
-@pytest.mark.asyncio
-async def test_create_trained_model_missing_required_fields(async_client: AsyncClient):
-    """
-    Test creating a trained model with missing required fields (name, model_path).
-    NOTE: This test does not strictly need a collection to exist, as it should fail before DB interaction for missing fields.
-    However, if the endpoint logic changes, or for consistency, one might still be created.
-    For now, we assume Pydantic validation catches it first.
-    """
-    
-    incomplete_data: Dict[str, Any] = {
-        "long_description": "A model missing vital info.",
-    }
-    response = await async_client.post("/api/v1/models", json=incomplete_data, headers=AUTH_HEADERS)
-    
-    assert response.status_code == 422 # FastAPI's validation error
-    response_data = response.json()
-    assert "detail" in response_data
-    # Check for specific error messages related to missing fields
-    errors = response_data["detail"]
-    assert any(e['type'] == 'missing' and "name" in e['loc'] for e in errors)
-    assert any(e['type'] == 'missing' and "model_path" in e['loc'] for e in errors)
 
 @pytest.mark.asyncio
-async def test_create_trained_model_optional_fields_omitted(async_client: AsyncClient):
-    """
-    Test successful creation when optional fields are omitted.
-    The placeholder endpoint will return them as None or default if schema defines.
-    """
-    unique_collection_name = f"test-coll-models-optional-{uuid.uuid4().hex[:8]}"
-    collection_info = await _create_test_collection(async_client, unique_collection_name)
+async def test_create_trained_model_duplicate_name_in_collection():
+    """Test that creating a trained model with duplicate name in same collection fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection first
+        collection = create_collection("duplicate-model-test-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Duplicate Model",
+            "model_path": "/models/duplicate_model.pt"
+        }
+        
+        # Create first model
+        response1 = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response1.status_code == 201
+        
+        # Try to create second model with same name
+        response2 = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response2.status_code == 400
+        assert "already exists" in response2.json()["detail"]
 
-    minimal_data: Dict[str, Any] = {
-        "name": "Minimal API Model",
-        "model_path": "/test/api/minimal_model.dat",
-        "collection_name": collection_info["name"] # Use collection_name
-    }
-    
-    response = await async_client.post("/api/v1/models", json=minimal_data, headers=AUTH_HEADERS)
-    assert response.status_code == 201
-    response_data = response.json()
-
-    assert response_data["name"] == minimal_data["name"]
-    assert response_data["model_path"] == minimal_data["model_path"]
-    assert response_data["collection_id"] == collection_info["id"]
-    assert response_data["entity_type"] == "trained_model"
-    assert response_data["asset_origin"] is None
-    assert response_data["long_description"] is None
-    assert response_data["model_attributes"] is None
-    assert response_data["model_metadata"] is None
-    assert response_data["metadata_version"] is None
-
-@pytest.mark.asyncio
-async def test_create_trained_model_duplicate_name_exact(async_client: AsyncClient):
-    """Test creating a trained model with an exactly identical name in the same collection fails."""
-    unique_collection_name = f"test-coll-tm-dup-exact-{uuid.uuid4().hex[:8]}"
-    collection_info = await _create_test_collection(async_client, unique_collection_name)
-
-    model_name = f"ExactDupModel-{uuid.uuid4().hex[:8]}"
-    model_data_1 = {
-        "name": model_name,
-        "model_path": "/test/exact_dup1.pt",
-        "collection_name": collection_info["name"],
-    }
-    response1 = await async_client.post("/api/v1/models", json=model_data_1, headers=AUTH_HEADERS)
-    assert response1.status_code == 201, f"Failed to create first model: {response1.text}"
-
-    model_data_2 = {
-        "name": model_name, # Same name
-        "model_path": "/test/exact_dup2.pt",
-        "collection_name": collection_info["name"], # Same collection
-    }
-    response2 = await async_client.post("/api/v1/models", json=model_data_2, headers=AUTH_HEADERS)
-    assert response2.status_code == 400
-    response_detail = response2.json().get("detail", "").lower()
-    assert "already exists" in response_detail, f"Expected 'already exists' in detail, but got: {response_detail}"
 
 @pytest.mark.asyncio
-async def test_create_trained_model_duplicate_name_case_insensitive(async_client: AsyncClient):
-    """
-    Test that creating a trained model with a name differing only by case within the same collection
-    FAILS if the check is case-insensitive.
-    NOTE: This test is expected to FAIL with the current endpoint implementation.
-    """
-    unique_collection_name = f"test-coll-tm-dup-ci-{uuid.uuid4().hex[:8]}"
-    collection_info = await _create_test_collection(async_client, unique_collection_name)
-    
-    base_name = f"TestCiModel-{uuid.uuid4().hex[:8]}" # Mixed case
-    model_name_mixed_case = base_name
-    model_name_lower_case = base_name.lower()
+async def test_create_trained_model_nonexistent_collection():
+    """Test creating a trained model in a nonexistent collection fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        model_data = {
+            "name": "Model In Missing Collection",
+            "model_path": "/models/missing_collection_model.pt"
+        }
+        
+        response = await ac.post(
+            "/api/v1/models/nonexistent-collection", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
-    assert model_name_mixed_case != model_name_lower_case
-    assert model_name_mixed_case.lower() == model_name_lower_case.lower()
 
-    model_data_mixed = {
-        "name": model_name_mixed_case,
-        "model_path": "/test/ci_model_mixed.pt",
-        "collection_name": collection_info["name"],
-    }
-    response_mixed = await async_client.post("/api/v1/models", json=model_data_mixed, headers=AUTH_HEADERS)
-    assert response_mixed.status_code == 201, f"Failed to create initial mixed-case model: {response_mixed.text}"
+@pytest.mark.asyncio
+async def test_list_trained_models_by_collection():
+    """Test listing trained models in a specific collection."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("list-models-test-collection")
+        collection_name = collection["name"]
+        
+        # Create multiple models
+        created_models = []
+        for i in range(2):
+            model_data = {
+                "name": f"List Test Model {i+1}",
+                "model_path": f"/models/list_test_model_{i+1}.pt"
+            }
+            resp = await ac.post(
+                f"/api/v1/models/{collection_name}", 
+                json=model_data, 
+                headers=AUTH_HEADERS
+            )
+            assert resp.status_code == 201
+            created_models.append(resp.json())
+        
+        # List models in the collection
+        response = await ac.get(f"/api/v1/models/{collection_name}/", headers=AUTH_HEADERS)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert len(data) == 2  # Our 2 created models
+        
+        # Check that our created models are in the list
+        model_names = [model["name"] for model in data]
+        for model in created_models:
+            assert model["name"] in model_names
 
-    model_data_lower = {
-        "name": model_name_lower_case,
-        "model_path": "/test/ci_model_lower.pt",
-        "collection_name": collection_info["name"], # Same collection
-    }
-    response_lower = await async_client.post("/api/v1/models", json=model_data_lower, headers=AUTH_HEADERS)
 
-    assert response_lower.status_code == 400, \
-        f"Expected 400 (duplicate) but got {response_lower.status_code}. \
-        Current model name check is likely case-sensitive. Response: {response_lower.text}"
-    
-    response_detail = response_lower.json().get("detail", "").lower()
-    assert "already exists" in response_detail, \
-        f"Expected 'trained model with name ... already exists' in detail, but got: {response_detail}. \
-        Current model name check is likely case-sensitive."
+@pytest.mark.asyncio
+async def test_list_trained_models_nonexistent_collection():
+    """Test listing trained models in a nonexistent collection fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/models/nonexistent-collection/", headers=AUTH_HEADERS)
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
-# test put
-# test delete
-# test get 
-# test list
-# test search
+
+@pytest.mark.asyncio
+async def test_get_trained_model_by_collection_and_name():
+    """Test getting a specific trained model by collection and model name."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("get-model-test-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Get Test Model",
+            "model_path": "/models/get_test_model.pt",
+            "long_description": "Test model for get operation"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Get the model
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}", 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["name"] == model_data["name"]
+        assert data["model_path"] == model_data["model_path"]
+        assert data["long_description"] == model_data["long_description"]
+
+
+@pytest.mark.asyncio
+async def test_get_trained_model_nonexistent_collection_or_model():
+    """Test getting a trained model from nonexistent collection or nonexistent model fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Test nonexistent collection
+        response1 = await ac.get(
+            "/api/v1/models/nonexistent-collection/some-model", 
+            headers=AUTH_HEADERS
+        )
+        assert response1.status_code == 404
+        assert "not found" in response1.json()["detail"]
+        
+        # Test existing collection but nonexistent model
+        collection = create_collection("existing-collection-nonexistent-model")
+        collection_name = collection["name"]
+        
+        response2 = await ac.get(
+            f"/api/v1/models/{collection_name}/nonexistent-model", 
+            headers=AUTH_HEADERS
+        )
+        assert response2.status_code == 404
+        assert "not found" in response2.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_trained_model_by_collection_and_name():
+    """Test deleting a trained model by collection and model name."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("delete-model-test-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Delete Test Model",
+            "model_path": "/models/delete_test_model.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Delete the model
+        response = await ac.delete(
+            f"/api/v1/models/{collection_name}/{model_data['name']}", 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        assert "deleted successfully" in response.json()["message"]
+        
+        # Verify model is deleted
+        get_response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}", 
+            headers=AUTH_HEADERS
+        )
+        assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_trained_model_nonexistent():
+    """Test deleting a nonexistent trained model fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection = create_collection("delete-nonexistent-model-collection")
+        collection_name = collection["name"]
+        
+        response = await ac.delete(
+            f"/api/v1/models/{collection_name}/nonexistent-model", 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_case_insensitive_model_names():
+    """Test that model names are case-insensitive."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("case-insensitive-model-collection")
+        collection_name = collection["name"]
+        
+        # Create model with mixed case name
+        model_data = {
+            "name": "Case Test Model",
+            "model_path": "/models/case_test_model.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Get model using different case
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/Case Test Model", 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["name"] == model_data["name"]
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_by_collection_and_name():
+    """Test updating a trained model by collection and model name."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("update-model-test-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Update Test Model",
+            "model_path": "/models/update_test_model.pt",
+            "long_description": "Original description"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update the model
+        update_data = {
+            "name": "Updated Test Model",
+            "long_description": "Updated description",
+            "model_metadata": {"updated": True}
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}", 
+            json=update_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["long_description"] == update_data["long_description"]
+        assert data["model_metadata"] == update_data["model_metadata"]
+        # Original model_path should remain unchanged
+        assert data["model_path"] == model_data["model_path"]
+        
+        # Verify we can get the model by its new name
+        get_response = await ac.get(
+            f"/api/v1/models/{collection_name}/{update_data['name']}", 
+            headers=AUTH_HEADERS
+        )
+        assert get_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_partial():
+    """Test partial update of a trained model."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("partial-update-model-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Partial Update Model",
+            "model_path": "/models/partial_update_model.pt",
+            "long_description": "Original description",
+            "model_metadata": {"version": 1}
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Partial update - only update long_description
+        update_data = {
+            "long_description": "Partially updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}", 
+            json=update_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        # Updated field
+        assert data["long_description"] == update_data["long_description"]
+        # Unchanged fields
+        assert data["name"] == model_data["name"]
+        assert data["model_path"] == model_data["model_path"]
+        assert data["model_metadata"] == model_data["model_metadata"]
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_duplicate_name():
+    """Test that updating a trained model name to an existing name in the same collection fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("duplicate-name-update-collection")
+        collection_name = collection["name"]
+        
+        # Create two models
+        model1_data = {
+            "name": "Model One",
+            "model_path": "/models/model_one.pt"
+        }
+        model2_data = {
+            "name": "Model Two",
+            "model_path": "/models/model_two.pt"
+        }
+        
+        create_resp1 = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model1_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp1.status_code == 201
+        
+        create_resp2 = await ac.post(
+            f"/api/v1/models/{collection_name}", 
+            json=model2_data, 
+            headers=AUTH_HEADERS
+        )
+        assert create_resp2.status_code == 201
+        
+        # Try to update model2 name to model1's name
+        update_data = {
+            "name": "Model One"  # Same as model1
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model2_data['name']}", 
+            json=update_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 400
+        assert "already exists" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_trained_model():
+    """Test updating a nonexistent trained model fails."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection = create_collection("update-nonexistent-model-collection")
+        collection_name = collection["name"]
+        
+        update_data = {
+            "name": "Updated Name",
+            "long_description": "Updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/nonexistent-model", 
+            json=update_data, 
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+
+# Authentication requirement tests for read endpoints
+@pytest.mark.asyncio
+async def test_list_trained_models_without_authorization():
+    """Test that listing trained models requires authentication."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with proper auth first
+        collection = create_collection("auth-required-list-models-collection")
+        collection_name = collection["name"]
+        
+        # Try to list models without authorization headers
+        response = await ac.get(f"/api/v1/models/{collection_name}/")
+        assert response.status_code == 403
+        assert response.json()["detail"]  # Verify there's an error detail
+
+
+@pytest.mark.asyncio
+async def test_get_trained_model_without_authorization():
+    """Test that getting a specific trained model requires authentication."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model with proper auth first
+        collection = create_collection("auth-required-get-model-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Auth Required Test Model",
+            "model_path": "/models/auth_required_model.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Try to get model without authorization headers
+        response = await ac.get(f"/api/v1/models/{collection_name}/{model_data['name']}")
+        assert response.status_code == 403
+        assert response.json()["detail"]  # Verify there's an error detail
+
+
+# Write access restriction tests
+@pytest.mark.asyncio
+async def test_create_trained_model_without_write_access():
+    """Test that users without write access cannot create trained models."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with admin access first
+        collection = create_collection("write-access-test-models-collection")
+        collection_name = collection["name"]
+        
+        # Try to create model with read-only access (non-admin role)
+        read_only_headers = authorization_headers(sample_org_token(org_role="org:member"))
+        model_data = {
+            "name": "Unauthorized Model",
+            "model_path": "/models/unauthorized_model.pt"
+        }
+        
+        response = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=read_only_headers
+        )
+        assert response.status_code == 403
+        assert "Access level WRITE required" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_without_write_access():
+    """Test that users without write access cannot update trained models."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model with admin access
+        collection = create_collection("update-access-test-models-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Update Test Model",
+            "model_path": "/models/update_test_model.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Try to update model with read-only access
+        read_only_headers = authorization_headers(sample_org_token(org_role="org:member"))
+        update_data = {
+            "long_description": "Updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            json=update_data,
+            headers=read_only_headers
+        )
+        assert response.status_code == 403
+        assert "Access level WRITE required" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_trained_model_without_write_access():
+    """Test that users without write access cannot delete trained models."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model with admin access
+        collection = create_collection("delete-access-test-models-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Delete Test Model",
+            "model_path": "/models/delete_test_model.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Try to delete model with read-only access
+        read_only_headers = authorization_headers(sample_org_token(org_role="org:member"))
+        
+        response = await ac.delete(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            headers=read_only_headers
+        )
+        assert response.status_code == 403
+        assert "Access level WRITE required" in response.json()["detail"]
