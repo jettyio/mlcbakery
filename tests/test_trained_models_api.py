@@ -541,6 +541,120 @@ async def test_create_trained_model_without_write_access():
         assert "Access level WRITE required" in response.json()["detail"]
 
 
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_trained_models_by_collection_with_pagination():
+    """Test listing trained models with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple models
+        collection = create_collection("pagination-test-models-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 models
+        for i in range(3):
+            model_data = {
+                "name": f"Pagination Model {i+1}",
+                "model_path": f"/models/pagination_model_{i+1}.pt"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/models/{collection_name}",
+                json=model_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_name_same_case():
+    """Test updating model name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("same-name-update-models-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Same Name Model",
+            "model_path": "/models/same_name.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Model",
+            "long_description": "Updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["long_description"] == update_data["long_description"]
+
+
+@pytest.mark.asyncio
+async def test_create_trained_model_with_all_optional_fields():
+    """Test creating model with comprehensive field coverage."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("all-fields-models-collection")
+        collection_name = collection["name"]
+        
+        # Test with all optional fields
+        comprehensive_model_data = {
+            "name": "Comprehensive Model",
+            "model_path": "/models/comprehensive.pt",
+            "metadata_version": "2.0.0",
+            "model_metadata": {"accuracy": 0.95, "framework": "pytorch"},
+            "asset_origin": "s3://bucket/model.pt",
+            "long_description": "A comprehensive model for testing",
+            "model_attributes": {"input_size": 224, "num_classes": 1000}
+        }
+        
+        response = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=comprehensive_model_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == comprehensive_model_data["name"]
+        assert data["model_metadata"] == comprehensive_model_data["model_metadata"]
+        assert data["model_attributes"] == comprehensive_model_data["model_attributes"]
+        assert data["entity_type"] == "trained_model"
+
+
 @pytest.mark.asyncio
 async def test_update_trained_model_without_write_access():
     """Test that users without write access cannot update trained models."""
@@ -577,6 +691,120 @@ async def test_update_trained_model_without_write_access():
         assert "Access level WRITE required" in response.json()["detail"]
 
 
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_trained_models_by_collection_with_pagination():
+    """Test listing trained models with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple models
+        collection = create_collection("pagination-test-models-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 models
+        for i in range(3):
+            model_data = {
+                "name": f"Pagination Model {i+1}",
+                "model_path": f"/models/pagination_model_{i+1}.pt"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/models/{collection_name}",
+                json=model_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_name_same_case():
+    """Test updating model name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("same-name-update-models-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Same Name Model",
+            "model_path": "/models/same_name.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Model",
+            "long_description": "Updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["long_description"] == update_data["long_description"]
+
+
+@pytest.mark.asyncio
+async def test_create_trained_model_with_all_optional_fields():
+    """Test creating model with comprehensive field coverage."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("all-fields-models-collection")
+        collection_name = collection["name"]
+        
+        # Test with all optional fields
+        comprehensive_model_data = {
+            "name": "Comprehensive Model",
+            "model_path": "/models/comprehensive.pt",
+            "metadata_version": "2.0.0",
+            "model_metadata": {"accuracy": 0.95, "framework": "pytorch"},
+            "asset_origin": "s3://bucket/model.pt",
+            "long_description": "A comprehensive model for testing",
+            "model_attributes": {"input_size": 224, "num_classes": 1000}
+        }
+        
+        response = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=comprehensive_model_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == comprehensive_model_data["name"]
+        assert data["model_metadata"] == comprehensive_model_data["model_metadata"]
+        assert data["model_attributes"] == comprehensive_model_data["model_attributes"]
+        assert data["entity_type"] == "trained_model"
+
+
 @pytest.mark.asyncio
 async def test_delete_trained_model_without_write_access():
     """Test that users without write access cannot delete trained models."""
@@ -607,3 +835,117 @@ async def test_delete_trained_model_without_write_access():
         )
         assert response.status_code == 403
         assert "Access level WRITE required" in response.json()["detail"]
+
+
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_trained_models_by_collection_with_pagination():
+    """Test listing trained models with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple models
+        collection = create_collection("pagination-test-models-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 models
+        for i in range(3):
+            model_data = {
+                "name": f"Pagination Model {i+1}",
+                "model_path": f"/models/pagination_model_{i+1}.pt"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/models/{collection_name}",
+                json=model_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_trained_model_name_same_case():
+    """Test updating model name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("same-name-update-models-collection")
+        collection_name = collection["name"]
+        
+        model_data = {
+            "name": "Same Name Model",
+            "model_path": "/models/same_name.pt"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Model",
+            "long_description": "Updated description"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["long_description"] == update_data["long_description"]
+
+
+@pytest.mark.asyncio
+async def test_create_trained_model_with_all_optional_fields():
+    """Test creating model with comprehensive field coverage."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection = create_collection("all-fields-models-collection")
+        collection_name = collection["name"]
+        
+        # Test with all optional fields
+        comprehensive_model_data = {
+            "name": "Comprehensive Model",
+            "model_path": "/models/comprehensive.pt",
+            "metadata_version": "2.0.0",
+            "model_metadata": {"accuracy": 0.95, "framework": "pytorch"},
+            "asset_origin": "s3://bucket/model.pt",
+            "long_description": "A comprehensive model for testing",
+            "model_attributes": {"input_size": 224, "num_classes": 1000}
+        }
+        
+        response = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=comprehensive_model_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == comprehensive_model_data["name"]
+        assert data["model_metadata"] == comprehensive_model_data["model_metadata"]
+        assert data["model_attributes"] == comprehensive_model_data["model_attributes"]
+        assert data["entity_type"] == "trained_model"

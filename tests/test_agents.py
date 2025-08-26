@@ -546,6 +546,88 @@ async def test_create_agent_without_write_access():
         assert "Access level WRITE required" in response.json()["detail"]
 
 
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_with_pagination():
+    """Test listing agents with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple agents
+        collection = create_collection("pagination-test-agents-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 agents
+        for i in range(3):
+            agent_data = {
+                "name": f"Pagination Agent {i+1}",
+                "type": "human"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/agents/{collection_name}",
+                json=agent_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # Should have owner agent + our 2 paginated agents, but limited to 2 total
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_agent_name_same_case():
+    """Test updating agent name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and agent
+        collection = create_collection("same-name-update-agents-collection")
+        collection_name = collection["name"]
+        
+        agent_data = {
+            "name": "Same Name Agent",
+            "type": "human"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/agents/{collection_name}",
+            json=agent_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Agent",
+            "type": "bot"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/agents/{collection_name}/{agent_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["type"] == update_data["type"]
+
+
 @pytest.mark.asyncio
 async def test_update_agent_without_write_access():
     """Test that users without write access cannot update agents."""
@@ -582,6 +664,88 @@ async def test_update_agent_without_write_access():
         assert "Access level WRITE required" in response.json()["detail"]
 
 
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_with_pagination():
+    """Test listing agents with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple agents
+        collection = create_collection("pagination-test-agents-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 agents
+        for i in range(3):
+            agent_data = {
+                "name": f"Pagination Agent {i+1}",
+                "type": "human"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/agents/{collection_name}",
+                json=agent_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # Should have owner agent + our 2 paginated agents, but limited to 2 total
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_agent_name_same_case():
+    """Test updating agent name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and agent
+        collection = create_collection("same-name-update-agents-collection")
+        collection_name = collection["name"]
+        
+        agent_data = {
+            "name": "Same Name Agent",
+            "type": "human"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/agents/{collection_name}",
+            json=agent_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Agent",
+            "type": "bot"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/agents/{collection_name}/{agent_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["type"] == update_data["type"]
+
+
 @pytest.mark.asyncio
 async def test_delete_agent_without_write_access():
     """Test that users without write access cannot delete agents."""
@@ -612,3 +776,85 @@ async def test_delete_agent_without_write_access():
         )
         assert response.status_code == 403
         assert "Access level WRITE required" in response.json()["detail"]
+
+
+# Additional edge case tests for better coverage
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_with_pagination():
+    """Test listing agents with pagination parameters."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection with multiple agents
+        collection = create_collection("pagination-test-agents-collection")
+        collection_name = collection["name"]
+        
+        # Create 3 agents
+        for i in range(3):
+            agent_data = {
+                "name": f"Pagination Agent {i+1}",
+                "type": "human"
+            }
+            create_resp = await ac.post(
+                f"/api/v1/agents/{collection_name}",
+                json=agent_data,
+                headers=AUTH_HEADERS
+            )
+            assert create_resp.status_code == 201
+        
+        # Test pagination with limit
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # Should have owner agent + our 2 paginated agents, but limited to 2 total
+        assert len(data) == 2
+        
+        # Test pagination with skip
+        response = await ac.get(
+            f"/api/v1/agents/{collection_name}/?skip=1&limit=2",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_agent_name_same_case():
+    """Test updating agent name to the same name (same case) should succeed."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and agent
+        collection = create_collection("same-name-update-agents-collection")
+        collection_name = collection["name"]
+        
+        agent_data = {
+            "name": "Same Name Agent",
+            "type": "human"
+        }
+        
+        create_resp = await ac.post(
+            f"/api/v1/agents/{collection_name}",
+            json=agent_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+        
+        # Update with the exact same name should succeed
+        update_data = {
+            "name": "Same Name Agent",
+            "type": "bot"
+        }
+        
+        response = await ac.put(
+            f"/api/v1/agents/{collection_name}/{agent_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
+        assert data["type"] == update_data["type"]
