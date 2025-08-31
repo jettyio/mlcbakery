@@ -1,4 +1,4 @@
-from pydantic import ConfigDict
+from pydantic import ConfigDict, BaseModel
 from typing import Optional, List
 from datetime import datetime
 
@@ -21,10 +21,9 @@ class TrainedModelBase(EntityBase):
 
 
 class TrainedModelCreate(EntityBase):
-    """Schema for creating a new trained model."""
+    """Schema for creating trained models using collection_name from URL path."""
     name: str
     model_path: str
-    collection_name: str
     metadata_version: Optional[str] = None
     model_metadata: Optional[dict] = None
     asset_origin: Optional[str] = None
@@ -33,8 +32,8 @@ class TrainedModelCreate(EntityBase):
     entity_type: str = "trained_model"
 
 
-class TrainedModelUpdate(TrainedModelBase):
-    """Schema for updating a trained model."""
+class TrainedModelUpdate(BaseModel):
+    """Schema for updating trained models."""
     name: Optional[str] = None
     model_path: Optional[str] = None
     metadata_version: Optional[str] = None

@@ -24,8 +24,6 @@ router = APIRouter()
 # Helper utilities
 # --------------------------------------------
 
-
-
 async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSession) -> Task | None:
     stmt = (
         select(Task)
@@ -48,8 +46,6 @@ async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSess
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
-
-
 
 # --------------------------------------------
 # Search
@@ -74,135 +70,14 @@ async def search_tasks(
 
     return await search.run_search_query(search_parameters, ts)
 
-
-# --------------------------------------------
-# CRUD Endpoints
-# --------------------------------------------
-@router.post(
-    "/tasks",
-    response_model=TaskResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new Task",
-    tags=["Tasks"],
-)
-async def create_task(
-    task_in: TaskCreate,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    """Create a new workflow Task."""
-    # Find collection by name and verify ownership
-    stmt_collection = select(Collection).where(Collection.name == task_in.collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
-
-    if not collection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Collection with name '{task_in.collection_name}' not found",
-        )
-
-    # Duplicate check (case-insensitive)
-    stmt_check = (
-        select(Task)
-        .where(func.lower(Task.name) == func.lower(task_in.name))
-        .where(Task.collection_id == collection.id)
-    )
-    result_check = await db.execute(stmt_check)
-    if result_check.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Task with name '{task_in.name}' already exists in collection '{collection.name}'",
-        )
-
-    task_data = task_in.model_dump(exclude={"collection_name"})
-    task_data["collection_id"] = collection.id
-
-    db_task = Task(**task_data)
-    db.add(db_task)
-    await db.commit()
-    await db.refresh(db_task)
-
-    return db_task
-
-
-@router.put(
-    "/tasks/{task_id}",
-    response_model=TaskResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Update a Task",
-    tags=["Tasks"],
-)
-async def update_task(
-    task_id: int,
-    task_update: TaskUpdate,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    # Get task and verify ownership
-    stmt = (
-        select(Task)
-        .join(Collection, Task.collection_id == Collection.id)
-        .where(
-            Task.id == task_id,
-        )
-    )
-    stmt = apply_auth_to_stmt(stmt, auth)
-    result = await db.execute(stmt)
-    db_task = result.scalar_one_or_none()
-
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task with id {task_id} not found",
-        )
-
-    if "name" in task_update.model_dump(exclude_unset=True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Updating the task name is not allowed.",
-        )
-
-    if "collection_id" in task_update.model_dump(exclude_unset=True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Updating the task collection is not allowed.",
-        )
-
-    update_data = task_update.model_dump(exclude_unset=True)
-
-    for field, value in update_data.items():
-        setattr(db_task, field, value)
-
-    await db.commit()
-    await db.refresh(db_task)
-
-    return db_task
-
-
-@router.delete("/tasks/{collection_name}/{task_name}", status_code=200)
-async def delete_task_by_name(
-    collection_name: str,
-    task_name: str,
-    db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_auth_with_write_access),
-):
-    """Delete a task by collection name and task name (async)."""
-    task = await _find_task_by_name(collection_name, task_name, db)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    from mlcbakery.utils import delete_entity_with_versions
-    await delete_entity_with_versions(task, db)
-    await db.commit()
-    return {"message": "Task deleted successfully"}
-
+# GET endpoints first
 
 @router.get(
     "/tasks/",
     response_model=List[TaskListResponse],
-    summary="List Tasks",
+    summary="List All Tasks",
     tags=["Tasks"],
+    operation_id="list_all_tasks",
 )
 async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -210,6 +85,7 @@ async def list_tasks(
     db: AsyncSession = Depends(get_async_db),
     auth = Depends(verify_auth),
 ):
+    """List all tasks accessible to the user."""
     # Admin users can see all tasks, regular users only see their own
     stmt = (
         select(Task)
@@ -245,6 +121,7 @@ async def list_tasks(
     response_model=List[TaskListResponse],
     summary="List Tasks by Collection",
     tags=["Tasks"],
+    operation_id="list_tasks_by_collection",
 )
 async def list_tasks_by_collection(
     collection_name: str,
@@ -299,17 +176,186 @@ async def list_tasks_by_collection(
     response_model=TaskResponse,
     summary="Get a Task by Collection and Name",
     tags=["Tasks"],
+    operation_id="get_task_by_name",
 )
 async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    _ = Depends(verify_auth),
+    auth = Depends(verify_auth),
 ):
+    """
+    Get a specific task by its collection name and task name.
+
+    - **collection_name**: Name of the collection the task belongs to.
+    - **task_name**: Name of the task.
+    """
+    # First verify the collection exists and user has access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task '{task_name}' in collection '{collection_name}' not found",
         )
-    return db_task 
+    return db_task
+
+# POST endpoints
+
+@router.post(
+    "/tasks/{collection_name}",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new Task by Collection Name",
+    tags=["Tasks"],
+    operation_id="create_task_by_name",
+)
+async def create_task_by_name(
+    collection_name: str,
+    task_in: TaskCreate,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Create a new workflow task in the database using collection name.
+
+    - **collection_name**: Name of the collection this task belongs to (from URL path).
+    - **name**: Name of the task (required)
+    - **workflow**: Workflow definition (required)
+    - **version**: Version of the task (optional)
+    - **description**: Description of the task (optional)
+    - **has_file_uploads**: Whether the task has file uploads (default: false)
+    """
+    # Find collection by name and verify ownership
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    # Duplicate check (case-insensitive)
+    stmt_check = (
+        select(Task)
+        .where(func.lower(Task.name) == func.lower(task_in.name))
+        .where(Task.collection_id == collection.id)
+    )
+    result_check = await db.execute(stmt_check)
+    if result_check.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Task with name '{task_in.name}' already exists in collection '{collection.name}'",
+        )
+
+    task_data = task_in.model_dump(exclude={"collection_name"})
+    task_data["collection_id"] = collection.id
+
+    db_task = Task(**task_data)
+    db.add(db_task)
+    await db.commit()
+    await db.refresh(db_task)
+
+    return db_task
+
+# PUT endpoints
+
+@router.put(
+    "/tasks/{collection_name}/{task_name}",
+    response_model=TaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update a Task by Collection and Task Name",
+    tags=["Tasks"],
+    operation_id="update_task_by_name",
+)
+async def update_task_by_name(
+    collection_name: str,
+    task_name: str,
+    task_update: TaskUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Update an existing task by its collection name and task name.
+
+    - **collection_name**: Name of the collection the task belongs to.
+    - **task_name**: Name of the task to update.
+    - **name**: New name for the task (optional).
+    - **workflow**: New workflow definition (optional).
+    - **version**: New version string (optional).
+    - **description**: New description (optional).
+    - **has_file_uploads**: Whether the task has file uploads (optional).
+    
+    Note: The task name can be updated, but it cannot duplicate an existing task name in the same collection.
+    """
+    db_task = await _find_task_by_name(collection_name, task_name, db)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_name}' in collection '{collection_name}' not found"
+        )
+
+    # If updating name, check for duplicates (case-insensitive)
+    update_data = task_update.model_dump(exclude_unset=True)
+    if "name" in update_data and update_data["name"].lower() != db_task.name.lower():
+        stmt_check = (
+            select(Task)
+            .where(func.lower(Task.name) == func.lower(update_data["name"]))
+            .where(Task.collection_id == db_task.collection_id)
+            .where(Task.id != db_task.id)  # Exclude current task
+        )
+        result_check = await db.execute(stmt_check)
+        if result_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Task with name '{update_data['name']}' already exists in collection '{collection_name}'"
+            )
+
+    for field, value in update_data.items():
+        setattr(db_task, field, value)
+
+    await db.commit()
+    await db.refresh(db_task)
+    return db_task
+
+# DELETE endpoints
+
+@router.delete(
+    "/tasks/{collection_name}/{task_name}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a Task by Collection and Task Name",
+    tags=["Tasks"],
+    operation_id="delete_task_by_name",
+)
+async def delete_task_by_name(
+    collection_name: str,
+    task_name: str,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Delete a task by its collection name and task name.
+
+    - **collection_name**: Name of the collection the task belongs to.
+    - **task_name**: Name of the task to delete.
+    """
+    task = await _find_task_by_name(collection_name, task_name, db)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(task, db)
+    await db.commit()
+    return {"message": "Task deleted successfully"}

@@ -18,21 +18,17 @@ class TaskBase(EntityBase):
 
 
 class TaskCreate(BaseModel):
-    """Schema for creating a Task via API request."""
-
-    # For creation, the user provides collection name rather than ID to mimic datasets/trained_models convention.
+    """Schema for creating tasks using collection_name from URL path."""
     name: str
     workflow: dict
-    collection_name: str
     version: Optional[str] = None
     description: Optional[str] = None
     has_file_uploads: bool = False
     entity_type: str = "task"
 
 
-class TaskUpdate(TaskBase):
-    """Schema for updating a Task (name & collection are immutable)."""
-
+class TaskUpdate(BaseModel):
+    """Schema for updating tasks."""
     name: Optional[str] = None
     workflow: Optional[dict] = None
     version: Optional[str] = None

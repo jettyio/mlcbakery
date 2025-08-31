@@ -218,7 +218,7 @@ async def test_list_collections(async_client: AsyncClient):
     response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2")))
 
     # Now list all collections
-    response = await async_client.get("/api/v1/list-collections/", headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1")))
+    response = await async_client.get("/api/v1/collections/", headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1")))
 
     assert response.status_code == 200
     response_data = response.json()
@@ -980,7 +980,7 @@ async def test_list_collections_with_admin_token(async_client, admin_token_auth_
     await async_client.post(
         "/api/v1/collections/", json=collection_data, headers=admin_token_auth_headers
     )
-    response = await async_client.get("/api/v1/list-collections/", headers=admin_token_auth_headers)
+    response = await async_client.get("/api/v1/collections/", headers=admin_token_auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)

@@ -46,6 +46,7 @@ async def _find_model_by_name(collection_name: str, model_name: str, db: AsyncSe
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
+# Search endpoint (kept separate as it's global)
 @router.get("/models/search")
 async def search_models(
     q: str = Query(..., min_length=1, description="Search query term"),
@@ -70,201 +71,14 @@ async def search_models(
 
     return await search.run_search_query(search_parameters, ts)
 
-@router.post(
-    "/models",
-    response_model=TrainedModelResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new Trained Model",
-    tags=["Trained Models"],
-)
-async def create_trained_model(
-    trained_model_in: TrainedModelCreate,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    """
-    Create a new trained model in the database.
-
-    - **name**: Name of the model (required)
-    - **model_path**: Path to the model artifact (required)
-    - **collection_name**: Name of the collection this model belongs to (required).
-    - **metadata_version**: Optional version string for the metadata.
-    - **model_metadata**: Optional dictionary for arbitrary model metadata.
-    - **asset_origin**: Optional string indicating the origin of the model asset (e.g., S3 URI).
-    - **long_description**: Optional detailed description of the model.
-    - **model_attributes**: Optional dictionary for specific model attributes (e.g., input shape, output classes).
-    """
-    # Find collection by name and verify access
-    stmt_collection = select(Collection).where(Collection.name == trained_model_in.collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
-
-    if not collection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Collection with name '{trained_model_in.collection_name}' not found",
-        )
-
-    # Check if model with the same name already exists in the collection (case-insensitive)
-    stmt_check = (
-        select(TrainedModel)
-        .where(func.lower(Entity.name) == func.lower(trained_model_in.name))
-        .where(Entity.collection_id == collection.id)
-    )
-    result_check = await db.execute(stmt_check)
-    if result_check.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Trained model with name '{trained_model_in.name}' already exists in collection '{collection.name}'"
-        )
-    
-    # Prepare model data for creation, explicitly setting collection_id
-    model_data_for_db = trained_model_in.model_dump(exclude={"collection_name"})
-    model_data_for_db["collection_id"] = collection.id
-
-    db_trained_model = TrainedModel(**model_data_for_db)
-    db.add(db_trained_model)
-    await db.commit()
-    await db.refresh(db_trained_model)
-
-    return db_trained_model
-
-
-@router.put(
-    "/models/{model_id}",
-    response_model=TrainedModelResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Update a Trained Model",
-    tags=["Trained Models"],
-)
-async def update_trained_model(
-    model_id: int,
-    trained_model_in: TrainedModelUpdate,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    """
-    Update an existing trained model in the database.
-
-    - **model_id**: ID of the model to update.
-    - **model_path**: Path to the model artifact.
-    - **metadata_version**: Optional version string for the metadata.
-    - **model_metadata**: Optional dictionary for arbitrary model metadata.
-    - **asset_origin**: Optional string indicating the origin of the model asset (e.g., S3 URI).
-    - **long_description**: Optional detailed description of the model.
-    - **model_attributes**: Optional dictionary for specific model attributes.
-
-    The model name and collection cannot be changed.
-    """
-    
-    # Get model and verify access
-    stmt = (
-        select(TrainedModel)
-        .join(Collection, TrainedModel.collection_id == Collection.id)
-        .where(TrainedModel.id == model_id)
-    )
-    stmt = apply_auth_to_stmt(stmt, auth)
-    result = await db.execute(stmt)
-    db_trained_model = result.scalar_one_or_none()
-
-    
-    if "name" in trained_model_in.model_dump(exclude_unset=True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Updating the model name is not allowed.",
-        )
-
-    if "collection_id" in trained_model_in.model_dump(exclude_unset=True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Updating the model collection is not allowed.",
-        )
-
-    update_data = trained_model_in.model_dump(exclude_unset=True)
-
-    for field, value in update_data.items():
-        setattr(db_trained_model, field, value)
-
-    await db.commit()
-    await db.refresh(db_trained_model)
-    return db_trained_model
-
-
-@router.delete(
-    "/models/{model_id}",
-    status_code=status.HTTP_200_OK,
-    summary="Delete a Trained Model",
-    tags=["Trained Models"],
-)
-async def delete_trained_model(
-    model_id: int,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    """
-    Delete a trained model from the database.
-
-    - **model_id**: ID of the model to delete.
-    """
-    # Get model and verify access
-    stmt = (
-        select(TrainedModel)
-        .join(Collection, TrainedModel.collection_id == Collection.id)
-        .where(TrainedModel.id == model_id)
-    )
-    stmt = apply_auth_to_stmt(stmt, auth)
-    result = await db.execute(stmt)
-    db_trained_model = result.scalar_one_or_none()
-
-    if not db_trained_model:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Trained model with id {model_id} not found",
-        )
-
-    from mlcbakery.utils import delete_entity_with_versions
-    await delete_entity_with_versions(db_trained_model, db)
-    await db.commit()
-    return {"message": "Trained model deleted successfully"}
-
-
-@router.delete(
-    "/models/{collection_name}/{model_name}",
-    status_code=status.HTTP_200_OK,
-    summary="Delete a Trained Model by Collection and Model Name",
-    tags=["Trained Models"],
-)
-async def delete_trained_model_by_name(
-    collection_name: str,
-    model_name: str,
-    db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
-):
-    """
-    Delete a trained model by its collection name and model name.
-
-    - **collection_name**: Name of the collection the model belongs to.
-    - **model_name**: Name of the model to delete.
-    """
-    trained_model = await _find_model_by_name(collection_name, model_name, db)
-    if not trained_model:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trained model not found"
-        )
-
-    from mlcbakery.utils import delete_entity_with_versions
-    await delete_entity_with_versions(trained_model, db)
-    await db.commit()
-    return {"message": "Trained model deleted successfully"}
-
+# GET endpoints first
 
 @router.get(
     "/models/",
     response_model=List[TrainedModelListResponse],
-    summary="List Trained Models",
+    summary="List All Trained Models",
     tags=["Trained Models"],
+    operation_id="list_all_trained_models",
 )
 async def list_trained_models(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -310,6 +124,7 @@ async def list_trained_models(
     response_model=List[TrainedModelListResponse],
     summary="List Trained Models by Collection",
     tags=["Trained Models"],
+    operation_id="list_trained_models_by_collection",
 )
 async def list_trained_models_by_collection(
     collection_name: str,
@@ -368,6 +183,7 @@ async def list_trained_models_by_collection(
     response_model=TrainedModelResponse,
     summary="Get a Trained Model by Collection and Model Name",
     tags=["Trained Models"],
+    operation_id="get_trained_model_by_name",
 )
 async def get_trained_model_by_name(
     collection_name: str, 
@@ -401,3 +217,161 @@ async def get_trained_model_by_name(
         )
     return db_trained_model
 
+# POST endpoints
+
+@router.post(
+    "/models/{collection_name}",
+    response_model=TrainedModelResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new Trained Model by Collection Name",
+    tags=["Trained Models"],
+    operation_id="create_trained_model_by_name",
+)
+async def create_trained_model_by_name(
+    collection_name: str,
+    trained_model_in: TrainedModelCreate,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Create a new trained model in the database using collection name.
+
+    - **collection_name**: Name of the collection this model belongs to (from URL path).
+    - **name**: Name of the model (required)
+    - **model_path**: Path to the model artifact (required)
+    - **metadata_version**: Optional version string for the metadata.
+    - **model_metadata**: Optional dictionary for arbitrary model metadata.
+    - **asset_origin**: Optional string indicating the origin of the model asset (e.g., S3 URI).
+    - **long_description**: Optional detailed description of the model.
+    - **model_attributes**: Optional dictionary for specific model attributes (e.g., input shape, output classes).
+    """
+    # Find collection by name and verify access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    # Check if model with the same name already exists in the collection (case-insensitive)
+    stmt_check = (
+        select(TrainedModel)
+        .where(func.lower(Entity.name) == func.lower(trained_model_in.name))
+        .where(Entity.collection_id == collection.id)
+    )
+    result_check = await db.execute(stmt_check)
+    if result_check.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Trained model with name '{trained_model_in.name}' already exists in collection '{collection.name}'"
+        )
+    
+    # Prepare model data for creation, explicitly setting collection_id
+    model_data_for_db = trained_model_in.model_dump(exclude={"collection_name"})
+    model_data_for_db["collection_id"] = collection.id
+
+    db_trained_model = TrainedModel(**model_data_for_db)
+    db.add(db_trained_model)
+    await db.commit()
+    await db.refresh(db_trained_model)
+
+    return db_trained_model
+
+# PUT endpoints
+
+@router.put(
+    "/models/{collection_name}/{model_name}",
+    response_model=TrainedModelResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update a Trained Model by Collection and Model Name",
+    tags=["Trained Models"],
+    operation_id="update_trained_model_by_name",
+)
+async def update_trained_model_by_name(
+    collection_name: str,
+    model_name: str,
+    trained_model_in: TrainedModelUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Update an existing trained model by its collection name and model name.
+
+    - **collection_name**: Name of the collection the model belongs to.
+    - **model_name**: Name of the model to update.
+    - **name**: New name for the model (optional).
+    - **model_path**: Path to the model artifact (optional).
+    - **metadata_version**: Optional version string for the metadata.
+    - **model_metadata**: Optional dictionary for arbitrary model metadata.
+    - **asset_origin**: Optional string indicating the origin of the model asset.
+    - **long_description**: Optional detailed description of the model.
+    - **model_attributes**: Optional dictionary for specific model attributes.
+    
+    Note: The model name can be updated, but it cannot duplicate an existing model name in the same collection.
+    """
+    db_trained_model = await _find_model_by_name(collection_name, model_name, db)
+    if not db_trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trained model '{model_name}' in collection '{collection_name}' not found"
+        )
+
+    # If updating name, check for duplicates (case-insensitive)
+    update_data = trained_model_in.model_dump(exclude_unset=True)
+    if "name" in update_data and update_data["name"].lower() != db_trained_model.name.lower():
+        stmt_check = (
+            select(TrainedModel)
+            .where(func.lower(Entity.name) == func.lower(update_data["name"]))
+            .where(Entity.collection_id == db_trained_model.collection_id)
+            .where(TrainedModel.id != db_trained_model.id)  # Exclude current model
+        )
+        result_check = await db.execute(stmt_check)
+        if result_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Trained model with name '{update_data['name']}' already exists in collection '{collection_name}'"
+            )
+
+    for field, value in update_data.items():
+        setattr(db_trained_model, field, value)
+
+    await db.commit()
+    await db.refresh(db_trained_model)
+    return db_trained_model
+
+# DELETE endpoints
+
+@router.delete(
+    "/models/{collection_name}/{model_name}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a Trained Model by Collection and Model Name",
+    tags=["Trained Models"],
+    operation_id="delete_trained_model_by_name",
+)
+async def delete_trained_model_by_name(
+    collection_name: str,
+    model_name: str,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth_with_write_access),
+):
+    """
+    Delete a trained model by its collection name and model name.
+
+    - **collection_name**: Name of the collection the model belongs to.
+    - **model_name**: Name of the model to delete.
+    """
+    trained_model = await _find_model_by_name(collection_name, model_name, db)
+    if not trained_model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trained model not found"
+        )
+
+    from mlcbakery.utils import delete_entity_with_versions
+    await delete_entity_with_versions(trained_model, db)
+    await db.commit()
+    return {"message": "Trained model deleted successfully"}

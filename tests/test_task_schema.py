@@ -7,14 +7,12 @@ def test_task_create_valid():
     data = {
         "name": "My Test Task",
         "workflow": {"steps": ["step1", "step2"]},
-        "collection_name": "test-collection",
         "version": "1.0",
         "description": "A test task"
     }
     task = TaskCreate(**data)
     assert task.name == data["name"]
     assert task.workflow == data["workflow"]
-    assert task.collection_name == data["collection_name"]
     assert task.version == data["version"]
     assert task.description == data["description"]
     assert task.has_file_uploads == False  # Default value
@@ -23,7 +21,7 @@ def test_task_create_valid():
 def test_task_create_missing_required_fields():
     """Test TaskCreate with missing required fields."""
     with pytest.raises(ValidationError) as excinfo:
-        TaskCreate(collection_name="test")
+        TaskCreate()
     errors = excinfo.value.errors()
     assert any(e['type'] == 'missing' and e['loc'] == ('name',) for e in errors)
     assert any(e['type'] == 'missing' and e['loc'] == ('workflow',) for e in errors)
@@ -33,7 +31,6 @@ def test_task_create_optional_fields_none():
     data = {
         "name": "Minimal Task",
         "workflow": {"steps": []},
-        "collection_name": "test-collection",
         "version": None,
         "description": None,
     }
@@ -47,7 +44,6 @@ def test_task_create_with_file_uploads():
     data = {
         "name": "File Upload Task",
         "workflow": {"steps": ["upload", "process"]},
-        "collection_name": "test-collection",
         "has_file_uploads": True,
     }
     task = TaskCreate(**data)
@@ -89,8 +85,7 @@ def test_task_create_invalid_types():
     with pytest.raises(ValidationError):
         TaskCreate(
             name="Invalid Task",
-            workflow="not-a-dict",
-            collection_name="test-collection"
+            workflow="not-a-dict"
         )
 
 def test_task_update_invalid_types():
