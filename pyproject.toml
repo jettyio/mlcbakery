@@ -33,6 +33,7 @@ dependencies = [
     "starlette>=0.46.2",
     "typesense>=1.0.3",
     "uvicorn>=0.34.2",
+    "pytest-cov>=6.2.1",
 ]
 
 [tool.pytest.ini_options]
@@ -80,7 +81,7 @@ opentelemetry-instrumentation-fastapi = ">=0.46b0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-asyncio = ">=0.23.5"
-pytest-cov = "^4.1.0"
+pytest-cov = ">=4.1.0"
 pytest-mock = "^3.10.0"
 httpx = "^0.28.0"
 mypy = "^1.8.0"
