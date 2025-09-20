@@ -25,6 +25,20 @@ import secrets
 make_versioned(user_cls='Agent')
 
 
+# Custom Transaction model to ensure timezone-aware datetime
+class Transaction(Base):
+    """Custom transaction model to override SQLAlchemy-Continuum's default transaction table."""
+    __tablename__ = 'transaction'
+    
+    id = Column(Integer, primary_key=True)
+    issued_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    user_id = Column(Integer, ForeignKey('agents.id'), nullable=True)
+    remote_addr = Column(String(50), nullable=True)
+    
+    # Relationships
+    user = relationship("Agent")
+
+
 
 # NEW EntityRelationship class
 class EntityRelationship(Base):
