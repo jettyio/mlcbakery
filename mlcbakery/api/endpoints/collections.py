@@ -107,7 +107,7 @@ async def get_collection(
     elif auth_type == 'jwt':
         # JWT authentication
         stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
-        if auth_payload.get("access_level") == AccessLevel.ADMIN:
+        if auth_payload.get("access_type") == AccessType.ADMIN:
             pass
         else:
             stmt_coll = apply_auth_to_stmt(stmt_coll, auth_payload)
@@ -176,7 +176,7 @@ async def get_collection_storage_info(
 
     elif auth_type == 'jwt':
         stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
-        if auth_payload.get("access_level") == AccessLevel.ADMIN:
+        if auth_payload.get("access_type") == AccessType.ADMIN:
             pass
         else:
             stmt_coll = apply_auth_to_stmt(stmt_coll, auth_payload)
@@ -229,7 +229,7 @@ async def update_collection_storage_info(
             raise fastapi.HTTPException(status_code=403, detail="Access level WRITE required.")
 
         stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
-        if auth_payload.get("access_level") == AccessLevel.ADMIN:
+        if auth_payload.get("access_type") == AccessType.ADMIN:
             pass
         else:
             stmt_coll = apply_auth_to_stmt(stmt_coll, auth_payload)
