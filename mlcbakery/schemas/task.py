@@ -34,6 +34,7 @@ class TaskUpdate(BaseModel):
     version: Optional[str] = None
     description: Optional[str] = None
     has_file_uploads: Optional[bool] = None
+    is_private: Optional[bool] = None
 
 
 class TaskListResponse(TaskBase):

@@ -1,11 +1,12 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 
 
 class EntityBase(BaseModel):
     name: str
     entity_type: Literal["entity", "dataset", "trained_model", "task"]
+    is_private: Optional[bool] = True
 
 
 class EntityResponse(EntityBase):
