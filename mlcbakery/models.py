@@ -77,6 +77,9 @@ class Entity(Base):
     # Add for git-style versioning
     current_version_hash = Column(String(64), nullable=True, index=True)
 
+    # Privacy control
+    is_private = Column(Boolean, nullable=True, default=True)
+
     # Relationships
     collection = relationship("Collection", back_populates="entities")
     upstream_links = relationship("EntityRelationship", foreign_keys=[EntityRelationship.target_entity_id], back_populates="target_entity", lazy="selectin")
@@ -230,6 +233,7 @@ class Entity(Base):
             'entity_type': self.entity_type,
             'asset_origin': self.asset_origin,
             'collection_id': self.collection_id,
+            'is_private': self.is_private,
         }
 
     def _compute_content_hash(self, content):
