@@ -41,6 +41,7 @@ class TrainedModelUpdate(BaseModel):
     asset_origin: Optional[str] = None
     long_description: Optional[str] = None
     model_attributes: Optional[dict] = None
+    is_private: Optional[bool] = None
 
 
 class TrainedModelListResponse(TrainedModelBase):

@@ -46,6 +46,7 @@ class DatasetUpdate(DatasetBase):
     dataset_metadata: Optional[dict] = None
     preview_type: Optional[str] = None
     long_description: Optional[str] = None
+    is_private: Optional[bool] = None
 
 
 class DatasetListResponse(DatasetBase):
