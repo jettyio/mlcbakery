@@ -88,9 +88,11 @@ def get_typesense_schema(collection_name: str) -> dict:
             {"name": "id", "type": "string"},
             {"name": "asset_origin", "type": "string", "optional": True},
             {"name": "collection_name", "type": "string", "facet": True},
+            {"name": "collection_id", "type": "int32", "facet": True},
             {"name": "entity_name", "type": "string", "facet": True},
             {"name": "full_name", "type": "string"},
             {"name": "entity_type", "type": "string", "default": "dataset", "facet": True},
+            {"name": "is_private", "type": "bool", "facet": True},
             {"name": "long_description", "type": "string", "optional": True},
             {"name": "metadata", "type": "object", "optional": True},
             {
@@ -238,8 +240,10 @@ async def rebuild_index(
                 document = {
                     "id": doc_id,
                     "collection_name": dataset.collection.name,
+                    "collection_id": dataset.collection.id,
                     "entity_name": dataset.name,
                     "full_name": doc_id,
+                    "is_private": dataset.is_private if dataset.is_private is not None else True,
                     "long_description": dataset.long_description,
                     "metadata": processed_metadata or None,
                     "created_at_timestamp": int(dataset.created_at.timestamp()) if dataset.created_at else None,
@@ -268,8 +272,10 @@ async def rebuild_index(
                 document = {
                     "id": doc_id,
                     "collection_name": model.collection.name,
+                    "collection_id": model.collection.id,
                     "entity_name": model.name,
                     "full_name": doc_id,
+                    "is_private": model.is_private if model.is_private is not None else True,
                     "long_description": model.long_description,
                     "metadata": processed_model_meta or None,
                     "created_at_timestamp": int(model.created_at.timestamp()) if model.created_at else None,
@@ -306,6 +312,27 @@ async def rebuild_index(
             raise
     else:
         print(f"No documents to index for '{typesense_collection_name}'.")
+
+def build_privacy_filter(user_collection_id: int | None) -> str:
+    """Generate Typesense filter clause for user's accessible entities.
+
+    Returns filter that includes:
+    - All public entities (is_private:false)
+    - User's own private entities (is_private:true && collection_id:user_collection_id)
+
+    Args:
+        user_collection_id: The ID of the user's collection, or None for admin/no-auth
+
+    Returns:
+        Typesense filter string for privacy filtering
+    """
+    if user_collection_id is None:
+        # Admin or no-auth: no privacy filter (see all entities)
+        return ""
+
+    # Filter for: (public entities) OR (user's private entities)
+    # Typesense OR syntax: (is_private:false) || (is_private:true && collection_id:{id})
+    return f"(is_private:false) || (is_private:true && collection_id:{user_collection_id})"
 
 async def run_search_query(search_parameters: dict, ts: typesense.Client) -> dict:
     """Run a search query against Typesense."""

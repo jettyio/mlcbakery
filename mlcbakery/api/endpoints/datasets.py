@@ -28,7 +28,7 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth_with_write_access, apply_auth_to_stmt
+from mlcbakery.api.dependencies import verify_auth_with_write_access, apply_auth_to_stmt, verify_auth, get_user_collection_id
 from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
@@ -53,20 +53,34 @@ async def search_datasets(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
+    auth: dict = Depends(verify_auth),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    """Search datasets using Typesense based on query term."""
+    """Search datasets using Typesense based on query term, respecting privacy settings."""
     # Get the current span
     current_span = trace.get_current_span()
     # Add the search query as an attribute to the span
     current_span.set_attribute("search.query", q)
 
+    # Get user's collection ID for privacy filtering
+    user_collection_id = await get_user_collection_id(auth, db)
+
+    # Build privacy filter
+    privacy_filter = search.build_privacy_filter(user_collection_id)
+
+    # Build base filter
+    base_filter = "entity_type:dataset"
+    if privacy_filter:
+        filter_by = f"{base_filter} && {privacy_filter}"
+    else:
+        filter_by = base_filter
 
     search_parameters = {
         "q": q,
         "query_by": "long_description, metadata, collection_name, entity_name, full_name",
         "per_page": limit,
-        "filter_by": "entity_type:dataset",
-        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata",
+        "filter_by": filter_by,
+        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata, is_private",
     }
 
     return await search.run_search_query(search_parameters, ts)
