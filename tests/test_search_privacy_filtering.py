@@ -8,12 +8,119 @@ These tests verify that search results respect user privacy settings:
 
 import pytest
 import httpx
+from unittest.mock import MagicMock, AsyncMock
+from typing import Any
 
 from mlcbakery.main import app
 from mlcbakery.auth.passthrough_strategy import (
     sample_org_token,
     authorization_headers,
 )
+
+
+# Store indexed documents in-memory for testing
+_test_search_index: dict[str, dict[str, Any]] = {}
+
+
+@pytest.fixture(autouse=True)
+def mock_typesense_client(monkeypatch):
+    """Mock Typesense client to avoid requiring actual Typesense instance in tests."""
+
+    def mock_setup_and_get_typesense_client():
+        """Return a mock Typesense client."""
+        mock_client = MagicMock()
+
+        # Mock the upsert method to store documents in our test index
+        def mock_upsert(document):
+            doc_id = document.get("id")
+            if doc_id:
+                _test_search_index[doc_id] = document
+            return {"success": True}
+
+        # Mock the search method to filter documents based on query
+        def mock_search(params):
+            q = params.get("q", "")
+            filter_by = params.get("filter_by", "")
+            per_page = params.get("per_page", 30)
+
+            # Filter documents based on query and filters
+            hits = []
+            for doc_id, doc in _test_search_index.items():
+                # Check if document matches query
+                query_match = False
+                search_text = str(doc.get("long_description", "")).lower()
+
+                # Also check other searchable fields
+                search_text += " " + str(doc.get("collection_name", "")).lower()
+                search_text += " " + str(doc.get("entity_name", "")).lower()
+                search_text += " " + str(doc.get("full_name", "")).lower()
+
+                if q.lower() in search_text:
+                    query_match = True
+
+                if not query_match:
+                    continue
+
+                # Apply entity_type filter
+                if "entity_type:dataset" in filter_by and doc.get("entity_type") != "dataset":
+                    continue
+                if "entity_type:trained_model" in filter_by and doc.get("entity_type") != "trained_model":
+                    continue
+
+                # Apply privacy filter
+                if "is_private:false" in filter_by or "is_private:true" in filter_by:
+                    # Parse privacy filter logic
+                    is_private = doc.get("is_private", True)
+                    collection_id = doc.get("collection_id")
+
+                    # Extract collection_id from filter if present
+                    filter_collection_id = None
+                    if "collection_id:" in filter_by:
+                        # Extract collection_id value from filter
+                        parts = filter_by.split("collection_id:")
+                        if len(parts) > 1:
+                            filter_collection_id = int(parts[1].split(")")[0].split("&")[0].strip())
+
+                    # Apply privacy logic: (is_private:false) || (is_private:true && collection_id:{id})
+                    allow_document = False
+                    if not is_private:
+                        # Public documents are always visible
+                        allow_document = True
+                    elif is_private and filter_collection_id and collection_id == filter_collection_id:
+                        # Private document from user's collection
+                        allow_document = True
+
+                    if not allow_document:
+                        continue
+
+                hits.append({"document": doc})
+
+                if len(hits) >= per_page:
+                    break
+
+            return {"hits": hits}
+
+        # Set up mock methods
+        mock_client.collections.__getitem__.return_value.documents.upsert = mock_upsert
+        mock_client.collections.__getitem__.return_value.documents.search = mock_search
+
+        return mock_client
+
+    # Monkeypatch the setup function
+    import mlcbakery.search
+    monkeypatch.setattr(
+        mlcbakery.search,
+        "setup_and_get_typesense_client",
+        mock_setup_and_get_typesense_client
+    )
+
+    # Clear the test index before each test
+    _test_search_index.clear()
+
+    yield
+
+    # Clean up after test
+    _test_search_index.clear()
 
 
 async def create_collection(ac, name: str):
