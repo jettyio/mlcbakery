@@ -117,6 +117,20 @@ async def create_dataset(
     db.add(db_dataset)
     await db.commit()
     await db.flush([db_dataset])
+
+    # Index to Typesense for immediate search availability
+    # This is async and non-blocking - failures don't affect entity creation
+    try:
+        # Refresh to ensure collection relationship is loaded
+        from sqlalchemy.orm import selectinload as sl
+        stmt_refresh = select(Dataset).where(Dataset.id == db_dataset.id).options(sl(Dataset.collection))
+        result_refresh = await db.execute(stmt_refresh)
+        refreshed_dataset = result_refresh.scalar_one_or_none()
+        if refreshed_dataset:
+            await search.index_entity_to_typesense(refreshed_dataset)
+    except Exception as e:
+        print(f"Warning: Failed to index dataset to Typesense: {e}")
+
     return db_dataset
 
 @router.get("/datasets/{collection_name}", response_model=list[DatasetListResponse])
@@ -235,6 +249,13 @@ async def update_dataset(
         raise HTTPException(
             status_code=500, detail="Failed to reload dataset after update"
         )
+
+    # Re-index to Typesense with updated fields (especially privacy settings)
+    try:
+        await search.index_entity_to_typesense(refreshed_dataset)
+    except Exception as e:
+        print(f"Warning: Failed to re-index dataset to Typesense: {e}")
+
     return refreshed_dataset
 
 @router.delete("/datasets/{collection_name}/{dataset_name}", status_code=200)

@@ -294,6 +294,18 @@ async def create_trained_model_by_name(
     await db.commit()
     await db.refresh(db_trained_model)
 
+    # Index to Typesense for immediate search availability
+    try:
+        # Refresh to ensure collection relationship is loaded
+        from sqlalchemy.orm import selectinload as sl
+        stmt_refresh = select(TrainedModel).where(TrainedModel.id == db_trained_model.id).options(sl(TrainedModel.collection))
+        result_refresh = await db.execute(stmt_refresh)
+        refreshed_model = result_refresh.scalar_one_or_none()
+        if refreshed_model:
+            await search.index_entity_to_typesense(refreshed_model)
+    except Exception as e:
+        print(f"Warning: Failed to index model to Typesense: {e}")
+
     return db_trained_model
 
 # PUT endpoints
@@ -356,6 +368,13 @@ async def update_trained_model_by_name(
 
     await db.commit()
     await db.refresh(db_trained_model)
+
+    # Re-index to Typesense with updated fields (especially privacy settings)
+    try:
+        await search.index_entity_to_typesense(db_trained_model)
+    except Exception as e:
+        print(f"Warning: Failed to re-index model to Typesense: {e}")
+
     return db_trained_model
 
 # DELETE endpoints
