@@ -10,6 +10,7 @@ import pytest
 import httpx
 from unittest.mock import MagicMock, AsyncMock, patch
 from typing import Any
+import uuid
 
 from mlcbakery.main import app
 from mlcbakery.auth.passthrough_strategy import (
@@ -138,10 +139,12 @@ def clear_test_index():
 
 
 async def create_collection(ac, name: str):
-    """Helper to create a collection."""
+    """Helper to create a collection with unique name to avoid conflicts."""
+    # Add unique suffix to avoid collisions across tests
+    unique_name = f"{name}_{uuid.uuid4().hex[:8]}"
     resp = await ac.post(
         "/api/v1/collections/",
-        json={"name": name, "description": f"Test collection {name}"},
+        json={"name": unique_name, "description": f"Test collection {name}"},
         headers=authorization_headers(sample_org_token()),
     )
     assert resp.status_code == 200
