@@ -8,7 +8,7 @@ These tests verify that search results respect user privacy settings:
 
 import pytest
 import httpx
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from typing import Any
 
 from mlcbakery.main import app
@@ -21,6 +21,9 @@ from mlcbakery import search
 
 # Store indexed documents in-memory for testing
 _test_search_index: dict[str, dict[str, Any]] = {}
+
+# Flag to track if we've set up the mock
+_mock_setup_done = False
 
 
 def get_mock_typesense_client():
@@ -104,33 +107,34 @@ def get_mock_typesense_client():
     return mock_client
 
 
-@pytest.fixture(autouse=True)
-def mock_typesense_client(monkeypatch):
-    """Mock Typesense client to avoid requiring actual Typesense instance in tests."""
+@pytest.fixture(scope="module", autouse=True)
+def mock_typesense_client():
+    """Mock Typesense client to avoid requiring actual Typesense instance in tests.
 
-    # Override the FastAPI dependency
-    from mlcbakery.api.endpoints import datasets, trained_models
+    This fixture uses module scope so the mock is set up once for all tests in this file,
+    and uses direct patching rather than monkeypatch to ensure it's applied early enough.
+    """
+    # Patch the function directly at module import time
+    original_func = search.setup_and_get_typesense_client
+    search.setup_and_get_typesense_client = get_mock_typesense_client
 
-    # Monkeypatch the setup function to return our mock
-    monkeypatch.setattr(
-        search,
-        "setup_and_get_typesense_client",
-        get_mock_typesense_client
-    )
-
-    # Also directly override app dependency for the routes
-    app.dependency_overrides[search.setup_and_get_typesense_client] = get_mock_typesense_client
-
-    # Clear the test index before each test
-    _test_search_index.clear()
+    # Also override app dependency for the routes
+    app.dependency_overrides[original_func] = get_mock_typesense_client
 
     yield
 
-    # Clean up after test
+    # Clean up after all tests in module
+    search.setup_and_get_typesense_client = original_func
+    if original_func in app.dependency_overrides:
+        del app.dependency_overrides[original_func]
+
+
+@pytest.fixture(autouse=True)
+def clear_test_index():
+    """Clear the test index before and after each test."""
     _test_search_index.clear()
-    # Only remove our specific override, not all overrides
-    if search.setup_and_get_typesense_client in app.dependency_overrides:
-        del app.dependency_overrides[search.setup_and_get_typesense_client]
+    yield
+    _test_search_index.clear()
 
 
 async def create_collection(ac, name: str):
