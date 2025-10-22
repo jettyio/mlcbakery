@@ -128,7 +128,9 @@ def mock_typesense_client(monkeypatch):
 
     # Clean up after test
     _test_search_index.clear()
-    app.dependency_overrides.clear()
+    # Only remove our specific override, not all overrides
+    if search.setup_and_get_typesense_client in app.dependency_overrides:
+        del app.dependency_overrides[search.setup_and_get_typesense_client]
 
 
 async def create_collection(ac, name: str):
