@@ -140,3 +140,24 @@ def apply_auth_to_stmt(stmt : Select, auth: dict) -> Select:
         return stmt
     else:
         return stmt.where(Collection.owner_identifier == auth["identifier"])
+
+async def get_user_collection_id(
+    auth: dict,
+    db: AsyncSession = Depends(get_async_db)
+) -> int | None:
+    """Get the collection ID for the authenticated user.
+
+    For admin tokens, returns None (no privacy filtering).
+    For regular users, returns their collection's ID.
+    """
+    if auth.get("access_type") == AccessType.ADMIN:
+        return None
+
+    identifier = auth.get("identifier")
+    if not identifier:
+        return None
+
+    stmt = select(Collection).where(Collection.owner_identifier == identifier)
+    result = await db.execute(stmt)
+    collection = result.scalar_one_or_none()
+    return collection.id if collection else None

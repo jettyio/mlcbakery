@@ -14,7 +14,7 @@ from mlcbakery.schemas.trained_model import (
     TrainedModelListResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, get_auth, verify_auth_with_write_access
+from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, get_auth, verify_auth_with_write_access, get_user_collection_id
 from opentelemetry import trace # Import for span manipulation
 from mlcbakery.models import TrainedModel, Collection, Entity, EntityRelationship
 from sqlalchemy.orm import selectinload
@@ -54,19 +54,34 @@ async def search_models(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts = Depends(search.setup_and_get_typesense_client),
+    auth: dict = Depends(verify_auth),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    """Search models using Typesense based on query term."""
+    """Search models using Typesense based on query term, respecting privacy settings."""
     # Get the current span
     current_span = trace.get_current_span()
     # Add the search query as an attribute to the span
     current_span.set_attribute("search.query", q)
 
+    # Get user's collection ID for privacy filtering
+    user_collection_id = await get_user_collection_id(auth, db)
+
+    # Build privacy filter
+    privacy_filter = search.build_privacy_filter(user_collection_id)
+
+    # Build base filter
+    base_filter = "entity_type:trained_model"
+    if privacy_filter:
+        filter_by = f"{base_filter} && {privacy_filter}"
+    else:
+        filter_by = base_filter
+
     search_parameters = {
         "q": q,
         "query_by": "long_description, metadata, collection_name, entity_name, full_name",
         "per_page": limit,
-        "filter_by": "entity_type:trained_model",
-        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata",
+        "filter_by": filter_by,
+        "include_fields": "collection_name, entity_name, full_name, entity_type, metadata, is_private",
     }
 
     return await search.run_search_query(search_parameters, ts)
@@ -279,6 +294,18 @@ async def create_trained_model_by_name(
     await db.commit()
     await db.refresh(db_trained_model)
 
+    # Index to Typesense for immediate search availability
+    try:
+        # Refresh to ensure collection relationship is loaded
+        from sqlalchemy.orm import selectinload as sl
+        stmt_refresh = select(TrainedModel).where(TrainedModel.id == db_trained_model.id).options(sl(TrainedModel.collection))
+        result_refresh = await db.execute(stmt_refresh)
+        refreshed_model = result_refresh.scalar_one_or_none()
+        if refreshed_model:
+            await search.index_entity_to_typesense(refreshed_model)
+    except Exception as e:
+        print(f"Warning: Failed to index model to Typesense: {e}")
+
     return db_trained_model
 
 # PUT endpoints
@@ -341,6 +368,13 @@ async def update_trained_model_by_name(
 
     await db.commit()
     await db.refresh(db_trained_model)
+
+    # Re-index to Typesense with updated fields (especially privacy settings)
+    try:
+        await search.index_entity_to_typesense(db_trained_model)
+    except Exception as e:
+        print(f"Warning: Failed to re-index model to Typesense: {e}")
+
     return db_trained_model
 
 # DELETE endpoints
