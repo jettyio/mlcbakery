@@ -26,6 +26,9 @@ _test_search_index: dict[str, dict[str, Any]] = {}
 # Flag to track if we've set up the mock
 _mock_setup_done = False
 
+# Track org_id per test to ensure consistency
+_current_test_org_id: str | None = None
+
 
 def get_mock_typesense_client():
     """Return a mock Typesense client."""
@@ -132,27 +135,32 @@ def mock_typesense_client():
 
 @pytest.fixture(autouse=True)
 def clear_test_index():
-    """Clear the test index before and after each test."""
+    """Clear the test index and set unique org_id before and after each test."""
+    global _current_test_org_id
     _test_search_index.clear()
+    # Set a unique org_id for this test
+    _current_test_org_id = f"test_org_{uuid.uuid4().hex[:8]}"
     yield
     _test_search_index.clear()
+    _current_test_org_id = None
 
 
 async def create_collection(ac, name: str):
-    """Helper to create a collection with unique name to avoid conflicts."""
+    """Helper to create a collection with unique name using test org_id."""
     # Add unique suffix to avoid collisions across tests
     unique_name = f"{name}_{uuid.uuid4().hex[:8]}"
+
     resp = await ac.post(
         "/api/v1/collections/",
         json={"name": unique_name, "description": f"Test collection {name}"},
-        headers=authorization_headers(sample_org_token()),
+        headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
     )
     assert resp.status_code == 200
     return resp.json()
 
 
 async def create_dataset(ac, collection_name: str, dataset_name: str, is_private: bool, description: str = ""):
-    """Helper to create a dataset with privacy settings."""
+    """Helper to create a dataset with privacy settings using test org_id."""
     resp = await ac.post(
         f"/api/v1/datasets/{collection_name}",
         json={
@@ -163,14 +171,14 @@ async def create_dataset(ac, collection_name: str, dataset_name: str, is_private
             "is_private": is_private,
             "long_description": description or f"Dataset {dataset_name}",
         },
-        headers=authorization_headers(sample_org_token()),
+        headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
     )
     assert resp.status_code == 200
     return resp.json()
 
 
 async def create_model(ac, collection_name: str, model_name: str, is_private: bool, description: str = ""):
-    """Helper to create a trained model with privacy settings."""
+    """Helper to create a trained model with privacy settings using test org_id."""
     resp = await ac.post(
         f"/api/v1/models/{collection_name}",
         json={
@@ -180,7 +188,7 @@ async def create_model(ac, collection_name: str, model_name: str, is_private: bo
             "is_private": is_private,
             "long_description": description or f"Model {model_name}",
         },
-        headers=authorization_headers(sample_org_token()),
+        headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
     )
     assert resp.status_code == 201
     return resp.json()
@@ -205,7 +213,7 @@ async def test_user_sees_own_private_entities():
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "private"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
         assert resp.status_code == 200
@@ -245,7 +253,7 @@ async def test_user_sees_public_entities():
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "public"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
         assert resp.status_code == 200
@@ -290,7 +298,7 @@ async def test_user_cannot_see_other_collections_private():
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "private"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
         assert resp.status_code == 200
@@ -334,7 +342,7 @@ async def test_both_dataset_and_model_searches_filtered():
         ds_resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "test"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
         assert ds_resp.status_code == 200
         ds_hits = [hit["document"]["id"] for hit in ds_resp.json()["hits"]]
@@ -345,7 +353,7 @@ async def test_both_dataset_and_model_searches_filtered():
         m_resp = await ac.get(
             "/api/v1/models/search",
             params={"q": "test"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
         assert m_resp.status_code == 200
         m_hits = [hit["document"]["id"] for hit in m_resp.json()["hits"]]
@@ -384,7 +392,7 @@ async def test_empty_results_when_no_access():
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "restricted"},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
         # Should return 200 with empty results, not 403
@@ -423,7 +431,7 @@ async def test_search_with_pagination_respects_privacy():
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "paginated", "limit": 3},
-            headers=authorization_headers(sample_org_token()),
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
         assert resp.status_code == 200
