@@ -587,3 +587,63 @@ async def test_admin_user_sees_all_entities():
         # Admin should see both private datasets
         hit_ids = [hit["document"]["id"] for hit in results["hits"]]
         assert len(hit_ids) >= 2
+
+
+@pytest.mark.asyncio
+async def test_dataset_indexed_on_creation():
+    """Test that datasets are indexed to Typesense when created."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection = await create_collection(ac, "IndexTestCollection")
+
+        # Create a dataset
+        dataset = await create_dataset(
+            ac,
+            collection["name"],
+            "IndexedDataset",
+            is_private=False,
+            description="test indexing",
+        )
+
+        # Verify it appears in search (proves indexing worked)
+        resp = await ac.get(
+            "/api/v1/datasets/search",
+            params={"q": "indexing"},
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
+        )
+
+        assert resp.status_code == 200
+        results = resp.json()
+        hit_ids = [hit["document"]["id"] for hit in results["hits"]]
+        dataset_id = f"dataset/{collection['name']}/{dataset['name']}"
+        assert dataset_id in hit_ids
+
+
+@pytest.mark.asyncio
+async def test_model_indexed_on_creation():
+    """Test that trained models are indexed to Typesense when created."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        collection = await create_collection(ac, "ModelIndexTestCollection")
+
+        # Create a model
+        model = await create_model(
+            ac,
+            collection["name"],
+            "IndexedModel",
+            is_private=False,
+            description="test model indexing",
+        )
+
+        # Verify it appears in search (proves indexing worked)
+        resp = await ac.get(
+            "/api/v1/models/search",
+            params={"q": "model indexing"},
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
+        )
+
+        assert resp.status_code == 200
+        results = resp.json()
+        hit_ids = [hit["document"]["id"] for hit in results["hits"]]
+        model_id = f"trained_model/{collection['name']}/{model['name']}"
+        assert model_id in hit_ids
