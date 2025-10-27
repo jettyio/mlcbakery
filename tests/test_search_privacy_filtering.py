@@ -485,3 +485,105 @@ async def test_search_with_pagination_respects_privacy():
                 # Public collection, should be public
                 assert doc["is_private"] is False
             # If from collection1, will be private (user's collection)
+
+
+@pytest.mark.asyncio
+async def test_search_returns_is_private_field():
+    """Test that search results include the is_private field."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Setup: Create collection with mixed privacy entities
+        collection = await create_collection(ac, "MixedPrivacyCollection")
+
+        await create_dataset(
+            ac,
+            collection["name"],
+            "PublicDataset",
+            is_private=False,
+            description="public entity",
+        )
+
+        await create_dataset(
+            ac,
+            collection["name"],
+            "PrivateDataset",
+            is_private=True,
+            description="private entity",
+        )
+
+        # Search for entities
+        resp = await ac.get(
+            "/api/v1/datasets/search",
+            params={"q": "entity"},
+            headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
+        )
+
+        assert resp.status_code == 200
+        results = resp.json()
+        assert len(results["hits"]) == 2
+
+        # Verify is_private field is present and correct
+        for hit in results["hits"]:
+            doc = hit["document"]
+            assert "is_private" in doc
+            if "Public" in doc["entity_name"]:
+                assert doc["is_private"] is False
+            else:
+                assert doc["is_private"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sees_all_entities():
+    """Test that admin users bypass privacy filtering."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collections for different users
+        other_org_id = f"other_org_{uuid.uuid4().hex[:8]}"
+
+        # Create current user's collection with private entity
+        collection1 = await create_collection(ac, "UserCollection")
+        await create_dataset(
+            ac,
+            collection1["name"],
+            "UserPrivateDataset",
+            is_private=True,
+            description="admin test searchable",
+        )
+
+        # Create other user's collection with private entity
+        collection2_resp = await ac.post(
+            "/api/v1/collections/",
+            json={"name": f"OtherCollection_{uuid.uuid4().hex[:8]}", "description": "Other user's collection"},
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
+        )
+        assert collection2_resp.status_code == 200
+        collection2 = collection2_resp.json()
+
+        other_dataset_resp = await ac.post(
+            f"/api/v1/datasets/{collection2['name']}",
+            json={
+                "name": "OtherPrivateDataset",
+                "data_path": "/path/other",
+                "format": "json",
+                "entity_type": "dataset",
+                "is_private": True,
+                "long_description": "admin test searchable",
+            },
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
+        )
+        assert other_dataset_resp.status_code == 200
+
+        # Search as admin (using TEST_ADMIN_TOKEN from conftest)
+        from conftest import TEST_ADMIN_TOKEN
+        resp = await ac.get(
+            "/api/v1/datasets/search",
+            params={"q": "admin test"},
+            headers={"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"},
+        )
+
+        assert resp.status_code == 200
+        results = resp.json()
+
+        # Admin should see both private datasets
+        hit_ids = [hit["document"]["id"] for hit in results["hits"]]
+        assert len(hit_ids) >= 2
