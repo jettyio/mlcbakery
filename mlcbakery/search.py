@@ -88,9 +88,11 @@ def get_typesense_schema(collection_name: str) -> dict:
             {"name": "id", "type": "string"},
             {"name": "asset_origin", "type": "string", "optional": True},
             {"name": "collection_name", "type": "string", "facet": True},
+            {"name": "collection_id", "type": "int32", "facet": True},
             {"name": "entity_name", "type": "string", "facet": True},
             {"name": "full_name", "type": "string"},
             {"name": "entity_type", "type": "string", "default": "dataset", "facet": True},
+            {"name": "is_private", "type": "bool", "facet": True},
             {"name": "long_description", "type": "string", "optional": True},
             {"name": "metadata", "type": "object", "optional": True},
             {
@@ -238,8 +240,10 @@ async def rebuild_index(
                 document = {
                     "id": doc_id,
                     "collection_name": dataset.collection.name,
+                    "collection_id": dataset.collection.id,
                     "entity_name": dataset.name,
                     "full_name": doc_id,
+                    "is_private": dataset.is_private if dataset.is_private is not None else True,
                     "long_description": dataset.long_description,
                     "metadata": processed_metadata or None,
                     "created_at_timestamp": int(dataset.created_at.timestamp()) if dataset.created_at else None,
@@ -268,8 +272,10 @@ async def rebuild_index(
                 document = {
                     "id": doc_id,
                     "collection_name": model.collection.name,
+                    "collection_id": model.collection.id,
                     "entity_name": model.name,
                     "full_name": doc_id,
+                    "is_private": model.is_private if model.is_private is not None else True,
                     "long_description": model.long_description,
                     "metadata": processed_model_meta or None,
                     "created_at_timestamp": int(model.created_at.timestamp()) if model.created_at else None,
@@ -307,13 +313,117 @@ async def rebuild_index(
     else:
         print(f"No documents to index for '{typesense_collection_name}'.")
 
+def build_privacy_filter(user_collection_id: int | list[int] | None) -> str:
+    """Generate Typesense filter clause for user's accessible entities.
+
+    Returns filter that includes:
+    - All public entities (is_private:false)
+    - User's own private entities (is_private:true && collection_id:user_collection_id(s))
+
+    Args:
+        user_collection_id: The ID(s) of the user's collection(s), or None for admin/no-auth
+                           Can be a single int or a list of ints
+
+    Returns:
+        Typesense filter string for privacy filtering
+    """
+    if user_collection_id is None:
+        # Admin or no-auth: no privacy filter (see all entities)
+        return ""
+
+    # Handle both single ID and list of IDs
+    if isinstance(user_collection_id, list):
+        # Multiple collections: (is_private:false) || (is_private:true && collection_id:[id1,id2,...])
+        collection_ids = ",".join(str(id) for id in user_collection_id)
+        return f"(is_private:false) || (is_private:true && collection_id:[{collection_ids}])"
+    else:
+        # Single collection: (is_private:false) || (is_private:true && collection_id:id)
+        return f"(is_private:false) || (is_private:true && collection_id:{user_collection_id})"
+
+async def index_entity_to_typesense(entity: Dataset | TrainedModel, ts: typesense.Client | None = None) -> bool:
+    """Index a single entity to Typesense with privacy metadata.
+
+    This function is used to index newly created or updated entities so they
+    appear immediately in search results without waiting for a full re-index.
+
+    Args:
+        entity: The Dataset or TrainedModel entity to index
+        ts: Optional Typesense client. If not provided, creates a new one.
+
+    Returns:
+        True if indexing succeeded, False if it failed or was skipped.
+    """
+    try:
+        load_dotenv()
+
+        # Get or create Typesense client
+        if ts is None:
+            ts = setup_and_get_typesense_client()
+
+        collection_to_index = os.getenv("TYPESENSE_COLLECTION_NAME", "mlcbakery_entities")
+        if not collection_to_index:
+            print("Typesense collection name not configured. Skipping indexing.")
+            return False
+
+        # Check if entity has required relationships loaded
+        if not hasattr(entity, "collection") or entity.collection is None:
+            print(f"Entity {entity.id} missing collection. Skipping indexing.")
+            return False
+
+        # Build document
+        doc_id = f"{entity.entity_type}/{entity.collection.name}/{entity.name}"
+        metadata = {}
+
+        if isinstance(entity, Dataset):
+            metadata = entity.dataset_metadata or {}
+        elif isinstance(entity, TrainedModel):
+            metadata = entity.model_metadata or {}
+
+        # Process metadata to ensure valid types
+        processed_metadata = {
+            k.replace("@", "__"): v
+            for k, v in metadata.items()
+            if isinstance(v, (str, int, float, bool))
+        }
+
+        document = {
+            "id": doc_id,
+            "collection_name": entity.collection.name,
+            "collection_id": entity.collection.id,
+            "entity_name": entity.name,
+            "full_name": doc_id,
+            "is_private": entity.is_private if entity.is_private is not None else True,
+            "long_description": entity.long_description,
+            "metadata": processed_metadata or None,
+            "created_at_timestamp": int(entity.created_at.timestamp()) if entity.created_at else None,
+            "entity_type": entity.entity_type,
+        }
+
+        # Remove None values
+        document = {k: v for k, v in document.items() if v is not None}
+
+        # Index the document
+        result = ts.collections[collection_to_index].documents.upsert(document)
+
+        if result.get("success"):
+            print(f"Successfully indexed entity {doc_id}")
+            return True
+        else:
+            print(f"Failed to index entity {doc_id}: {result}")
+            return False
+
+    except Exception as e:
+        print(f"Error indexing entity to Typesense: {e}")
+        # Don't raise - log and continue to avoid blocking entity creation
+        return False
+
 async def run_search_query(search_parameters: dict, ts: typesense.Client) -> dict:
     """Run a search query against Typesense."""
     load_dotenv()
     collection_to_search = os.getenv("TYPESENSE_COLLECTION_NAME", "mlcbakery_entities")
     if not collection_to_search:
         raise HTTPException(status_code=500, detail="Typesense collection name not configured for search.")
-        
+
     try:
         search_results = ts.collections[collection_to_search].documents.search(
             search_parameters
