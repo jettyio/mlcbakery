@@ -77,21 +77,29 @@ def get_mock_typesense_client():
                 is_private = doc.get("is_private", True)
                 collection_id = doc.get("collection_id")
 
-                # Extract collection_id from filter if present
-                filter_collection_id = None
+                # Extract collection_id(s) from filter if present
+                filter_collection_ids = []
                 if "collection_id:" in filter_by:
                     # Extract collection_id value from filter
                     parts = filter_by.split("collection_id:")
                     if len(parts) > 1:
-                        filter_collection_id = int(parts[1].split(")")[0].split("&")[0].strip())
+                        id_part = parts[1].split(")")[0].split("&")[0].strip()
+                        # Check if it's a list syntax: [1,2,3]
+                        if id_part.startswith("[") and id_part.endswith("]"):
+                            # Parse list of IDs
+                            id_part = id_part[1:-1]  # Remove brackets
+                            filter_collection_ids = [int(x.strip()) for x in id_part.split(",")]
+                        else:
+                            # Single ID
+                            filter_collection_ids = [int(id_part)]
 
-                # Apply privacy logic: (is_private:false) || (is_private:true && collection_id:{id})
+                # Apply privacy logic: (is_private:false) || (is_private:true && collection_id in filter_ids)
                 allow_document = False
                 if not is_private:
                     # Public documents are always visible
                     allow_document = True
-                elif is_private and filter_collection_id and collection_id == filter_collection_id:
-                    # Private document from user's collection
+                elif is_private and filter_collection_ids and collection_id in filter_collection_ids:
+                    # Private document from user's collection(s)
                     allow_document = True
 
                 if not allow_document:
@@ -269,12 +277,11 @@ async def test_user_sees_public_entities():
 
 @pytest.mark.asyncio
 async def test_user_cannot_see_other_collections_private():
-    """Test that a user cannot see other collections' private entities."""
+    """Test that a user cannot see other users' private entities."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Setup: Create two collections
+        # Setup: Create user's collection with current org_id
         collection1 = await create_collection(ac, "UserCollection")
-        collection2 = await create_collection(ac, "OtherCollection")
 
         # Create private entity in user's collection
         user_dataset = await create_dataset(
@@ -285,19 +292,36 @@ async def test_user_cannot_see_other_collections_private():
             description="searchable content",
         )
 
-        # Create private entity in other collection
-        other_dataset = await create_dataset(
-            ac,
-            collection2["name"],
-            "OtherPrivateDataset",
-            is_private=True,
-            description="searchable content",
+        # Create another user's collection with different org_id
+        other_org_id = f"other_org_{uuid.uuid4().hex[:8]}"
+        collection2_resp = await ac.post(
+            "/api/v1/collections/",
+            json={"name": f"OtherCollection_{uuid.uuid4().hex[:8]}", "description": "Other user's collection"},
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
         )
+        assert collection2_resp.status_code == 200
+        collection2 = collection2_resp.json()
 
-        # Search for content
+        # Create private entity in other user's collection
+        other_dataset_resp = await ac.post(
+            f"/api/v1/datasets/{collection2['name']}",
+            json={
+                "name": "OtherPrivateDataset",
+                "data_path": "/path/OtherPrivateDataset",
+                "format": "json",
+                "entity_type": "dataset",
+                "is_private": True,
+                "long_description": "searchable content",
+            },
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
+        )
+        assert other_dataset_resp.status_code == 200
+        other_dataset = other_dataset_resp.json()
+
+        # Search as the first user
         resp = await ac.get(
             "/api/v1/datasets/search",
-            params={"q": "private"},
+            params={"q": "searchable"},
             headers=authorization_headers(sample_org_token(org_id=_current_test_org_id)),
         )
 
@@ -309,7 +333,7 @@ async def test_user_cannot_see_other_collections_private():
         user_dataset_id = f"dataset/{collection1['name']}/{user_dataset['name']}"
         assert user_dataset_id in hit_ids
 
-        # Should NOT find other collection's private dataset
+        # Should NOT find other user's private dataset
         other_dataset_id = f"dataset/{collection2['name']}/{other_dataset['name']}"
         assert other_dataset_id not in hit_ids
 
@@ -366,20 +390,32 @@ async def test_empty_results_when_no_access():
     """Test that search returns empty results (not 403) when user has no access."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Setup: Create collection with only private entities from other collection
-        collection1 = await create_collection(ac, "RestrictedCollection")
-        collection2 = await create_collection(ac, "AccessibleCollection")
+        # Setup: Create another user's collection with private entity
+        other_org_id = f"other_org_{uuid.uuid4().hex[:8]}"
+        collection1_resp = await ac.post(
+            "/api/v1/collections/",
+            json={"name": f"RestrictedCollection_{uuid.uuid4().hex[:8]}", "description": "Other user's collection"},
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
+        )
+        assert collection1_resp.status_code == 200
+        collection1 = collection1_resp.json()
 
-        # Create searchable private entity in collection1
-        await create_dataset(
-            ac,
-            collection1["name"],
-            "RestrictedDataset",
-            is_private=True,
-            description="restricted searchable content",
+        # Create searchable private entity in other user's collection
+        await ac.post(
+            f"/api/v1/datasets/{collection1['name']}",
+            json={
+                "name": "RestrictedDataset",
+                "data_path": "/path/RestrictedDataset",
+                "format": "json",
+                "entity_type": "dataset",
+                "is_private": True,
+                "long_description": "restricted searchable content",
+            },
+            headers=authorization_headers(sample_org_token(org_id=other_org_id)),
         )
 
-        # Create a public reference in collection2 so user has something
+        # Create our user's collection with a public dataset
+        collection2 = await create_collection(ac, "AccessibleCollection")
         await create_dataset(
             ac,
             collection2["name"],
@@ -388,7 +424,7 @@ async def test_empty_results_when_no_access():
             description="public",
         )
 
-        # Search for term that only matches restricted entity
+        # Search as our user for term that only matches restricted entity
         resp = await ac.get(
             "/api/v1/datasets/search",
             params={"q": "restricted"},

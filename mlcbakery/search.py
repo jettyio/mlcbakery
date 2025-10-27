@@ -313,15 +313,16 @@ async def rebuild_index(
     else:
         print(f"No documents to index for '{typesense_collection_name}'.")
 
-def build_privacy_filter(user_collection_id: int | None) -> str:
+def build_privacy_filter(user_collection_id: int | list[int] | None) -> str:
     """Generate Typesense filter clause for user's accessible entities.
 
     Returns filter that includes:
     - All public entities (is_private:false)
-    - User's own private entities (is_private:true && collection_id:user_collection_id)
+    - User's own private entities (is_private:true && collection_id:user_collection_id(s))
 
     Args:
-        user_collection_id: The ID of the user's collection, or None for admin/no-auth
+        user_collection_id: The ID(s) of the user's collection(s), or None for admin/no-auth
+                           Can be a single int or a list of ints
 
     Returns:
         Typesense filter string for privacy filtering
@@ -330,9 +331,14 @@ def build_privacy_filter(user_collection_id: int | None) -> str:
         # Admin or no-auth: no privacy filter (see all entities)
         return ""
 
-    # Filter for: (public entities) OR (user's private entities)
-    # Typesense OR syntax: (is_private:false) || (is_private:true && collection_id:{id})
-    return f"(is_private:false) || (is_private:true && collection_id:{user_collection_id})"
+    # Handle both single ID and list of IDs
+    if isinstance(user_collection_id, list):
+        # Multiple collections: (is_private:false) || (is_private:true && collection_id:[id1,id2,...])
+        collection_ids = ",".join(str(id) for id in user_collection_id)
+        return f"(is_private:false) || (is_private:true && collection_id:[{collection_ids}])"
+    else:
+        # Single collection: (is_private:false) || (is_private:true && collection_id:id)
+        return f"(is_private:false) || (is_private:true && collection_id:{user_collection_id})"
 
 async def index_entity_to_typesense(entity: Dataset | TrainedModel, ts: typesense.Client | None = None) -> bool:
     """Index a single entity to Typesense with privacy metadata.
