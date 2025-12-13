@@ -27,6 +27,8 @@ logging.basicConfig(level=logging.INFO)
 
 # Define the bearer scheme
 bearer_scheme = HTTPBearer()
+# Optional bearer scheme (doesn't require auth header)
+optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 async def get_auth(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -52,6 +54,21 @@ async def verify_auth(
     """
 
     return await verify_auth_with_access_level(AccessLevel.READ, credentials, auth_strategies)
+
+async def optional_auth(
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
+    auth_strategies = Depends(auth_strategies),
+) -> dict | None:
+    """
+    Optionally verify bearer token. Returns None if no credentials provided.
+    Use this for endpoints that should be publicly accessible but may have
+    additional functionality for authenticated users (e.g., seeing private entities).
+    """
+    if credentials is None:
+        return None
+
+    auth_payload = await get_auth(credentials, auth_strategies)
+    return auth_payload
 
 async def verify_auth_with_write_access(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -142,15 +159,21 @@ def apply_auth_to_stmt(stmt : Select, auth: dict) -> Select:
         return stmt.where(Collection.owner_identifier == auth["identifier"])
 
 async def get_user_collection_id(
-    auth: dict,
+    auth: dict | None,
     db: AsyncSession = Depends(get_async_db)
 ) -> int | list[int] | None:
     """Get the collection ID(s) for the authenticated user.
 
     For admin tokens, returns None (no privacy filtering).
+    For unauthenticated users (auth is None), returns an empty list to filter
+    to only public entities.
     For regular users, returns their collection ID(s) - either a single int
     if they have one collection, or a list of ints if they have multiple.
     """
+    # Unauthenticated: return empty list to show only public entities
+    if auth is None:
+        return []
+
     if auth.get("access_type") == AccessType.ADMIN:
         return None
 

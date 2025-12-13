@@ -321,18 +321,22 @@ def build_privacy_filter(user_collection_id: int | list[int] | None) -> str:
     - User's own private entities (is_private:true && collection_id:user_collection_id(s))
 
     Args:
-        user_collection_id: The ID(s) of the user's collection(s), or None for admin/no-auth
-                           Can be a single int or a list of ints
+        user_collection_id: The ID(s) of the user's collection(s), or None for admin,
+                           empty list for unauthenticated users (public only),
+                           or int/list of ints for authenticated users
 
     Returns:
         Typesense filter string for privacy filtering
     """
     if user_collection_id is None:
-        # Admin or no-auth: no privacy filter (see all entities)
+        # Admin: no privacy filter (see all entities)
         return ""
 
     # Handle both single ID and list of IDs
     if isinstance(user_collection_id, list):
+        if len(user_collection_id) == 0:
+            # Unauthenticated user: only show public entities
+            return "(is_private:false)"
         # Multiple collections: (is_private:false) || (is_private:true && collection_id:[id1,id2,...])
         collection_ids = ",".join(str(id) for id in user_collection_id)
         return f"(is_private:false) || (is_private:true && collection_id:[{collection_ids}])"

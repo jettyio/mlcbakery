@@ -28,7 +28,7 @@ from mlcbakery.schemas.dataset import (
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth_with_write_access, apply_auth_to_stmt, verify_auth, get_user_collection_id
+from mlcbakery.api.dependencies import verify_auth_with_write_access, apply_auth_to_stmt, verify_auth, optional_auth, get_user_collection_id
 from mlcbakery import search
 from mlcbakery.croissant_validation import (
     validate_json,
@@ -53,7 +53,7 @@ async def search_datasets(
         default=30, ge=1, le=100, description="Number of results to return"
     ),
     ts: typesense.Client = Depends(search.setup_and_get_typesense_client),
-    auth: dict = Depends(verify_auth),
+    auth: dict | None = Depends(optional_auth),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Search datasets using Typesense based on query term, respecting privacy settings."""
