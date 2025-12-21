@@ -30,6 +30,7 @@ class TrainedModelCreate(EntityBase):
     long_description: Optional[str] = None
     model_attributes: Optional[dict] = None
     entity_type: str = "trained_model"
+    croissant_metadata: Optional[dict] = None
 
 
 class TrainedModelUpdate(BaseModel):
@@ -42,6 +43,7 @@ class TrainedModelUpdate(BaseModel):
     long_description: Optional[str] = None
     model_attributes: Optional[dict] = None
     is_private: Optional[bool] = None
+    croissant_metadata: Optional[dict] = None
 
 
 class TrainedModelListResponse(TrainedModelBase):

@@ -7,6 +7,7 @@ class EntityBase(BaseModel):
     name: str
     entity_type: Literal["entity", "dataset", "trained_model", "task"]
     is_private: Optional[bool] = True
+    croissant_metadata: Optional[dict] = None
 
 
 class EntityResponse(EntityBase):

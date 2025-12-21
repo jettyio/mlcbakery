@@ -16,10 +16,11 @@ config = context.config
 
 # Set the database URL from the environment variable
 # This overrides the value in alembic.ini if it exists
+# Note: We store this directly instead of using config.set_main_option()
+# to avoid configparser interpreting % characters in passwords
 db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     raise ValueError("DATABASE_URL environment variable not set for Alembic")
-config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -48,9 +49,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    # url = config.get_main_option("sqlalchemy.url") # No longer needed, set above
     context.configure(
-        # url=url, # Use url directly from config object
+        url=db_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -67,14 +67,8 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Get the engine configuration from alembic.ini
-    # config object already has the URL set from environment variable
-    url = config.get_main_option("sqlalchemy.url")
-    if not url:
-        raise ValueError("Database URL not found in Alembic config or environment.")
-
-    # Create an async engine
-    connectable = create_async_engine(url, poolclass=pool.NullPool)
+    # Create an async engine using db_url directly (bypasses configparser)
+    connectable = create_async_engine(db_url, poolclass=pool.NullPool)
 
     # Define the migration function to be run synchronously
     def do_run_migrations(connection):

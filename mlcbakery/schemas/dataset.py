@@ -35,7 +35,7 @@ class ProvenanceEntityNode(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    pass
+    croissant_metadata: Optional[dict] = None
 
 class DatasetUpdate(DatasetBase):
     name: Optional[str] = None
@@ -47,6 +47,7 @@ class DatasetUpdate(DatasetBase):
     preview_type: Optional[str] = None
     long_description: Optional[str] = None
     is_private: Optional[bool] = None
+    croissant_metadata: Optional[dict] = None
 
 
 class DatasetListResponse(DatasetBase):

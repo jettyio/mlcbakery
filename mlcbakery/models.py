@@ -80,6 +80,9 @@ class Entity(Base):
     # Privacy control
     is_private = Column(Boolean, nullable=True, default=True)
 
+    # Croissant metadata (ML Commons Croissant format)
+    croissant_metadata = Column(JSONB, nullable=True)
+
     # Relationships
     collection = relationship("Collection", back_populates="entities")
     upstream_links = relationship("EntityRelationship", foreign_keys=[EntityRelationship.target_entity_id], back_populates="target_entity", lazy="selectin")
@@ -234,6 +237,7 @@ class Entity(Base):
             'asset_origin': self.asset_origin,
             'collection_id': self.collection_id,
             'is_private': self.is_private,
+            'croissant_metadata': self.croissant_metadata,
         }
 
     def _compute_content_hash(self, content):
