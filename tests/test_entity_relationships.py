@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from mlcbakery.main import app # Your FastAPI app instance
-from mlcbakery.database import get_async_db, Base, engine # Assuming these are your DB setup
 from mlcbakery.models import Collection, Entity, Activity, EntityRelationship, Dataset
 from mlcbakery.auth.passthrough_strategy import sample_org_token, authorization_headers, ADMIN_ROLE_NAME
 
