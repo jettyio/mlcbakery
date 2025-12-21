@@ -5,11 +5,28 @@ import os
 from fastapi import Query
 from mlcbakery import croissant_validation
 
-_BAKERY_API_URL = os.getenv("MLCBAKERY_API_BASE_URL")
-_AUTH_TOKEN = os.getenv("ADMIN_AUTH_TOKEN")
-_BAKERY_HOST = os.getenv("MLCBAKERY_API_BASE_URL") + "/api/v1"
-
 _templates = {}
+
+
+def _get_bakery_api_url() -> str:
+    """Get the bakery API URL, raising an error if not configured."""
+    url = os.getenv("MLCBAKERY_API_BASE_URL")
+    if not url:
+        raise RuntimeError(
+            "MLCBAKERY_API_BASE_URL environment variable is not set. "
+            "This is required for dataset operations but not for Croissant validation."
+        )
+    return url
+
+
+def _get_auth_token() -> str | None:
+    """Get the auth token (optional for some operations)."""
+    return os.getenv("ADMIN_AUTH_TOKEN")
+
+
+def _get_bakery_host() -> str:
+    """Get the bakery host URL for API calls."""
+    return _get_bakery_api_url() + "/api/v1"
 
 
 def _read_template(template_name: str) -> str:
@@ -19,14 +36,14 @@ def _read_template(template_name: str) -> str:
     with open(
         os.path.join(os.path.dirname(__file__), "templates", template_name), "r"
     ) as f:
-        template_text = f.read().replace("{_BAKERY_HOST}", _BAKERY_HOST)
+        template_text = f.read().replace("{_BAKERY_HOST}", _get_bakery_host())
         _templates[template_name] = template_text
         return template_text
 
 
 async def download_dataset(collection: str, dataset: str) -> dict[str, Any]:
     """Download a dataset."""
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
+    client = bc.Client(_get_bakery_api_url(), token=_get_auth_token())
     dataset = client.get_dataset_by_name(collection, dataset)
     if dataset is None:
         return None
@@ -45,7 +62,7 @@ async def download_dataset(collection: str, dataset: str) -> dict[str, Any]:
 
 async def get_dataset_preview_url(collection: str, dataset: str) -> str:
     """Get a download url for a dataset preview. To read the preview, use pandas.read_parquet({url})."""
-    return f"{_BAKERY_HOST}/datasets/{collection}/{dataset}/preview"
+    return f"{_get_bakery_host()}/datasets/{collection}/{dataset}/preview"
 
 
 async def search_datasets_tool(
@@ -59,7 +76,7 @@ async def search_datasets_tool(
     Returns:
         A list of search result 'hits' (dictionaries).
     """
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
+    client = bc.Client(_get_bakery_api_url(), token=_get_auth_token())
     try:
         # Use the client method now
         hits = client.search_datasets(query=query, limit=40)
@@ -79,7 +96,7 @@ async def get_help() -> str:
 
 async def get_dataset_metadata(collection: str, dataset: str) -> object | None:
     """Get the Croissant dataset metadata"""
-    client = bc.Client(_BAKERY_API_URL, token=_AUTH_TOKEN)
+    client = bc.Client(_get_bakery_api_url(), token=_get_auth_token())
     dataset = client.get_dataset_by_name(collection, dataset)
     if dataset is None:
         return None
