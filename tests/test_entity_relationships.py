@@ -252,8 +252,8 @@ async def test_create_entity_link_unauthorized(db_session: AsyncSession):
         }
         response = await ac.post("/api/v1/entity-relationships/", json=payload) # No AUTH_HEADERS
         
-    assert response.status_code == 403 # Unauthorized
-    assert "Not authenticated" in response.json()["detail"] or "Forbidden" in response.json()["detail"] 
+    assert response.status_code == 401  # Unauthorized (no auth provided)
+    assert "Not authenticated" in response.json()["detail"] 
 
 # Delete endpoint tests
 @pytest.mark.asyncio
@@ -436,8 +436,8 @@ async def test_delete_entity_link_unauthorized(db_session: AsyncSession):
         }
         delete_response = await ac.request("DELETE", "/api/v1/entity-relationships/", json=delete_payload)  # No AUTH_HEADERS
         
-    assert delete_response.status_code == 403
-    assert "Not authenticated" in delete_response.json()["detail"] or "Forbidden" in delete_response.json()["detail"]
+    assert delete_response.status_code == 401  # Unauthorized (no auth provided)
+    assert "Not authenticated" in delete_response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_delete_entity_link_access_control(db_session: AsyncSession):

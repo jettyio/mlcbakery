@@ -76,7 +76,7 @@ async def test_list_all_trained_models_with_pagination(async_client):
 async def test_list_all_trained_models_without_auth(async_client):
     """Test listing all trained models without authentication fails."""
     response = await async_client.get("/api/v1/models/")
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 # Note: Search tests require Typesense which may not be available in test environment
