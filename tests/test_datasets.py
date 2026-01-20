@@ -605,7 +605,274 @@ async def test_create_dataset_duplicate_name_case_insensitive():
             Current dataset name check is likely case-sensitive."
 
 
-# test search
-# test get upstream
-# test post mlcroissant validation
-# test get mlcroissant
+@pytest.mark.asyncio
+async def test_get_dataset_upstream_tree():
+    """Test getting the upstream tree of a dataset."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {
+            "name": f"Upstream Tree Collection-{uuid.uuid4().hex[:8]}",
+            "description": "For upstream tree test",
+        }
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create a dataset
+        ds_data = {
+            "name": "UpstreamTreeDS",
+            "data_path": "/upstream/tree",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, ds_data)
+        assert create_resp.status_code == 200
+        dataset_name = create_resp.json()["name"]
+
+        # Get upstream tree
+        response = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}/upstream",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == dataset_name
+        assert data["entity_type"] == "dataset"
+        assert "upstream_entities" in data
+        assert "downstream_entities" in data
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_upstream_tree_not_found():
+    """Test getting upstream tree of a nonexistent dataset."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(
+            "/api/v1/datasets/NonExistentCollection/NonExistentDataset/upstream",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_mlcroissant():
+    """Test getting a dataset's Croissant metadata."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {
+            "name": f"Croissant Collection-{uuid.uuid4().hex[:8]}",
+            "description": "For croissant test",
+        }
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create a dataset with croissant metadata
+        ds_data = {
+            "name": "CroissantDS",
+            "data_path": "/croissant/test",
+            "format": "json",
+            "entity_type": "dataset",
+            "dataset_metadata": {
+                "@context": "https://schema.org/",
+                "@type": "Dataset",
+                "name": "Test Croissant Dataset",
+            },
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, ds_data)
+        assert create_resp.status_code == 200
+        dataset_name = create_resp.json()["name"]
+
+        # Get Croissant metadata
+        response = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}/mlcroissant",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["@type"] == "Dataset"
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_mlcroissant_not_found():
+    """Test getting Croissant metadata for nonexistent dataset."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(
+            "/api/v1/datasets/NonExistentCollection/NonExistentDataset/mlcroissant",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_mlcroissant_no_metadata():
+    """Test getting Croissant metadata when dataset has none."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {
+            "name": f"No Croissant Collection-{uuid.uuid4().hex[:8]}",
+            "description": "For no croissant test",
+        }
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create a dataset without metadata
+        ds_data = {
+            "name": "NoCroissantDS",
+            "data_path": "/no/croissant",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, ds_data)
+        assert create_resp.status_code == 200
+        dataset_name = create_resp.json()["name"]
+
+        # Get Croissant metadata - should return 404
+        response = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}/mlcroissant",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 404
+        assert "no Croissant metadata" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_version_history():
+    """Test getting the version history of a dataset."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create a collection
+        collection_data = {
+            "name": f"Version History Collection-{uuid.uuid4().hex[:8]}",
+            "description": "For version history test",
+        }
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create a dataset
+        ds_data = {
+            "name": "VersionHistoryDS",
+            "data_path": "/version/history",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, ds_data)
+        assert create_resp.status_code == 200
+        dataset_name = create_resp.json()["name"]
+
+        # Update the dataset to create a version
+        update_data = {
+            "name": "VersionHistoryDS",
+            "data_path": "/version/history/updated",
+            "format": "json",
+            "entity_type": "dataset",
+        }
+        await ac.put(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}",
+            json=update_data,
+            headers=authorization_headers(sample_org_token())
+        )
+
+        # Get version history
+        response = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}/history",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["entity_name"] == dataset_name
+        assert data["entity_type"] == "dataset"
+        assert "total_versions" in data
+        assert "versions" in data
+
+
+@pytest.mark.asyncio
+async def test_get_dataset_version_history_not_found():
+    """Test getting version history for nonexistent dataset."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(
+            "/api/v1/datasets/NonExistentCollection/NonExistentDataset/history",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_validate_mlcroissant_file_invalid_json():
+    """Test validating an invalid JSON file returns 422 Unprocessable Entity."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create invalid JSON content
+        invalid_json = b"{ invalid json content"
+
+        response = await ac.post(
+            "/api/v1/datasets/mlcroissant-validation",
+            files={"file": ("test.json", invalid_json, "application/json")},
+            headers=authorization_headers(sample_org_token())
+        )
+        # Invalid JSON returns 422 Unprocessable Entity
+        assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_validate_mlcroissant_file_with_valid_json():
+    """Test validating a JSON file that is valid JSON but may not pass Croissant schema validation."""
+    import json
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create a minimal JSON that is valid JSON (will pass JSON validation step)
+        # but may not pass full Croissant schema validation
+        valid_json = json.dumps({
+            "@context": {
+                "sc": "http://schema.org/",
+                "ml": "http://mlcommons.org/schema/"
+            },
+            "@type": "sc:Dataset",
+            "name": "Test Dataset",
+            "description": "A test dataset for validation"
+        }).encode()
+
+        response = await ac.post(
+            "/api/v1/datasets/mlcroissant-validation",
+            files={"file": ("test.json", valid_json, "application/json")},
+            headers=authorization_headers(sample_org_token())
+        )
+        # The endpoint should return either:
+        # - 200 with validation results (JSON is valid but may fail Croissant validation)
+        # - 422 if the JSON fails schema validation
+        assert response.status_code in [200, 422]
+        if response.status_code == 200:
+            data = response.json()
+            # Should have a results key with validation info
+            assert "results" in data
+
+
+@pytest.mark.asyncio
+async def test_create_dataset_to_nonexistent_collection():
+    """Test creating a dataset in a nonexistent collection."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        ds_data = {
+            "name": "TestDS",
+            "data_path": "/test/path",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        response = await create_dataset_v2(ac, "NonExistentCollection", ds_data)
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()

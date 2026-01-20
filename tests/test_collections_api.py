@@ -1174,8 +1174,264 @@ async def test_only_system_admin_can_specify_custom_owner_identifier(async_clien
     assert response_data_2["owner_identifier"] != attempted_custom_owner
     assert response_data_2["owner_identifier"] == "org_12345"  # Should be org identifier
 
-# TODO: Add tests for other collection endpoints (GET, LIST, PATCH storage, etc.)
-# TODO: Add tests for invalid inputs (e.g., missing name) 
-# test delete
-# list datasets
-# list agents
+# Tests for list_datasets_by_collection endpoint
+
+@pytest.mark.asyncio
+async def test_list_datasets_by_collection_success(async_client: AsyncClient):
+    """Test listing datasets in a collection."""
+    unique_name = f"test-collection-datasets-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for listing datasets."
+    }
+
+    # Create the collection
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+    )
+    assert create_response.status_code == 200
+    collection_name = create_response.json()["name"]
+
+    # Create some datasets in the collection
+    for i in range(3):
+        dataset_data = {
+            "name": f"Test Dataset {i}",
+            "data_path": f"/test/path/{i}",
+            "format": "json",
+            "entity_type": "dataset"
+        }
+        ds_response = await async_client.post(
+            f"/api/v1/datasets/{collection_name}",
+            json=dataset_data,
+            headers=authorization_headers(sample_org_token())
+        )
+        assert ds_response.status_code == 200, f"Failed to create dataset: {ds_response.text}"
+
+    # List datasets in the collection
+    response = await async_client.get(
+        f"/api/v1/collections/{collection_name}/datasets/",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 200
+    datasets = response.json()
+    assert isinstance(datasets, list)
+    assert len(datasets) == 3
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_by_collection_empty(async_client: AsyncClient):
+    """Test listing datasets in an empty collection."""
+    unique_name = f"test-collection-empty-datasets-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection with no datasets."
+    }
+
+    # Create the collection
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+    )
+    assert create_response.status_code == 200
+    collection_name = create_response.json()["name"]
+
+    # List datasets in the collection - should be empty
+    response = await async_client.get(
+        f"/api/v1/collections/{collection_name}/datasets/",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 200
+    datasets = response.json()
+    assert isinstance(datasets, list)
+    assert len(datasets) == 0
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_by_collection_not_found(async_client: AsyncClient):
+    """Test listing datasets in a nonexistent collection."""
+    response = await async_client.get(
+        "/api/v1/collections/nonexistent-collection/datasets/",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_by_collection_pagination(async_client: AsyncClient):
+    """Test listing datasets with pagination."""
+    unique_name = f"test-collection-datasets-page-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for pagination testing."
+    }
+
+    # Create the collection
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+    )
+    assert create_response.status_code == 200
+    collection_name = create_response.json()["name"]
+
+    # Create 5 datasets
+    for i in range(5):
+        dataset_data = {
+            "name": f"Paginated Dataset {i}",
+            "data_path": f"/test/path/{i}",
+            "format": "json",
+            "entity_type": "dataset"
+        }
+        await async_client.post(
+            f"/api/v1/datasets/{collection_name}",
+            json=dataset_data,
+            headers=authorization_headers(sample_org_token())
+        )
+
+    # Test pagination with limit
+    response = await async_client.get(
+        f"/api/v1/collections/{collection_name}/datasets/?limit=2",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 200
+    datasets = response.json()
+    assert len(datasets) == 2
+
+    # Test pagination with skip
+    response_skip = await async_client.get(
+        f"/api/v1/collections/{collection_name}/datasets/?skip=2&limit=2",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response_skip.status_code == 200
+    datasets_skip = response_skip.json()
+    assert len(datasets_skip) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_by_collection_unauthorized(async_client: AsyncClient):
+    """Test listing datasets without authentication."""
+    response = await async_client.get(
+        "/api/v1/collections/some-collection/datasets/"
+    )
+    assert response.status_code == 401
+
+
+# Tests for list_agents_by_collection endpoint
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_success(async_client: AsyncClient):
+    """Test listing agents in a collection."""
+    unique_name = f"test-collection-agents-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for listing agents."
+    }
+
+    # Create the collection - this automatically creates a default owner agent
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+    )
+    assert create_response.status_code == 200
+    collection_name = create_response.json()["name"]
+
+    # List agents in the collection
+    response = await async_client.get(
+        f"/api/v1/collections/{collection_name}/agents/",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 200
+    agents = response.json()
+    assert isinstance(agents, list)
+    # Should have at least the default owner agent
+    assert len(agents) >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_not_found(async_client: AsyncClient):
+    """Test listing agents in a nonexistent collection."""
+    response = await async_client.get(
+        "/api/v1/collections/nonexistent-collection/agents/",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")
+
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_unauthorized(async_client: AsyncClient):
+    """Test listing agents without authentication."""
+    response = await async_client.get(
+        "/api/v1/collections/some-collection/agents/"
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_pagination(async_client: AsyncClient):
+    """Test listing agents with pagination parameters."""
+    unique_name = f"test-collection-agents-page-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for agent pagination."
+    }
+
+    # Create the collection
+    create_response = await async_client.post(
+        "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+    )
+    assert create_response.status_code == 200
+    collection_name = create_response.json()["name"]
+
+    # Create some additional agents
+    for i in range(3):
+        agent_data = {
+            "name": f"Test Agent {i}",
+            "type": "processor"
+        }
+        await async_client.post(
+            f"/api/v1/agents/{collection_name}",
+            json=agent_data,
+            headers=authorization_headers(sample_org_token())
+        )
+
+    # List with pagination
+    response = await async_client.get(
+        f"/api/v1/collections/{collection_name}/agents/?limit=2",
+        headers=authorization_headers(sample_org_token())
+    )
+
+    assert response.status_code == 200
+    agents = response.json()
+    assert len(agents) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_agents_by_collection_mismatched_owner(async_client: AsyncClient):
+    """Test that listing agents in a collection with a mismatched owner returns 404."""
+    unique_name = f"test-collection-agents-owner-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for owner mismatch testing."
+    }
+
+    # Create the collection with one org
+    create_response = await async_client.post(
+        "/api/v1/collections/",
+        json=collection_data,
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org1"))
+    )
+    assert create_response.status_code == 200
+
+    # Attempt to list agents with a different org's token
+    response = await async_client.get(
+        f"/api/v1/collections/{unique_name}/agents/",
+        headers=authorization_headers(sample_org_token(ADMIN_ROLE_NAME, "org2"))
+    )
+
+    assert response.status_code == 404
+    assert "Collection not found" in response.json().get("detail", "")

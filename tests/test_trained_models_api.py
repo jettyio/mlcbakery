@@ -780,7 +780,7 @@ async def test_create_trained_model_with_all_optional_fields():
         # Create collection
         collection = create_collection("all-fields-models-collection")
         collection_name = collection["name"]
-        
+
         # Test with all optional fields
         comprehensive_model_data = {
             "name": "Comprehensive Model",
@@ -791,7 +791,7 @@ async def test_create_trained_model_with_all_optional_fields():
             "long_description": "A comprehensive model for testing",
             "model_attributes": {"input_size": 224, "num_classes": 1000}
         }
-        
+
         response = await ac.post(
             f"/api/v1/models/{collection_name}",
             json=comprehensive_model_data,
@@ -813,22 +813,22 @@ async def test_delete_trained_model_without_write_access():
         # Create collection and model with admin access
         collection = create_collection("delete-access-test-models-collection")
         collection_name = collection["name"]
-        
+
         model_data = {
             "name": "Delete Test Model",
             "model_path": "/models/delete_test_model.pt"
         }
-        
+
         create_resp = await ac.post(
             f"/api/v1/models/{collection_name}",
             json=model_data,
             headers=AUTH_HEADERS
         )
         assert create_resp.status_code == 201
-        
+
         # Try to delete model with read-only access
         read_only_headers = authorization_headers(sample_org_token(org_role="org:member"))
-        
+
         response = await ac.delete(
             f"/api/v1/models/{collection_name}/{model_data['name']}",
             headers=read_only_headers
@@ -837,115 +837,157 @@ async def test_delete_trained_model_without_write_access():
         assert "Access level WRITE required" in response.json()["detail"]
 
 
-# Additional edge case tests for better coverage
+# Version history tests
 
 @pytest.mark.asyncio
-async def test_list_trained_models_by_collection_with_pagination():
-    """Test listing trained models with pagination parameters."""
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Create collection with multiple models
-        collection = create_collection("pagination-test-models-collection")
-        collection_name = collection["name"]
-        
-        # Create 3 models
-        for i in range(3):
-            model_data = {
-                "name": f"Pagination Model {i+1}",
-                "model_path": f"/models/pagination_model_{i+1}.pt"
-            }
-            create_resp = await ac.post(
-                f"/api/v1/models/{collection_name}",
-                json=model_data,
-                headers=AUTH_HEADERS
-            )
-            assert create_resp.status_code == 201
-        
-        # Test pagination with limit
-        response = await ac.get(
-            f"/api/v1/models/{collection_name}/?limit=2",
-            headers=AUTH_HEADERS
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 2
-        
-        # Test pagination with skip
-        response = await ac.get(
-            f"/api/v1/models/{collection_name}/?skip=1&limit=2",
-            headers=AUTH_HEADERS
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 2
-
-
-@pytest.mark.asyncio
-async def test_update_trained_model_name_same_case():
-    """Test updating model name to the same name (same case) should succeed."""
+async def test_get_trained_model_version_history():
+    """Test getting the version history of a trained model."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         # Create collection and model
-        collection = create_collection("same-name-update-models-collection")
+        collection = create_collection("version-history-model-collection")
         collection_name = collection["name"]
-        
+
         model_data = {
-            "name": "Same Name Model",
-            "model_path": "/models/same_name.pt"
+            "name": "Version History Model",
+            "model_path": "/models/version_history.pt"
         }
-        
+
         create_resp = await ac.post(
             f"/api/v1/models/{collection_name}",
             json=model_data,
             headers=AUTH_HEADERS
         )
         assert create_resp.status_code == 201
-        
-        # Update with the exact same name should succeed
-        update_data = {
-            "name": "Same Name Model",
-            "long_description": "Updated description"
-        }
-        
-        response = await ac.put(
+
+        # Update the model to create a version
+        update_data = {"long_description": "Updated description for version history"}
+        await ac.put(
             f"/api/v1/models/{collection_name}/{model_data['name']}",
             json=update_data,
             headers=AUTH_HEADERS
         )
+
+        # Get version history
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}/history",
+            headers=AUTH_HEADERS
+        )
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == update_data["name"]
-        assert data["long_description"] == update_data["long_description"]
+        assert data["entity_name"] == model_data["name"]
+        assert data["entity_type"] == "trained_model"
+        assert "total_versions" in data
+        assert "versions" in data
 
 
 @pytest.mark.asyncio
-async def test_create_trained_model_with_all_optional_fields():
-    """Test creating model with comprehensive field coverage."""
+async def test_get_trained_model_version_history_not_found():
+    """Test getting version history for a nonexistent trained model."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Create collection
-        collection = create_collection("all-fields-models-collection")
-        collection_name = collection["name"]
-        
-        # Test with all optional fields
-        comprehensive_model_data = {
-            "name": "Comprehensive Model",
-            "model_path": "/models/comprehensive.pt",
-            "metadata_version": "2.0.0",
-            "model_metadata": {"accuracy": 0.95, "framework": "pytorch"},
-            "asset_origin": "s3://bucket/model.pt",
-            "long_description": "A comprehensive model for testing",
-            "model_attributes": {"input_size": 224, "num_classes": 1000}
-        }
-        
-        response = await ac.post(
-            f"/api/v1/models/{collection_name}",
-            json=comprehensive_model_data,
+        response = await ac.get(
+            "/api/v1/models/nonexistent-collection/nonexistent-model/history",
             headers=AUTH_HEADERS
         )
-        assert response.status_code == 201
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_trained_model_specific_version():
+    """Test getting a trained model at a specific version using index reference."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("specific-version-model-collection")
+        collection_name = collection["name"]
+
+        model_data = {
+            "name": "Specific Version Model",
+            "model_path": "/models/specific_version.pt"
+        }
+
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+
+        # Update the model to create another version
+        update_data = {"long_description": "Version 2 description"}
+        await ac.put(
+            f"/api/v1/models/{collection_name}/{model_data['name']}",
+            json=update_data,
+            headers=AUTH_HEADERS
+        )
+
+        # Get specific version using index (~0 for the first version)
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}/versions/~0",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 200
         data = response.json()
-        assert data["name"] == comprehensive_model_data["name"]
-        assert data["model_metadata"] == comprehensive_model_data["model_metadata"]
-        assert data["model_attributes"] == comprehensive_model_data["model_attributes"]
-        assert data["entity_type"] == "trained_model"
+        assert "data" in data
+        assert "index" in data
+        assert "transaction_id" in data
+
+
+@pytest.mark.asyncio
+async def test_get_trained_model_version_not_found():
+    """Test getting a trained model at a nonexistent version."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("version-not-found-model-collection")
+        collection_name = collection["name"]
+
+        model_data = {
+            "name": "Version Not Found Model",
+            "model_path": "/models/version_not_found.pt"
+        }
+
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+
+        # Try to get version with invalid index
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}/versions/~99",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_trained_model_version_invalid_ref():
+    """Test getting a trained model with an invalid version reference."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection and model
+        collection = create_collection("invalid-ref-model-collection")
+        collection_name = collection["name"]
+
+        model_data = {
+            "name": "Invalid Ref Model",
+            "model_path": "/models/invalid_ref.pt"
+        }
+
+        create_resp = await ac.post(
+            f"/api/v1/models/{collection_name}",
+            json=model_data,
+            headers=AUTH_HEADERS
+        )
+        assert create_resp.status_code == 201
+
+        # Try to get version with invalid reference format
+        response = await ac.get(
+            f"/api/v1/models/{collection_name}/{model_data['name']}/versions/~invalid",
+            headers=AUTH_HEADERS
+        )
+        assert response.status_code == 400
+        assert "Invalid version index" in response.json()["detail"]

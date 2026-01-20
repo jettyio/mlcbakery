@@ -410,14 +410,14 @@ async def test_create_task_without_write_access(async_client: AsyncClient):
     unique_collection_name = f"test-coll-write-access-create-{uuid.uuid4().hex[:8]}"
     collection = await _create_test_collection(async_client, unique_collection_name)
     collection_name = collection["name"]
-    
+
     # Try to create task with read-only access (non-admin role)
     read_only_headers = authorization_headers(sample_org_token(org_role="org:member"))
     task_data = {
         "name": f"Unauthorized Task-{uuid.uuid4().hex[:8]}",
         "workflow": {"steps": ["unauthorized_step"]}
     }
-    
+
     response = await async_client.post(
         f"/api/v1/tasks/{collection_name}",
         json=task_data,
@@ -425,4 +425,106 @@ async def test_create_task_without_write_access(async_client: AsyncClient):
     )
     assert response.status_code == 403
     assert "Access level WRITE required" in response.json()["detail"]
+
+
+# Version history tests
+
+@pytest.mark.asyncio
+async def test_get_task_version_history(async_client: AsyncClient):
+    """Test getting the version history of a task."""
+    unique_collection_name = f"test-coll-version-history-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"VersionHistoryTask-{uuid.uuid4().hex[:8]}"
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Update the task to create a version
+    update_data = {"description": "Updated description for version history"}
+    await async_client.put(
+        f"/api/v1/tasks/{collection['name']}/{task_name}",
+        json=update_data,
+        headers=AUTH_HEADERS
+    )
+
+    # Get version history
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}/history",
+        headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["entity_name"] == task_name
+    assert data["entity_type"] == "task"
+    assert "total_versions" in data
+    assert "versions" in data
+
+
+@pytest.mark.asyncio
+async def test_get_task_version_history_not_found(async_client: AsyncClient):
+    """Test getting version history for a nonexistent task."""
+    response = await async_client.get(
+        "/api/v1/tasks/nonexistent-collection/nonexistent-task/history",
+        headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_task_specific_version(async_client: AsyncClient):
+    """Test getting a task at a specific version using index reference."""
+    unique_collection_name = f"test-coll-specific-version-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"SpecificVersionTask-{uuid.uuid4().hex[:8]}"
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Update the task to create another version
+    update_data = {"description": "Version 2 description"}
+    await async_client.put(
+        f"/api/v1/tasks/{collection['name']}/{task_name}",
+        json=update_data,
+        headers=AUTH_HEADERS
+    )
+
+    # Get specific version using index (~0 for the first version)
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}/versions/~0",
+        headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "index" in data
+    assert "transaction_id" in data
+
+
+@pytest.mark.asyncio
+async def test_get_task_version_not_found(async_client: AsyncClient):
+    """Test getting a task at a nonexistent version."""
+    unique_collection_name = f"test-coll-version-not-found-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"VersionNotFoundTask-{uuid.uuid4().hex[:8]}"
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Try to get version with invalid index
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}/versions/~99",
+        headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_task_version_invalid_ref(async_client: AsyncClient):
+    """Test getting a task with an invalid version reference."""
+    unique_collection_name = f"test-coll-invalid-ref-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"InvalidRefTask-{uuid.uuid4().hex[:8]}"
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Try to get version with invalid reference format
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}/versions/~invalid",
+        headers=AUTH_HEADERS
+    )
+    assert response.status_code == 400
+    assert "Invalid version index" in response.json()["detail"]
 

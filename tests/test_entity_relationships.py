@@ -472,4 +472,148 @@ async def test_delete_entity_link_access_control(db_session: AsyncSession):
     # Verify the link still exists in the database
     link = (await db_session.execute(select(EntityRelationship).where(EntityRelationship.id == link_id))).scalar_one()
     assert link is not None
-    assert link.activity_name == "test_access_control_activity" 
+    assert link.activity_name == "test_access_control_activity"
+
+
+# Upstream tree tests
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_success(db_session: AsyncSession):
+    """Test getting the upstream tree for an entity."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+
+    # Create a relationship between entities
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        create_payload = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "test_upstream_tree_activity"
+        }
+        create_response = await ac.post("/api/v1/entity-relationships/", json=create_payload, headers=AUTH_HEADERS_1)
+        assert create_response.status_code == 201
+
+        # Get the upstream tree for the target entity
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}/upstream",
+            headers=AUTH_HEADERS_1
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == TARGET_ENTITY_NAME_1
+    assert data["entity_type"] == ENTITY_TYPE_DATASET
+    assert data["collection_name"] == TEST_COLLECTION_NAME_1
+    assert "upstream_entities" in data
+    assert "downstream_entities" in data
+
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_no_relationships(db_session: AsyncSession):
+    """Test getting the upstream tree for an entity with no relationships."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # Get the upstream tree for an entity with no relationships
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}/upstream",
+            headers=AUTH_HEADERS_1
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == SOURCE_ENTITY_NAME
+    assert data["entity_type"] == ENTITY_TYPE_DATASET
+    assert data["upstream_entities"] == []
+    assert data["downstream_entities"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_entity_not_found(db_session: AsyncSession):
+    """Test getting the upstream tree for a non-existent entity."""
+    # Setup test data to ensure collections exist
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    await _setup_test_data_entities(db_session, coll1, coll2)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/non_existent_entity/upstream",
+            headers=AUTH_HEADERS_1
+        )
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_collection_not_found(db_session: AsyncSession):
+    """Test getting the upstream tree for an entity in a non-existent collection."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/non_existent_collection/some_entity/upstream",
+            headers=AUTH_HEADERS_1
+        )
+
+    assert response.status_code == 404
+    assert "Collection 'non_existent_collection'" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_unauthorized(db_session: AsyncSession):
+    """Test getting the upstream tree without authorization."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # Try to get upstream tree without auth
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}/upstream"
+        )
+
+    assert response.status_code == 401
+    assert "Not authenticated" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_entity_upstream_tree_with_chain(db_session: AsyncSession):
+    """Test getting the upstream tree for an entity with a chain of relationships."""
+    # Setup test data
+    coll1, coll2 = await _setup_test_data_collections(db_session)
+    source_entity, target_entity1, target_entity2 = await _setup_test_data_entities(db_session, coll1, coll2)
+
+    # Create a chain: source_entity -> target_entity1 -> target_entity2
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # First link: source_entity -> target_entity1
+        payload1 = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{SOURCE_ENTITY_NAME}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "activity_name": "chain_step_1"
+        }
+        response1 = await ac.post("/api/v1/entity-relationships/", json=payload1, headers=AUTH_HEADERS_1)
+        assert response1.status_code == 201
+
+        # Second link: target_entity1 -> target_entity2
+        payload2 = {
+            "source_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_1}/{TARGET_ENTITY_NAME_1}",
+            "target_entity_str": f"{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}",
+            "activity_name": "chain_step_2"
+        }
+        response2 = await ac.post("/api/v1/entity-relationships/", json=payload2, headers=AUTH_HEADERS_1)
+        assert response2.status_code == 201
+
+        # Get the upstream tree from the end of the chain (target_entity2)
+        response = await ac.get(
+            f"/api/v1/entity-relationships/{ENTITY_TYPE_DATASET}/{TEST_COLLECTION_NAME_2}/{TARGET_ENTITY_NAME_2}/upstream",
+            headers=AUTH_HEADERS_1
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == TARGET_ENTITY_NAME_2
+    assert data["entity_type"] == ENTITY_TYPE_DATASET
+    # The entity should have upstream relationships
+    assert "upstream_entities" in data
