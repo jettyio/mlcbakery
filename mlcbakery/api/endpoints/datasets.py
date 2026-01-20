@@ -17,7 +17,7 @@ import os
 import typesense
 import tempfile
 
-from mlcbakery.models import Dataset, Collection, Entity
+from mlcbakery.models import Dataset, Collection, Entity, EntityVersionHash, EntityVersionTag
 from mlcbakery.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
@@ -25,6 +25,11 @@ from mlcbakery.schemas.dataset import (
     DatasetPreviewResponse,
     DatasetListResponse,
     ProvenanceEntityNode,
+)
+from mlcbakery.schemas.version import (
+    VersionHistoryItem,
+    VersionHistoryResponse,
+    VersionDetailResponse,
 )
 from mlcbakery.models import EntityRelationship
 from mlcbakery.database import get_async_db
@@ -504,3 +509,271 @@ async def get_dataset_mlcroissant(
         raise HTTPException(status_code=404, detail="Dataset has no Croissant metadata")
 
     return dataset.dataset_metadata
+
+
+# --------------------------------------------
+# Version History Endpoints
+# --------------------------------------------
+
+async def _get_dataset_version_history(
+    entity_id: int,
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 50,
+    include_changeset: bool = False,
+) -> tuple[list[dict], int]:
+    """Get version history for a dataset."""
+    from sqlalchemy import text
+
+    # Get version hashes and tags
+    hash_stmt = (
+        select(EntityVersionHash)
+        .where(EntityVersionHash.entity_id == entity_id)
+        .options(selectinload(EntityVersionHash.tags))
+        .order_by(EntityVersionHash.transaction_id.desc())
+    )
+    hash_result = await db.execute(hash_stmt)
+    hash_records = {h.transaction_id: h for h in hash_result.scalars().all()}
+
+    # Query version tables
+    version_query = text("""
+        SELECT
+            ev.transaction_id,
+            ev.end_transaction_id,
+            ev.operation_type,
+            ev.name,
+            ev.entity_type,
+            ev.is_private,
+            ev.croissant_metadata,
+            dv.data_path,
+            dv.format,
+            dv.metadata_version,
+            dv.dataset_metadata,
+            dv.long_description
+        FROM entities_version ev
+        JOIN datasets_version dv ON ev.id = dv.id AND ev.transaction_id = dv.transaction_id
+        WHERE ev.id = :entity_id
+        ORDER BY ev.transaction_id DESC
+        OFFSET :skip
+        LIMIT :limit
+    """)
+
+    result = await db.execute(version_query, {"entity_id": entity_id, "skip": skip, "limit": limit})
+    rows = result.fetchall()
+
+    # Count total versions
+    count_query = text("SELECT COUNT(*) FROM entities_version WHERE id = :entity_id")
+    count_result = await db.execute(count_query, {"entity_id": entity_id})
+    total_count = count_result.scalar()
+
+    history = []
+    for i, row in enumerate(rows):
+        row_dict = row._mapping
+        transaction_id = row_dict["transaction_id"]
+        hash_record = hash_records.get(transaction_id)
+        version_index = total_count - skip - i - 1
+
+        item = {
+            "index": version_index,
+            "transaction_id": transaction_id,
+            "content_hash": hash_record.content_hash if hash_record else None,
+            "tags": [t.tag_name for t in hash_record.tags] if hash_record else [],
+            "created_at": hash_record.created_at if hash_record else None,
+            "operation_type": str(row_dict.get("operation_type", "")).upper() if row_dict.get("operation_type") else None,
+        }
+
+        if include_changeset:
+            changeset = {}
+            for key in ["name", "data_path", "format", "metadata_version", "long_description", "is_private"]:
+                if key in row_dict and row_dict[key] is not None:
+                    changeset[key] = row_dict[key]
+            item["changeset"] = changeset
+
+        history.append(item)
+
+    return history, total_count
+
+
+async def _resolve_dataset_version_ref(
+    entity_id: int,
+    version_ref: str,
+    db: AsyncSession,
+) -> tuple[int, EntityVersionHash | None]:
+    """Resolve a version reference to a transaction_id and hash record."""
+    from sqlalchemy import text
+    from fastapi import HTTPException, status
+
+    count_query = text("SELECT COUNT(*) FROM entities_version WHERE id = :entity_id")
+    count_result = await db.execute(count_query, {"entity_id": entity_id})
+    total_versions = count_result.scalar()
+
+    if total_versions == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity has no version history")
+
+    if version_ref.startswith("~"):
+        try:
+            index = int(version_ref[1:])
+            if index < 0:
+                index = total_versions + index
+            if index < 0 or index >= total_versions:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Version index {version_ref} out of range (0-{total_versions - 1})"
+                )
+
+            index_query = text("""
+                SELECT transaction_id FROM entities_version
+                WHERE id = :entity_id ORDER BY transaction_id ASC OFFSET :idx LIMIT 1
+            """)
+            result = await db.execute(index_query, {"entity_id": entity_id, "idx": index})
+            transaction_id = result.scalar()
+
+            hash_stmt = (
+                select(EntityVersionHash)
+                .where(EntityVersionHash.entity_id == entity_id)
+                .where(EntityVersionHash.transaction_id == transaction_id)
+                .options(selectinload(EntityVersionHash.tags))
+            )
+            hash_result = await db.execute(hash_stmt)
+            return transaction_id, hash_result.scalar_one_or_none()
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid version index: {version_ref}")
+
+    if len(version_ref) == 64:
+        hash_stmt = (
+            select(EntityVersionHash)
+            .where(EntityVersionHash.entity_id == entity_id)
+            .where(EntityVersionHash.content_hash == version_ref)
+            .options(selectinload(EntityVersionHash.tags))
+        )
+        hash_result = await db.execute(hash_stmt)
+        hash_record = hash_result.scalar_one_or_none()
+        if not hash_record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Version hash '{version_ref}' not found")
+        return hash_record.transaction_id, hash_record
+
+    tag_stmt = (
+        select(EntityVersionTag)
+        .join(EntityVersionHash)
+        .where(EntityVersionHash.entity_id == entity_id)
+        .where(EntityVersionTag.tag_name == version_ref)
+        .options(selectinload(EntityVersionTag.version_hash).selectinload(EntityVersionHash.tags))
+    )
+    tag_result = await db.execute(tag_stmt)
+    tag = tag_result.scalar_one_or_none()
+
+    if not tag:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Version tag '{version_ref}' not found")
+    return tag.version_hash.transaction_id, tag.version_hash
+
+
+@router.get(
+    "/datasets/{collection_name}/{dataset_name}/history",
+    response_model=VersionHistoryResponse,
+    summary="Get Dataset Version History",
+    tags=["Datasets", "Versions"],
+    operation_id="get_dataset_version_history",
+)
+async def get_dataset_version_history(
+    collection_name: str,
+    dataset_name: str,
+    skip: int = Query(0, ge=0, description="Number of versions to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max versions to return"),
+    include_changeset: bool = Query(False, description="Include field changes in response"),
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth),
+):
+    """Get the version history for a dataset."""
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    history, total_count = await _get_dataset_version_history(
+        dataset.id, db, skip, limit, include_changeset
+    )
+
+    return VersionHistoryResponse(
+        entity_name=dataset.name,
+        entity_type="dataset",
+        collection_name=collection_name,
+        total_versions=total_count,
+        versions=[VersionHistoryItem(**item) for item in history],
+    )
+
+
+@router.get(
+    "/datasets/{collection_name}/{dataset_name}/versions/{version_ref}",
+    response_model=VersionDetailResponse,
+    summary="Get Dataset at Specific Version",
+    tags=["Datasets", "Versions"],
+    operation_id="get_dataset_version",
+)
+async def get_dataset_version(
+    collection_name: str,
+    dataset_name: str,
+    version_ref: str,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth),
+):
+    """Get the full dataset data at a specific version."""
+    from sqlalchemy import text
+
+    dataset = await _find_dataset_by_name(collection_name, dataset_name, db)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    transaction_id, hash_record = await _resolve_dataset_version_ref(dataset.id, version_ref, db)
+
+    version_query = text("""
+        SELECT
+            ev.transaction_id,
+            ev.operation_type,
+            ev.name,
+            ev.entity_type,
+            ev.is_private,
+            ev.croissant_metadata,
+            dv.data_path,
+            dv.format,
+            dv.metadata_version,
+            dv.dataset_metadata,
+            dv.long_description
+        FROM entities_version ev
+        JOIN datasets_version dv ON ev.id = dv.id AND ev.transaction_id = dv.transaction_id
+        WHERE ev.id = :entity_id AND ev.transaction_id = :transaction_id
+    """)
+    result = await db.execute(version_query, {"entity_id": dataset.id, "transaction_id": transaction_id})
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Version data not found for transaction {transaction_id}")
+
+    row_dict = row._mapping
+
+    count_query = text("""
+        SELECT COUNT(*) FROM entities_version
+        WHERE id = :entity_id AND transaction_id <= :transaction_id
+    """)
+    count_result = await db.execute(count_query, {"entity_id": dataset.id, "transaction_id": transaction_id})
+    version_index = count_result.scalar() - 1
+
+    data = {
+        "name": row_dict.get("name"),
+        "entity_type": row_dict.get("entity_type"),
+        "is_private": row_dict.get("is_private"),
+        "croissant_metadata": row_dict.get("croissant_metadata"),
+        "data_path": row_dict.get("data_path"),
+        "format": row_dict.get("format"),
+        "metadata_version": row_dict.get("metadata_version"),
+        "dataset_metadata": row_dict.get("dataset_metadata"),
+        "long_description": row_dict.get("long_description"),
+    }
+
+    return VersionDetailResponse(
+        index=version_index,
+        transaction_id=transaction_id,
+        content_hash=hash_record.content_hash if hash_record else None,
+        tags=[t.tag_name for t in hash_record.tags] if hash_record else [],
+        created_at=hash_record.created_at if hash_record else None,
+        operation_type=str(row_dict.get("operation_type", "")).upper() if row_dict.get("operation_type") else None,
+        data=data,
+    )

@@ -182,18 +182,136 @@ class EntityVersionManager:
         """Compute differences between two changesets."""
         all_keys = set(changeset1.keys()) | set(changeset2.keys())
         differences = {}
-        
+
         for key in all_keys:
             val1 = changeset1.get(key)
             val2 = changeset2.get(key)
-            
+
             if val1 != val2:
                 differences[key] = {
                     'version1': val1,
                     'version2': val2
                 }
-        
+
         return differences
+
+    def resolve_version_ref(self, entity: Entity, version_ref: str) -> tuple:
+        """
+        Resolve a version reference to a version object and hash record.
+
+        Args:
+            entity: The entity to look up version for
+            version_ref: Can be:
+                - A 64-character SHA-256 hash
+                - A semantic tag (e.g., "v1.0.0")
+                - An index prefixed with ~ (e.g., "~0" for first, "~-1" for latest)
+
+        Returns:
+            Tuple of (version_object, hash_record, index)
+        """
+        versions = list(entity.versions)
+
+        if not versions:
+            raise ValueError(f"Entity {entity.name} has no versions")
+
+        # Handle index reference (~0, ~1, ~-1, etc.)
+        if version_ref.startswith('~'):
+            try:
+                index = int(version_ref[1:])
+                if index < 0:
+                    index = len(versions) + index
+                if index < 0 or index >= len(versions):
+                    raise ValueError(f"Version index {version_ref} out of range (0-{len(versions)-1})")
+                version = versions[index]
+                hash_record = self.session.query(EntityVersionHash).filter_by(
+                    entity_id=entity.id,
+                    transaction_id=version.transaction_id
+                ).first()
+                return version, hash_record, index
+            except ValueError as e:
+                if "invalid literal" in str(e):
+                    raise ValueError(f"Invalid version index: {version_ref}")
+                raise
+
+        # Handle 64-char hash
+        if len(version_ref) == 64:
+            hash_record = self.session.query(EntityVersionHash).filter_by(
+                entity_id=entity.id,
+                content_hash=version_ref
+            ).first()
+            if not hash_record:
+                raise ValueError(f"Version hash {version_ref} not found")
+
+            for i, v in enumerate(versions):
+                if v.transaction_id == hash_record.transaction_id:
+                    return v, hash_record, i
+            raise ValueError(f"Version with hash {version_ref} not found in history")
+
+        # Handle semantic tag
+        tag = self.session.query(EntityVersionTag).join(EntityVersionHash).filter(
+            EntityVersionHash.entity_id == entity.id,
+            EntityVersionTag.tag_name == version_ref
+        ).first()
+
+        if not tag:
+            raise ValueError(f"Version tag '{version_ref}' not found")
+
+        hash_record = tag.version_hash
+        for i, v in enumerate(versions):
+            if v.transaction_id == hash_record.transaction_id:
+                return v, hash_record, i
+
+        raise ValueError(f"Version with tag '{version_ref}' not found in history")
+
+    def get_version_data(self, entity: Entity, version_ref: str) -> Dict[str, Any]:
+        """
+        Get the full entity data at a specific version.
+
+        Args:
+            entity: The entity to get version data for
+            version_ref: Version reference (hash, tag, or ~index)
+
+        Returns:
+            Dictionary containing all entity fields at that version
+        """
+        version, hash_record, index = self.resolve_version_ref(entity, version_ref)
+
+        # Get all column values from the version object
+        # Continuum version objects have the same columns as the original model
+        data = {}
+
+        # Get base entity fields
+        base_fields = ['name', 'entity_type', 'asset_origin', 'is_private', 'croissant_metadata']
+        for field in base_fields:
+            if hasattr(version, field):
+                data[field] = getattr(version, field)
+
+        # Get entity-type specific fields based on the actual type
+        if entity.entity_type == 'task':
+            task_fields = ['workflow', 'version', 'description', 'has_file_uploads']
+            for field in task_fields:
+                if hasattr(version, field):
+                    data[field] = getattr(version, field)
+        elif entity.entity_type == 'dataset':
+            dataset_fields = ['data_path', 'format', 'metadata_version', 'dataset_metadata', 'long_description']
+            for field in dataset_fields:
+                if hasattr(version, field):
+                    data[field] = getattr(version, field)
+        elif entity.entity_type == 'trained_model':
+            model_fields = ['model_path', 'metadata_version', 'model_metadata', 'long_description', 'model_attributes']
+            for field in model_fields:
+                if hasattr(version, field):
+                    data[field] = getattr(version, field)
+
+        return {
+            'index': index,
+            'transaction_id': version.transaction_id,
+            'content_hash': hash_record.content_hash if hash_record else None,
+            'tags': [t.tag_name for t in hash_record.tags] if hash_record else [],
+            'created_at': hash_record.created_at if hash_record else None,
+            'operation_type': version.operation_type,
+            'data': data
+        }
 
 
 # Convenience functions
