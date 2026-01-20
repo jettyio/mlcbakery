@@ -7,12 +7,17 @@ from typing import List
 import typesense
 
 from mlcbakery import search
-from mlcbakery.models import Task, Collection, Entity, EntityRelationship
+from mlcbakery.models import Task, Collection, Entity, EntityRelationship, EntityVersionHash, EntityVersionTag
 from mlcbakery.schemas.task import (
     TaskCreate,
     TaskResponse,
     TaskUpdate,
     TaskListResponse,
+)
+from mlcbakery.schemas.version import (
+    VersionHistoryItem,
+    VersionHistoryResponse,
+    VersionDetailResponse,
 )
 from mlcbakery.database import get_async_db
 from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, verify_auth_with_write_access
@@ -359,3 +364,390 @@ async def delete_task_by_name(
     await delete_entity_with_versions(task, db)
     await db.commit()
     return {"message": "Task deleted successfully"}
+
+
+# --------------------------------------------
+# Version History Endpoints
+# --------------------------------------------
+
+async def _get_version_history_for_entity(
+    entity_id: int,
+    entity_type: str,
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 50,
+    include_changeset: bool = False,
+) -> list[dict]:
+    """Get version history for an entity using raw SQL queries on Continuum tables."""
+    from sqlalchemy import text
+
+    # Query the appropriate version table based on entity type
+    # Continuum creates tables like: entities_version, tasks_version, etc.
+    # We need to join entities_version with tasks_version for task-specific fields
+
+    # First, get version hashes and tags for this entity
+    hash_stmt = (
+        select(EntityVersionHash)
+        .where(EntityVersionHash.entity_id == entity_id)
+        .options(selectinload(EntityVersionHash.tags))
+        .order_by(EntityVersionHash.transaction_id.desc())
+    )
+    hash_result = await db.execute(hash_stmt)
+    hash_records = {h.transaction_id: h for h in hash_result.scalars().all()}
+
+    # Query version tables using raw SQL since Continuum version classes
+    # are not easily accessible in async context
+    if entity_type == "task":
+        version_query = text("""
+            SELECT
+                ev.transaction_id,
+                ev.end_transaction_id,
+                ev.operation_type,
+                ev.name,
+                ev.entity_type,
+                ev.is_private,
+                ev.croissant_metadata,
+                tv.workflow,
+                tv.version,
+                tv.description,
+                tv.has_file_uploads
+            FROM entities_version ev
+            JOIN tasks_version tv ON ev.id = tv.id AND ev.transaction_id = tv.transaction_id
+            WHERE ev.id = :entity_id
+            ORDER BY ev.transaction_id DESC
+            OFFSET :skip
+            LIMIT :limit
+        """)
+    else:
+        # Fallback for base entity
+        version_query = text("""
+            SELECT
+                transaction_id,
+                end_transaction_id,
+                operation_type,
+                name,
+                entity_type,
+                is_private,
+                croissant_metadata
+            FROM entities_version
+            WHERE id = :entity_id
+            ORDER BY transaction_id DESC
+            OFFSET :skip
+            LIMIT :limit
+        """)
+
+    result = await db.execute(version_query, {"entity_id": entity_id, "skip": skip, "limit": limit})
+    rows = result.fetchall()
+
+    # Count total versions
+    count_query = text("""
+        SELECT COUNT(*) FROM entities_version WHERE id = :entity_id
+    """)
+    count_result = await db.execute(count_query, {"entity_id": entity_id})
+    total_count = count_result.scalar()
+
+    # Build history items
+    history = []
+    for i, row in enumerate(rows):
+        row_dict = row._mapping
+        transaction_id = row_dict["transaction_id"]
+        hash_record = hash_records.get(transaction_id)
+
+        # Calculate the version index (0 = oldest)
+        # Since we're ordering DESC, we need to reverse the index
+        version_index = total_count - skip - i - 1
+
+        item = {
+            "index": version_index,
+            "transaction_id": transaction_id,
+            "content_hash": hash_record.content_hash if hash_record else None,
+            "tags": [t.tag_name for t in hash_record.tags] if hash_record else [],
+            "created_at": hash_record.created_at if hash_record else None,
+            "operation_type": str(row_dict.get("operation_type", "")).upper() if row_dict.get("operation_type") else None,
+        }
+
+        if include_changeset:
+            # Build a simple changeset from the version data
+            changeset = {}
+            for key in ["name", "workflow", "version", "description", "has_file_uploads", "is_private"]:
+                if key in row_dict and row_dict[key] is not None:
+                    changeset[key] = row_dict[key]
+            item["changeset"] = changeset
+
+        history.append(item)
+
+    return history, total_count
+
+
+@router.get(
+    "/tasks/{collection_name}/{task_name}/history",
+    response_model=VersionHistoryResponse,
+    summary="Get Task Version History",
+    tags=["Tasks", "Versions"],
+    operation_id="get_task_version_history",
+)
+async def get_task_version_history(
+    collection_name: str,
+    task_name: str,
+    skip: int = Query(0, ge=0, description="Number of versions to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max versions to return"),
+    include_changeset: bool = Query(False, description="Include field changes in response"),
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth),
+):
+    """
+    Get the version history for a task.
+
+    Returns a list of all versions with their hashes, tags, and timestamps.
+    Versions are returned in reverse chronological order (newest first).
+    """
+    # Verify collection access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    # Find the task
+    db_task = await _find_task_by_name(collection_name, task_name, db)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_name}' in collection '{collection_name}' not found",
+        )
+
+    # Get version history
+    history, total_count = await _get_version_history_for_entity(
+        db_task.id, "task", db, skip, limit, include_changeset
+    )
+
+    return VersionHistoryResponse(
+        entity_name=db_task.name,
+        entity_type="task",
+        collection_name=collection_name,
+        total_versions=total_count,
+        versions=[VersionHistoryItem(**item) for item in history],
+    )
+
+
+async def _resolve_version_ref(
+    entity_id: int,
+    version_ref: str,
+    db: AsyncSession,
+) -> tuple[int, EntityVersionHash | None]:
+    """
+    Resolve a version reference to a transaction_id and hash record.
+
+    Args:
+        entity_id: The entity ID
+        version_ref: Can be:
+            - A 64-character SHA-256 hash
+            - A semantic tag (e.g., "v1.0.0")
+            - An index prefixed with ~ (e.g., "~0" for first, "~-1" for latest)
+        db: Async database session
+
+    Returns:
+        Tuple of (transaction_id, hash_record)
+    """
+    from sqlalchemy import text
+
+    # Count total versions for index resolution
+    count_query = text("SELECT COUNT(*) FROM entities_version WHERE id = :entity_id")
+    count_result = await db.execute(count_query, {"entity_id": entity_id})
+    total_versions = count_result.scalar()
+
+    if total_versions == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entity has no version history",
+        )
+
+    # Handle index reference (~0, ~1, ~-1, etc.)
+    if version_ref.startswith("~"):
+        try:
+            index = int(version_ref[1:])
+            if index < 0:
+                index = total_versions + index
+            if index < 0 or index >= total_versions:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Version index {version_ref} out of range (0-{total_versions - 1})",
+                )
+
+            # Get transaction_id at this index (ordered ASC for index calculation)
+            index_query = text("""
+                SELECT transaction_id FROM entities_version
+                WHERE id = :entity_id
+                ORDER BY transaction_id ASC
+                OFFSET :idx
+                LIMIT 1
+            """)
+            result = await db.execute(index_query, {"entity_id": entity_id, "idx": index})
+            transaction_id = result.scalar()
+
+            # Get hash record
+            hash_stmt = (
+                select(EntityVersionHash)
+                .where(EntityVersionHash.entity_id == entity_id)
+                .where(EntityVersionHash.transaction_id == transaction_id)
+                .options(selectinload(EntityVersionHash.tags))
+            )
+            hash_result = await db.execute(hash_stmt)
+            hash_record = hash_result.scalar_one_or_none()
+
+            return transaction_id, hash_record
+
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid version index: {version_ref}",
+            )
+
+    # Handle 64-char hash
+    if len(version_ref) == 64:
+        hash_stmt = (
+            select(EntityVersionHash)
+            .where(EntityVersionHash.entity_id == entity_id)
+            .where(EntityVersionHash.content_hash == version_ref)
+            .options(selectinload(EntityVersionHash.tags))
+        )
+        hash_result = await db.execute(hash_stmt)
+        hash_record = hash_result.scalar_one_or_none()
+
+        if not hash_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Version hash '{version_ref}' not found",
+            )
+
+        return hash_record.transaction_id, hash_record
+
+    # Handle semantic tag
+    tag_stmt = (
+        select(EntityVersionTag)
+        .join(EntityVersionHash)
+        .where(EntityVersionHash.entity_id == entity_id)
+        .where(EntityVersionTag.tag_name == version_ref)
+        .options(selectinload(EntityVersionTag.version_hash).selectinload(EntityVersionHash.tags))
+    )
+    tag_result = await db.execute(tag_stmt)
+    tag = tag_result.scalar_one_or_none()
+
+    if not tag:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Version tag '{version_ref}' not found",
+        )
+
+    return tag.version_hash.transaction_id, tag.version_hash
+
+
+@router.get(
+    "/tasks/{collection_name}/{task_name}/versions/{version_ref}",
+    response_model=VersionDetailResponse,
+    summary="Get Task at Specific Version",
+    tags=["Tasks", "Versions"],
+    operation_id="get_task_version",
+)
+async def get_task_version(
+    collection_name: str,
+    task_name: str,
+    version_ref: str,
+    db: AsyncSession = Depends(get_async_db),
+    auth = Depends(verify_auth),
+):
+    """
+    Get the full task data at a specific version.
+
+    The version_ref can be:
+    - A 64-character SHA-256 hash
+    - A semantic tag (e.g., "v1.0.0", "production")
+    - An index prefixed with ~ (e.g., "~0" for oldest, "~-1" for latest)
+    """
+    from sqlalchemy import text
+
+    # Verify collection access
+    stmt_collection = select(Collection).where(Collection.name == collection_name)
+    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
+    result_collection = await db.execute(stmt_collection)
+    collection = result_collection.scalar_one_or_none()
+
+    if not collection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Collection with name '{collection_name}' not found",
+        )
+
+    # Find the task
+    db_task = await _find_task_by_name(collection_name, task_name, db)
+    if not db_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_name}' in collection '{collection_name}' not found",
+        )
+
+    # Resolve version reference
+    transaction_id, hash_record = await _resolve_version_ref(db_task.id, version_ref, db)
+
+    # Get the version data
+    version_query = text("""
+        SELECT
+            ev.transaction_id,
+            ev.operation_type,
+            ev.name,
+            ev.entity_type,
+            ev.is_private,
+            ev.croissant_metadata,
+            tv.workflow,
+            tv.version,
+            tv.description,
+            tv.has_file_uploads
+        FROM entities_version ev
+        JOIN tasks_version tv ON ev.id = tv.id AND ev.transaction_id = tv.transaction_id
+        WHERE ev.id = :entity_id AND ev.transaction_id = :transaction_id
+    """)
+    result = await db.execute(version_query, {"entity_id": db_task.id, "transaction_id": transaction_id})
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Version data not found for transaction {transaction_id}",
+        )
+
+    row_dict = row._mapping
+
+    # Calculate the version index
+    count_query = text("""
+        SELECT COUNT(*) FROM entities_version
+        WHERE id = :entity_id AND transaction_id <= :transaction_id
+    """)
+    count_result = await db.execute(count_query, {"entity_id": db_task.id, "transaction_id": transaction_id})
+    version_index = count_result.scalar() - 1
+
+    # Build the data dict
+    data = {
+        "name": row_dict.get("name"),
+        "entity_type": row_dict.get("entity_type"),
+        "is_private": row_dict.get("is_private"),
+        "croissant_metadata": row_dict.get("croissant_metadata"),
+        "workflow": row_dict.get("workflow"),
+        "version": row_dict.get("version"),
+        "description": row_dict.get("description"),
+        "has_file_uploads": row_dict.get("has_file_uploads"),
+    }
+
+    return VersionDetailResponse(
+        index=version_index,
+        transaction_id=transaction_id,
+        content_hash=hash_record.content_hash if hash_record else None,
+        tags=[t.tag_name for t in hash_record.tags] if hash_record else [],
+        created_at=hash_record.created_at if hash_record else None,
+        operation_type=str(row_dict.get("operation_type", "")).upper() if row_dict.get("operation_type") else None,
+        data=data,
+    )
