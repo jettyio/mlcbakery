@@ -383,7 +383,7 @@ async def test_list_tasks_without_authorization(async_client: AsyncClient):
     
     # Try to list tasks without authorization headers
     response = await async_client.get(f"/api/v1/tasks/{collection_name}/")
-    assert response.status_code == 403
+    assert response.status_code == 401
     assert response.json()["detail"]  # Verify there's an error detail
 
 @pytest.mark.asyncio
@@ -393,13 +393,13 @@ async def test_get_task_without_authorization(async_client: AsyncClient):
     unique_collection_name = f"test-coll-auth-required-get-{uuid.uuid4().hex[:8]}"
     collection = await _create_test_collection(async_client, unique_collection_name)
     collection_name = collection["name"]
-    
+
     task_name = f"Auth Required Test Task-{uuid.uuid4().hex[:8]}"
     await _create_test_task(async_client, collection_name, task_name)
-    
+
     # Try to get task without authorization headers
     response = await async_client.get(f"/api/v1/tasks/{collection_name}/{task_name}")
-    assert response.status_code == 403
+    assert response.status_code == 401
     assert response.json()["detail"]  # Verify there's an error detail
 
 # Write access restriction tests

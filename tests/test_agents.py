@@ -489,7 +489,7 @@ async def test_list_agents_without_authorization():
         
         # Try to list agents without authorization headers
         response = await ac.get(f"/api/v1/agents/{collection_name}/")
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["detail"]  # Verify there's an error detail
 
 
@@ -516,7 +516,7 @@ async def test_get_agent_without_authorization():
         
         # Try to get agent without authorization headers
         response = await ac.get(f"/api/v1/agents/{collection_name}/{agent_data['name']}")
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["detail"]  # Verify there's an error detail
 
 

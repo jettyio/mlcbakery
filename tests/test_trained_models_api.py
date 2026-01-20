@@ -484,7 +484,7 @@ async def test_list_trained_models_without_authorization():
         
         # Try to list models without authorization headers
         response = await ac.get(f"/api/v1/models/{collection_name}/")
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["detail"]  # Verify there's an error detail
 
 
@@ -496,22 +496,22 @@ async def test_get_trained_model_without_authorization():
         # Create collection and model with proper auth first
         collection = create_collection("auth-required-get-model-collection")
         collection_name = collection["name"]
-        
+
         model_data = {
             "name": "Auth Required Test Model",
             "model_path": "/models/auth_required_model.pt"
         }
-        
+
         create_resp = await ac.post(
             f"/api/v1/models/{collection_name}",
             json=model_data,
             headers=AUTH_HEADERS
         )
         assert create_resp.status_code == 201
-        
+
         # Try to get model without authorization headers
         response = await ac.get(f"/api/v1/models/{collection_name}/{model_data['name']}")
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["detail"]  # Verify there's an error detail
 
 
