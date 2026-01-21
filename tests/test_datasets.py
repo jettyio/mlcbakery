@@ -4,9 +4,11 @@ import pytest
 import base64
 import httpx
 import uuid
+from unittest.mock import MagicMock
 
 from mlcbakery.main import app  # Keep app import if needed for client
 from mlcbakery.auth.passthrough_strategy import sample_org_token, sample_user_token, authorization_headers, ADMIN_ROLE_NAME
+from mlcbakery import search
 
 # Tests start here, marked as async and using local async client
 # Helper for creating a dataset using the new API
@@ -876,3 +878,221 @@ async def test_create_dataset_to_nonexistent_collection():
         response = await create_dataset_v2(ac, "NonExistentCollection", ds_data)
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
+
+
+# Search tests with mocked Typesense
+
+def _create_mock_typesense_client():
+    """Create a mock Typesense client."""
+    mock_client = MagicMock()
+    mock_collection = MagicMock()
+    mock_documents = MagicMock()
+
+    # Setup the mock chain: client.collections[name].documents.search()
+    mock_client.collections.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_collection.documents = mock_documents
+
+    return mock_client, mock_documents
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_success():
+    """Test searching datasets with mocked Typesense."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {
+                "document": {
+                    "entity_name": "test-dataset",
+                    "collection_name": "test-collection",
+                    "entity_type": "dataset",
+                    "full_name": "test-collection/test-dataset"
+                }
+            }
+        ]
+    }
+
+    # Override the dependency
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search?q=test",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+            assert len(data["hits"]) == 1
+            assert data["hits"][0]["document"]["entity_type"] == "dataset"
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_empty_results():
+    """Test searching datasets with no results."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock with empty results
+    mock_documents.search.return_value = {"hits": []}
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search?q=nonexistent",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+            assert len(data["hits"]) == 0
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_with_limit():
+    """Test searching datasets with limit parameter."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {"document": {"entity_name": f"dataset-{i}", "entity_type": "dataset"}}
+            for i in range(5)
+        ]
+    }
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search?q=dataset&limit=5",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+
+            # Verify the search was called with the correct limit
+            mock_documents.search.assert_called_once()
+            call_args = mock_documents.search.call_args[0][0]
+            assert call_args["per_page"] == 5
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_collection_not_found():
+    """Test searching datasets when Typesense collection doesn't exist."""
+    import typesense
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock to raise ObjectNotFound
+    mock_documents.search.side_effect = typesense.exceptions.ObjectNotFound("Collection not found")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search?q=test",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_typesense_error():
+    """Test searching datasets when Typesense returns an error."""
+    import typesense
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock to raise TypesenseClientError
+    mock_documents.search.side_effect = typesense.exceptions.TypesenseClientError("API error")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search?q=test",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_missing_query():
+    """Test searching datasets without query parameter returns 422."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/datasets/search",
+                headers=authorization_headers(sample_org_token())
+            )
+
+            assert response.status_code == 422  # Validation error for missing required param
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_datasets_unauthenticated():
+    """Test searching datasets without authentication (should work for public datasets)."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {
+                "document": {
+                    "entity_name": "public-dataset",
+                    "entity_type": "dataset",
+                    "is_private": False
+                }
+            }
+        ]
+    }
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            # Search without auth header - should still work for public datasets
+            response = await ac.get("/api/v1/datasets/search?q=public")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)

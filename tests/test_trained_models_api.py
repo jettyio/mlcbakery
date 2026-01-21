@@ -1,10 +1,12 @@
 import pytest
 import httpx
 from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
 
 from mlcbakery.main import app
 from conftest import TEST_ADMIN_TOKEN
 from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
+from mlcbakery import search
 
 # Define headers globally
 AUTH_HEADERS = authorization_headers(sample_org_token())
@@ -991,3 +993,221 @@ async def test_get_trained_model_version_invalid_ref():
         )
         assert response.status_code == 400
         assert "Invalid version index" in response.json()["detail"]
+
+
+# Search tests with mocked Typesense
+
+def _create_mock_typesense_client():
+    """Create a mock Typesense client."""
+    mock_client = MagicMock()
+    mock_collection = MagicMock()
+    mock_documents = MagicMock()
+
+    # Setup the mock chain: client.collections[name].documents.search()
+    mock_client.collections.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_collection.documents = mock_documents
+
+    return mock_client, mock_documents
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_success():
+    """Test searching trained models with mocked Typesense."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {
+                "document": {
+                    "entity_name": "test-model",
+                    "collection_name": "test-collection",
+                    "entity_type": "trained_model",
+                    "full_name": "test-collection/test-model"
+                }
+            }
+        ]
+    }
+
+    # Override the dependency
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search?q=test",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+            assert len(data["hits"]) == 1
+            assert data["hits"][0]["document"]["entity_type"] == "trained_model"
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_empty_results():
+    """Test searching trained models with no results."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock with empty results
+    mock_documents.search.return_value = {"hits": []}
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search?q=nonexistent",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+            assert len(data["hits"]) == 0
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_with_limit():
+    """Test searching trained models with limit parameter."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {"document": {"entity_name": f"model-{i}", "entity_type": "trained_model"}}
+            for i in range(5)
+        ]
+    }
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search?q=model&limit=5",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+
+            # Verify the search was called with the correct limit
+            mock_documents.search.assert_called_once()
+            call_args = mock_documents.search.call_args[0][0]
+            assert call_args["per_page"] == 5
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_collection_not_found():
+    """Test searching trained models when Typesense collection doesn't exist."""
+    import typesense
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock to raise ObjectNotFound
+    mock_documents.search.side_effect = typesense.exceptions.ObjectNotFound("Collection not found")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search?q=test",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_typesense_error():
+    """Test searching trained models when Typesense returns an error."""
+    import typesense
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock to raise TypesenseClientError
+    mock_documents.search.side_effect = typesense.exceptions.TypesenseClientError("API error")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search?q=test",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_missing_query():
+    """Test searching trained models without query parameter returns 422."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(
+                "/api/v1/models/search",
+                headers=AUTH_HEADERS
+            )
+
+            assert response.status_code == 422  # Validation error for missing required param
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_trained_models_unauthenticated():
+    """Test searching trained models without authentication (should work for public models)."""
+    mock_client, mock_documents = _create_mock_typesense_client()
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {
+                "document": {
+                    "entity_name": "public-model",
+                    "entity_type": "trained_model",
+                    "is_private": False
+                }
+            }
+        ]
+    }
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            # Search without auth header - should still work for public models
+            response = await ac.get("/api/v1/models/search?q=public")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "hits" in data
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)

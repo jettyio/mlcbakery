@@ -3,10 +3,12 @@ from httpx import AsyncClient
 from fastapi.testclient import TestClient
 from typing import Dict, Any
 import uuid
+from unittest.mock import MagicMock, AsyncMock
 
 from mlcbakery.main import app
 from mlcbakery.schemas.collection import CollectionCreate
 from mlcbakery.auth.passthrough_strategy import sample_user_token, sample_org_token, authorization_headers
+from mlcbakery import search
 
 AUTH_HEADERS = authorization_headers(sample_org_token())
 
@@ -527,4 +529,246 @@ async def test_get_task_version_invalid_ref(async_client: AsyncClient):
     )
     assert response.status_code == 400
     assert "Invalid version index" in response.json()["detail"]
+
+
+# Global list tasks tests
+
+@pytest.mark.asyncio
+async def test_list_all_tasks(async_client: AsyncClient):
+    """Test listing all tasks across collections."""
+    # Create a collection and some tasks
+    unique_collection_name = f"test-coll-list-all-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    collection_name = collection["name"]
+
+    # Create tasks
+    for i in range(3):
+        task_name = f"ListAllTask{i}-{uuid.uuid4().hex[:8]}"
+        await _create_test_task(async_client, collection_name, task_name)
+
+    # List all tasks
+    response = await async_client.get("/api/v1/tasks/", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 3
+
+
+@pytest.mark.asyncio
+async def test_list_all_tasks_with_pagination(async_client: AsyncClient):
+    """Test listing all tasks with pagination."""
+    # Create a collection and tasks
+    unique_collection_name = f"test-coll-paginate-all-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    collection_name = collection["name"]
+
+    # Create 5 tasks
+    for i in range(5):
+        task_name = f"PaginateAllTask{i}-{uuid.uuid4().hex[:8]}"
+        await _create_test_task(async_client, collection_name, task_name)
+
+    # Test with limit
+    response = await async_client.get("/api/v1/tasks/?limit=2", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+
+    # Test with skip and limit
+    response_skip = await async_client.get("/api/v1/tasks/?skip=2&limit=2", headers=AUTH_HEADERS)
+    assert response_skip.status_code == 200
+    data_skip = response_skip.json()
+    assert len(data_skip) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_all_tasks_empty(async_client: AsyncClient):
+    """Test listing all tasks when none exist returns empty list."""
+    # This test runs in isolation with fresh DB, so no tasks exist yet
+    response = await async_client.get("/api/v1/tasks/", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+
+
+@pytest.mark.asyncio
+async def test_list_all_tasks_unauthorized(async_client: AsyncClient):
+    """Test that listing all tasks without auth fails."""
+    response = await async_client.get("/api/v1/tasks/")
+    assert response.status_code == 401
+
+
+# Search tests with mocked Typesense
+
+@pytest.fixture
+def mock_typesense_client():
+    """Create a mock Typesense client."""
+    mock_client = MagicMock()
+    mock_collection = MagicMock()
+    mock_documents = MagicMock()
+
+    # Setup the mock chain: client.collections[name].documents.search()
+    mock_client.collections.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_collection.documents = mock_documents
+
+    return mock_client, mock_documents
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_success(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks with mocked Typesense."""
+    mock_client, mock_documents = mock_typesense_client
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {
+                "document": {
+                    "entity_name": "test-task",
+                    "collection_name": "test-collection",
+                    "entity_type": "task",
+                    "full_name": "test-collection/test-task"
+                }
+            }
+        ]
+    }
+
+    # Override the dependency
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search?q=test",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "hits" in data
+        assert len(data["hits"]) == 1
+        assert data["hits"][0]["document"]["entity_type"] == "task"
+    finally:
+        # Clean up the override
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_empty_results(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks with no results."""
+    mock_client, mock_documents = mock_typesense_client
+
+    # Setup mock with empty results
+    mock_documents.search.return_value = {"hits": []}
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search?q=nonexistent",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "hits" in data
+        assert len(data["hits"]) == 0
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_with_limit(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks with limit parameter."""
+    mock_client, mock_documents = mock_typesense_client
+
+    # Setup mock search results
+    mock_documents.search.return_value = {
+        "hits": [
+            {"document": {"entity_name": f"task-{i}", "entity_type": "task"}}
+            for i in range(5)
+        ]
+    }
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search?q=task&limit=5",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "hits" in data
+
+        # Verify the search was called with the correct limit
+        mock_documents.search.assert_called_once()
+        call_args = mock_documents.search.call_args[0][0]
+        assert call_args["per_page"] == 5
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_collection_not_found(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks when Typesense collection doesn't exist."""
+    import typesense
+    mock_client, mock_documents = mock_typesense_client
+
+    # Setup mock to raise ObjectNotFound
+    mock_documents.search.side_effect = typesense.exceptions.ObjectNotFound("Collection not found")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search?q=test",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_typesense_error(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks when Typesense returns an error."""
+    import typesense
+    mock_client, mock_documents = mock_typesense_client
+
+    # Setup mock to raise TypesenseClientError
+    mock_documents.search.side_effect = typesense.exceptions.TypesenseClientError("API error")
+
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search?q=test",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 500
+        assert "failed" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+@pytest.mark.asyncio
+async def test_search_tasks_missing_query(async_client: AsyncClient, mock_typesense_client):
+    """Test searching tasks without query parameter returns 422."""
+    mock_client, mock_documents = mock_typesense_client
+
+    # Need mock client even for validation error test since dependency is resolved first
+    app.dependency_overrides[search.setup_and_get_typesense_client] = lambda: mock_client
+
+    try:
+        response = await async_client.get(
+            "/api/v1/tasks/search",
+            headers=AUTH_HEADERS
+        )
+
+        assert response.status_code == 422  # Validation error for missing required param
+    finally:
+        app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
 
