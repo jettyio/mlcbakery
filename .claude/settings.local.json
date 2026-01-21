@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(docker ps:*)",
+      "Bash(PGPASSWORD=postgres psql:*)",
+      "Bash(DATABASE_TEST_URL=\"postgresql+asyncpg://postgres:postgres@localhost:5432/mlcbakery_test\" uv run pytest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

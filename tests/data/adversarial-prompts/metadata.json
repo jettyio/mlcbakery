@@ -1,0 +1,114 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/",
+    "citeAs": "cr:citeAs",
+    "column": "cr:column",
+    "conformsTo": "dct:conformsTo",
+    "cr": "http://mlcommons.org/croissant/",
+    "rai": "http://mlcommons.org/croissant/RAI/",
+    "data": {
+      "@id": "cr:data",
+      "@type": "@json"
+    },
+    "dataType": {
+      "@id": "cr:dataType",
+      "@type": "@vocab"
+    },
+    "dct": "http://purl.org/dc/terms/",
+    "examples": {
+      "@id": "cr:examples",
+      "@type": "@json"
+    },
+    "extract": "cr:extract",
+    "field": "cr:field",
+    "fileProperty": "cr:fileProperty",
+    "fileObject": "cr:fileObject",
+    "fileSet": "cr:fileSet",
+    "format": "cr:format",
+    "includes": "cr:includes",
+    "isLiveDataset": "cr:isLiveDataset",
+    "jsonPath": "cr:jsonPath",
+    "key": "cr:key",
+    "md5": "cr:md5",
+    "parentField": "cr:parentField",
+    "path": "cr:path",
+    "recordSet": "cr:recordSet",
+    "references": "cr:references",
+    "regex": "cr:regex",
+    "repeated": "cr:repeated",
+    "replace": "cr:replace",
+    "sc": "https://schema.org/",
+    "separator": "cr:separator",
+    "source": "cr:source",
+    "subField": "cr:subField",
+    "transform": "cr:transform"
+  },
+  "@type": "sc:Dataset",
+  "name": "adversarial-prompts",
+  "description": "A curated dataset of adversarial text-to-image prompts for testing AI safety classifiers and content moderation systems. Contains prompts describing visual scenes with hidden references to popular culture, along with binary labels indicating mammal presence.",
+  "conformsTo": "http://mlcommons.org/croissant/1.0",
+  "citeAs": "@misc{adversarial-prompts, title={Adversarial Prompts Dataset}, year={2025}, publisher={Jetty.io}, howpublished={\\url{https://github.com/jetty/mlcbakery}}}",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "url": "https://github.com/jetty/mlcbakery",
+  "keywords": [
+    "adversarial prompts",
+    "AI safety",
+    "content moderation",
+    "text-to-image",
+    "classification",
+    "benchmark"
+  ],
+  "datePublished": "2025-12-20",
+  "distribution": [
+    {
+      "@type": "cr:FileObject",
+      "@id": "data-csv",
+      "name": "data.csv",
+      "description": "Primary CSV file containing adversarial prompts and mammal classification labels",
+      "contentUrl": "data.csv",
+      "encodingFormat": "text/csv"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "cr:RecordSet",
+      "@id": "prompts",
+      "name": "prompts",
+      "description": "Adversarial prompts with binary mammal classification labels",
+      "field": [
+        {
+          "@type": "cr:Field",
+          "@id": "prompts/prompt",
+          "name": "prompt",
+          "description": "A text prompt describing a visual scene for text-to-image generation. Prompts may contain hidden references to copyrighted characters or culturally sensitive content.",
+          "dataType": "sc:Text",
+          "source": {
+            "fileObject": {
+              "@id": "data-csv"
+            },
+            "extract": {
+              "column": "prompt"
+            }
+          }
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "prompts/includes_mammal",
+          "name": "includes_mammal",
+          "description": "Binary label (0 or 1) indicating whether the described scene contains a mammal according to biological taxonomy.",
+          "dataType": "sc:Integer",
+          "source": {
+            "fileObject": {
+              "@id": "data-csv"
+            },
+            "extract": {
+              "column": "includes_mammal"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
