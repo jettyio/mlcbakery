@@ -5,21 +5,11 @@ from sqlalchemy.pool import NullPool
 
 from sqlalchemy.orm import sessionmaker
 import httpx
-import pytest_asyncio  # Import pytest_asyncio
+import pytest_asyncio
 import sqlalchemy as sa
 
-# Assuming models.py and database.py are importable from the root
-# Adjust the import path if your structure is different
-from mlcbakery import models  # Add this import
-from mlcbakery.database import get_async_db  # Import the dependency getter
-from mlcbakery.main import app  # Import the FastAPI app
-
-from mlcbakery.api.dependencies import auth_strategies
-from mlcbakery.auth.passthrough_strategy import PassthroughStrategy
-from mlcbakery.auth.admin_token_strategy import AdminTokenStrategy
-
 # --- Test Admin Token ---
-TEST_ADMIN_TOKEN = "test-super-secret-token"  # Define a constant for the test token
+TEST_ADMIN_TOKEN = "test-super-secret-token"
 
 # --- Global Test Database Setup ---
 
@@ -29,108 +19,115 @@ SQLALCHEMY_TEST_DATABASE_URL = os.environ.get("DATABASE_TEST_URL")
 # Create global async engine
 engine = create_async_engine(
     SQLALCHEMY_TEST_DATABASE_URL, echo=True, poolclass=NullPool
-)  # Change echo to True
+)
 
 # Create global async session factory
 TestingSessionLocal = sessionmaker(
     bind=engine, class_=AsyncSession, expire_on_commit=False
 )
 
-# --- Global Dependency Override ---
+# --- Lazy App Loading for Coverage Tracking ---
+# We use a cached lazy loader to ensure the app is only configured once,
+# but imported after coverage starts tracking.
+
+_app_instance = None
 
 
-# Define the async override function
-async def override_get_async_db():
-    async with TestingSessionLocal() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+def _get_app():
+    """
+    Lazy load the FastAPI app to allow coverage to track code execution.
+
+    This function delays the import of the app module until it's actually needed
+    by test fixtures. This ensures that pytest-cov has already started tracking
+    before the endpoint modules are imported.
+    """
+    global _app_instance
+    if _app_instance is None:
+        # Import app and dependencies lazily
+        from mlcbakery.main import app
+        from mlcbakery.database import get_async_db
+        from mlcbakery.api.dependencies import auth_strategies
+        from mlcbakery.auth.passthrough_strategy import PassthroughStrategy
+        from mlcbakery.auth.admin_token_strategy import AdminTokenStrategy
+
+        # Define the async override function for database sessions
+        async def override_get_async_db():
+            async with TestingSessionLocal() as session:
+                try:
+                    yield session
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        def override_auth_strategies():
+            return [
+                AdminTokenStrategy(TEST_ADMIN_TOKEN),
+                PassthroughStrategy()
+            ]
+
+        # Apply dependency overrides
+        app.dependency_overrides[get_async_db] = override_get_async_db
+        app.dependency_overrides[auth_strategies] = override_auth_strategies
+
+        _app_instance = app
+
+    return _app_instance
 
 
-# Apply the override to the FastAPI app instance
-# This needs to happen before tests run that use the app/client
-app.dependency_overrides[get_async_db] = override_get_async_db
+def _get_models():
+    """Lazy load models module for coverage tracking."""
+    from mlcbakery import models
+    return models
 
-def override_auth_strategies():
-    return [
-        AdminTokenStrategy(TEST_ADMIN_TOKEN),
-        PassthroughStrategy()
-    ]
-
-app.dependency_overrides[auth_strategies] = override_auth_strategies
 
 # --- Global Autouse Async Fixture for DB Setup/Teardown ---
-# This fixture needs to run *after* the env var is set,
-# if the app initialization depends on it (unlikely here, but good practice)
-# Since set_admin_token_env is session-scoped and autouse, it runs first.
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def setup_test_db():
     """Auto-running fixture to set up and tear down the test database for each function."""
-    # Ensure Base is imported if not already available globally
-    # This might need adjustment depending on where Base is defined.
-    # If it's in models.py:
-    # from mlcbakery.models import Base # Remove this line
+    # Lazy load models
+    models = _get_models()
 
     # Use engine.begin() for explicit transaction management during DDL
-    async with engine.begin() as conn:  # Use engine.begin()
+    async with engine.begin() as conn:
         try:
             print("\n--- Global Fixture: Dropping tables... ---")
             # Use CASCADE to handle foreign key dependencies
             await conn.execute(sa.text("DROP SCHEMA public CASCADE;"))
             await conn.execute(sa.text("CREATE SCHEMA public;"))
             print("--- Global Fixture: Creating tables... ---")
-            await conn.run_sync(models.Base.metadata.create_all)  # Use models.Base
-            # Commit is handled implicitly by engine.begin() context manager on success
+            await conn.run_sync(models.Base.metadata.create_all)
             print("--- Global Fixture: Tables created (Transaction Committing). ---")
         except Exception as e:
             print(f"!!! Global Fixture Error during table setup: {e} !!!")
-            # Rollback is handled implicitly by engine.begin() context manager on error
             pytest.fail(f"Global fixture setup failed: {e}")
-
-    # Optional: Seed minimal common data if needed by *most* tests
-    # Be cautious with global seeding - keep it minimal or handle in specific tests/fixtures
-    # Example:
-    # async with TestingSessionLocal() as session:
-    #     try:
-    #         print("--- Global Fixture: Seeding common data... ---")
-    #         # Add truly common data here
-    #         await session.commit()
-    #         print("--- Global Fixture: Common data seeded. ---")
-    #     except Exception as e:
-    #         print(f"!!! Global Fixture Error during common data seeding: {e} !!!")
-    #         await session.rollback()
-    #         pytest.fail(f"Global fixture setup failed during seeding: {e}")
 
     # --- Test runs here ---
     print("--- Global Fixture: Yielding to test function... ---")
-    yield  # Fixture pauses here while test runs
+    yield
     # --- Test finished ---
     print("--- Global Fixture: Test function finished. ---")
 
     # Teardown: Drop tables after test finishes within its own transaction
-    async with engine.begin() as conn:  # Use engine.begin()
+    async with engine.begin() as conn:
         try:
             print("--- Global Fixture: Dropping tables (teardown)... ---")
             # Use CASCADE to handle foreign key dependencies during teardown
             await conn.execute(sa.text("DROP SCHEMA public CASCADE;"))
             await conn.execute(sa.text("CREATE SCHEMA public;"))
-            # Commit is handled implicitly by engine.begin() context manager on success
             print(
                 "--- Global Fixture: Tables dropped (Teardown Transaction Committing). ---"
             )
         except Exception as e:
             print(f"!!! Global Fixture Error during table teardown: {e} !!!")
-            # Rollback is handled implicitly by engine.begin() context manager on error
 
 
 # --- Add Async Test Client Fixture ---
 
 
 @pytest_asyncio.fixture(scope="function")
-async def async_client():  # REMOVED setup_test_db dependency here
+async def async_client():
     """Provides an asynchronous test client for making requests to the app."""
+    app = _get_app()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -146,6 +143,7 @@ def admin_token_auth_headers():
 @pytest_asyncio.fixture(scope="function")
 async def test_client():
     """Provides an asynchronous test client for making requests to the app."""
+    app = _get_app()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
