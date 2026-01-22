@@ -1,0 +1,31 @@
+[run]
+# Enable greenlet concurrency for async code tracking
+concurrency = greenlet
+
+# Source directories to measure
+source = mlcbakery
+
+# Files to omit from coverage
+omit =
+    */tests/*
+    */.venv/*
+    */conftest.py
+    */__pycache__/*
+
+[report]
+# Exclude lines from coverage reporting
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+
+# Show line numbers of missing coverage
+show_missing = True
+
+# Minimum coverage percentage to pass
+# fail_under = 80
+
+[html]
+directory = htmlcov
