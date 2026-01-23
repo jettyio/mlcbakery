@@ -1,6 +1,9 @@
 """Conftest for unit tests that don't require database connection."""
 import pytest
 
+# Export TEST_ADMIN_TOKEN for consistency with root conftest
+TEST_ADMIN_TOKEN = "test-super-secret-token"
+
 
 @pytest.fixture(scope="function", autouse=True)
 def setup_test_db():
