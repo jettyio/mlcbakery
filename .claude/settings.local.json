@@ -11,7 +11,12 @@
       "Bash(git checkout:*)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(poetry check:*)",
+      "Bash(poetry lock:*)",
+      "Bash(DATABASE_TEST_URL=\"postgresql+asyncpg://test:test@localhost/test\" uv run pytest:*)",
+      "Bash(poetry install:*)",
+      "Bash(docker build:*)"
     ]
   }
 }
