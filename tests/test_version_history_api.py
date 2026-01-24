@@ -468,3 +468,109 @@ async def test_version_history_content_hashes_unique(async_client: AsyncClient):
 
     # All hashes should be unique
     assert len(hashes) == len(set(hashes)), "Content hashes should be unique for different versions"
+
+
+# ============================================================================
+# TIMESTAMP TESTS - Tests for created_at and updated_at functionality
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_version_history_includes_created_at_timestamp(async_client: AsyncClient):
+    """Test that version history includes created_at timestamps from the transaction table."""
+    unique_collection_name = f"test-version-timestamp-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"TimestampTask-{uuid.uuid4().hex[:8]}"
+
+    # Create a task
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Update it to create another version
+    await _update_test_task(async_client, collection["name"], task_name, {
+        "description": "Updated for timestamp test"
+    })
+
+    # Get version history
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}/history",
+        headers=AUTH_HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should have at least 2 versions
+    assert data["total_versions"] >= 2
+    assert len(data["versions"]) >= 2
+
+    # All versions should have created_at timestamps from the transaction table
+    for version in data["versions"]:
+        assert version.get("created_at") is not None, \
+            f"Version {version.get('index')} should have a created_at timestamp"
+
+    # Timestamps should be in descending order (newest first)
+    timestamps = [v["created_at"] for v in data["versions"] if v.get("created_at")]
+    assert timestamps == sorted(timestamps, reverse=True), \
+        "Timestamps should be in descending order (newest first)"
+
+
+@pytest.mark.asyncio
+async def test_get_task_returns_updated_at(async_client: AsyncClient):
+    """Test that GET task endpoint returns updated_at timestamp."""
+    unique_collection_name = f"test-updated-at-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"UpdatedAtTask-{uuid.uuid4().hex[:8]}"
+
+    # Create a task
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Get the task
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}",
+        headers=AUTH_HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should have both created_at and updated_at
+    assert "created_at" in data, "Task response should include created_at"
+    assert "updated_at" in data, "Task response should include updated_at"
+    assert data["updated_at"] is not None, "updated_at should not be None"
+
+
+@pytest.mark.asyncio
+async def test_updated_at_changes_after_update(async_client: AsyncClient):
+    """Test that updated_at changes after updating a task."""
+    unique_collection_name = f"test-updated-at-change-{uuid.uuid4().hex[:8]}"
+    collection = await _create_test_collection(async_client, unique_collection_name)
+    task_name = f"UpdatedAtChangeTask-{uuid.uuid4().hex[:8]}"
+
+    # Create a task
+    await _create_test_task(async_client, collection["name"], task_name)
+
+    # Get initial updated_at
+    response1 = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}",
+        headers=AUTH_HEADERS
+    )
+    assert response1.status_code == 200
+    initial_updated_at = response1.json()["updated_at"]
+
+    # Update the task
+    await _update_test_task(async_client, collection["name"], task_name, {
+        "description": "Updated description"
+    })
+
+    # Get updated_at after update
+    response2 = await async_client.get(
+        f"/api/v1/tasks/{collection['name']}/{task_name}",
+        headers=AUTH_HEADERS
+    )
+    assert response2.status_code == 200
+    new_updated_at = response2.json()["updated_at"]
+
+    # updated_at should have changed
+    assert new_updated_at != initial_updated_at, \
+        "updated_at should change after updating the task"
+    assert new_updated_at > initial_updated_at, \
+        "New updated_at should be later than initial updated_at"

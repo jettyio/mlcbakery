@@ -56,5 +56,6 @@ class TrainedModelListResponse(TrainedModelBase):
 class TrainedModelResponse(TrainedModelBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None  # Computed from version history
 
     model_config = ConfigDict(from_attributes=True)
