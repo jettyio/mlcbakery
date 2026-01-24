@@ -49,6 +49,7 @@ class TaskListResponse(TaskBase):
 class TaskResponse(TaskBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None  # Computed from version history
     # Collection environment variables and storage details
     environment_variables: Optional[Dict[str, Any]] = None
     storage_info: Optional[Dict[str, Any]] = None

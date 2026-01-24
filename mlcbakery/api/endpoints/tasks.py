@@ -29,6 +29,22 @@ router = APIRouter()
 # Helper utilities
 # --------------------------------------------
 
+async def _get_entity_updated_at(entity_id: int, db: AsyncSession):
+    """Get the updated_at timestamp from the latest version's transaction."""
+    from sqlalchemy import text
+    query = text("""
+        SELECT t.issued_at
+        FROM entities_version ev
+        JOIN transaction t ON ev.transaction_id = t.id
+        WHERE ev.id = :entity_id
+        ORDER BY ev.transaction_id DESC
+        LIMIT 1
+    """)
+    result = await db.execute(query, {"entity_id": entity_id})
+    row = result.fetchone()
+    return row[0] if row else None
+
+
 async def _find_task_by_name(collection_name: str, task_name: str, db: AsyncSession) -> Task | None:
     stmt = (
         select(Task)
@@ -213,7 +229,23 @@ async def get_task_by_name(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task '{task_name}' in collection '{collection_name}' not found",
         )
-    return db_task
+
+    # Get updated_at from latest version transaction
+    updated_at = await _get_entity_updated_at(db_task.id, db)
+
+    return TaskResponse(
+        id=db_task.id,
+        name=db_task.name,
+        workflow=db_task.workflow,
+        version=db_task.version,
+        description=db_task.description,
+        has_file_uploads=db_task.has_file_uploads,
+        collection_id=db_task.collection_id,
+        is_private=db_task.is_private,
+        croissant_metadata=db_task.croissant_metadata,
+        created_at=db_task.created_at,
+        updated_at=updated_at,
+    )
 
 # POST endpoints
 
@@ -410,9 +442,11 @@ async def _get_version_history_for_entity(
                 tv.workflow,
                 tv.version,
                 tv.description,
-                tv.has_file_uploads
+                tv.has_file_uploads,
+                t.issued_at
             FROM entities_version ev
             JOIN tasks_version tv ON ev.id = tv.id AND ev.transaction_id = tv.transaction_id
+            LEFT JOIN transaction t ON ev.transaction_id = t.id
             WHERE ev.id = :entity_id
             ORDER BY ev.transaction_id DESC
             OFFSET :skip
@@ -422,16 +456,18 @@ async def _get_version_history_for_entity(
         # Fallback for base entity
         version_query = text("""
             SELECT
-                transaction_id,
-                end_transaction_id,
-                operation_type,
-                name,
-                entity_type,
-                is_private,
-                croissant_metadata
-            FROM entities_version
-            WHERE id = :entity_id
-            ORDER BY transaction_id DESC
+                ev.transaction_id,
+                ev.end_transaction_id,
+                ev.operation_type,
+                ev.name,
+                ev.entity_type,
+                ev.is_private,
+                ev.croissant_metadata,
+                t.issued_at
+            FROM entities_version ev
+            LEFT JOIN transaction t ON ev.transaction_id = t.id
+            WHERE ev.id = :entity_id
+            ORDER BY ev.transaction_id DESC
             OFFSET :skip
             LIMIT :limit
         """)
@@ -457,12 +493,18 @@ async def _get_version_history_for_entity(
         # Since we're ordering DESC, we need to reverse the index
         version_index = total_count - skip - i - 1
 
+        # Use issued_at from transaction table as the authoritative timestamp
+        # Fall back to EntityVersionHash.created_at if available
+        version_timestamp = row_dict.get("issued_at")
+        if version_timestamp is None and hash_record:
+            version_timestamp = hash_record.created_at
+
         item = {
             "index": version_index,
             "transaction_id": transaction_id,
             "content_hash": hash_record.content_hash if hash_record else None,
             "tags": [t.tag_name for t in hash_record.tags] if hash_record else [],
-            "created_at": hash_record.created_at if hash_record else None,
+            "created_at": version_timestamp,
             "operation_type": str(row_dict.get("operation_type", "")).upper() if row_dict.get("operation_type") else None,
         }
 

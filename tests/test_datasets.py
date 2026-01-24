@@ -1096,3 +1096,98 @@ async def test_search_datasets_unauthenticated():
             assert "hits" in data
     finally:
         app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
+
+
+# ============================================================================
+# TIMESTAMP TESTS - Tests for updated_at functionality
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_get_dataset_returns_updated_at():
+    """Test that GET dataset endpoint returns updated_at timestamp."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection_name = f"updated-at-ds-{uuid.uuid4().hex[:8]}"
+        coll_resp = await ac.post(
+            "/api/v1/collections/",
+            json={"name": collection_name, "description": "For updated_at test"},
+            headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+
+        # Create dataset
+        dataset_name = f"UpdatedAtDataset-{uuid.uuid4().hex[:8]}"
+        dataset_data = {
+            "name": dataset_name,
+            "data_path": "/test/updated_at",
+            "format": "csv",
+            "entity_type": "dataset",
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, dataset_data)
+        assert create_resp.status_code == 200
+
+        # Get the dataset
+        response = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}",
+            headers=authorization_headers(sample_org_token())
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should have both created_at and updated_at
+        assert "created_at" in data, "Dataset response should include created_at"
+        assert "updated_at" in data, "Dataset response should include updated_at"
+        assert data["updated_at"] is not None, "updated_at should not be None"
+
+
+@pytest.mark.asyncio
+async def test_dataset_version_history_includes_created_at():
+    """Test that dataset version history includes created_at timestamps."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection
+        collection_name = f"version-ts-ds-{uuid.uuid4().hex[:8]}"
+        coll_resp = await ac.post(
+            "/api/v1/collections/",
+            json={"name": collection_name, "description": "For version timestamp test"},
+            headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+
+        # Create dataset
+        dataset_name = f"VersionTsDataset-{uuid.uuid4().hex[:8]}"
+        dataset_data = {
+            "name": dataset_name,
+            "data_path": "/test/version_ts",
+            "format": "parquet",
+            "entity_type": "dataset",
+        }
+        create_resp = await create_dataset_v2(ac, collection_name, dataset_data)
+        assert create_resp.status_code == 200
+
+        # Update to create another version
+        update_resp = await ac.put(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}",
+            json={"data_path": "/test/version_ts/updated"},
+            headers=authorization_headers(sample_org_token())
+        )
+        assert update_resp.status_code == 200
+
+        # Get version history
+        history_resp = await ac.get(
+            f"/api/v1/datasets/{collection_name}/{dataset_name}/history",
+            headers=authorization_headers(sample_org_token())
+        )
+
+        assert history_resp.status_code == 200
+        history = history_resp.json()
+
+        # Should have at least 2 versions
+        assert history["total_versions"] >= 2
+
+        # All versions should have created_at timestamps
+        for version in history["versions"]:
+            assert version.get("created_at") is not None, \
+                f"Version {version.get('index')} should have a created_at timestamp"
