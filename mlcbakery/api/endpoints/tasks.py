@@ -20,7 +20,15 @@ from mlcbakery.schemas.version import (
     VersionDetailResponse,
 )
 from mlcbakery.database import get_async_db
-from mlcbakery.api.dependencies import verify_auth, apply_auth_to_stmt, verify_auth_with_write_access
+from mlcbakery.api.dependencies import (
+    verify_auth,
+    apply_auth_to_stmt,
+    verify_auth_with_write_access,
+    get_flexible_auth,
+    verify_collection_access_for_api_key,
+    get_auth_for_stmt,
+)
+from mlcbakery.api.access_level import AccessType, AccessLevel
 from opentelemetry import trace
 
 router = APIRouter()
@@ -104,10 +112,11 @@ async def list_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth_data = Depends(get_flexible_auth),
 ):
     """List all tasks accessible to the user."""
-    # Admin users can see all tasks, regular users only see their own
+    auth_type, auth_payload = auth_data
+
     stmt = (
         select(Task)
         .join(Collection, Task.collection_id == Collection.id)
@@ -117,7 +126,17 @@ async def list_tasks(
         .order_by(Task.id)
     )
 
-    stmt = apply_auth_to_stmt(stmt, auth)
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - can see all tasks
+            pass
+        else:
+            # Collection-scoped API key - can only see tasks in their collection
+            collection, api_key = auth_payload
+            stmt = stmt.where(Task.collection_id == collection.id)
+    else:
+        # JWT auth - apply standard auth filtering
+        stmt = apply_auth_to_stmt(stmt, auth_payload)
 
     result = await db.execute(stmt)
     tasks = result.scalars().all()
@@ -149,14 +168,32 @@ async def list_tasks_by_collection(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max records to return"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth_data = Depends(get_flexible_auth),
 ):
     """List all tasks in a specific collection owned by the user."""
-    # First verify the collection exists and user has access
-    stmt_collection = select(Collection).where(Collection.name == collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - verify collection exists
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+        else:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify collection exists and user has access
+        stmt_collection = select(Collection).where(Collection.name == collection_name)
+        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+        result_collection = await db.execute(stmt_collection)
+        collection = result_collection.scalar_one_or_none()
 
     if not collection:
         raise HTTPException(
@@ -203,7 +240,7 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Get a specific task by its collection name and task name.
@@ -211,11 +248,29 @@ async def get_task_by_name(
     - **collection_name**: Name of the collection the task belongs to.
     - **task_name**: Name of the task.
     """
-    # First verify the collection exists and user has access
-    stmt_collection = select(Collection).where(Collection.name == collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - verify collection exists
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+        else:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify collection exists and user has access
+        stmt_collection = select(Collection).where(Collection.name == collection_name)
+        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+        result_collection = await db.execute(stmt_collection)
+        collection = result_collection.scalar_one_or_none()
 
     if not collection:
         raise HTTPException(
@@ -261,7 +316,7 @@ async def create_task_by_name(
     collection_name: str,
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Create a new workflow task in the database using collection name.
@@ -273,11 +328,34 @@ async def create_task_by_name(
     - **description**: Description of the task (optional)
     - **has_file_uploads**: Whether the task has file uploads (default: false)
     """
-    # Find collection by name and verify ownership
-    stmt_collection = select(Collection).where(Collection.name == collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - verify collection exists
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+        else:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify collection exists and user has write access
+        if auth_payload.get("access_level").value < AccessLevel.WRITE.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access level WRITE required.",
+            )
+        stmt_collection = select(Collection).where(Collection.name == collection_name)
+        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+        result_collection = await db.execute(stmt_collection)
+        collection = result_collection.scalar_one_or_none()
 
     if not collection:
         raise HTTPException(
@@ -323,7 +401,7 @@ async def update_task_by_name(
     task_name: str,
     task_update: TaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Update an existing task by its collection name and task name.
@@ -335,9 +413,29 @@ async def update_task_by_name(
     - **version**: New version string (optional).
     - **description**: New description (optional).
     - **has_file_uploads**: Whether the task has file uploads (optional).
-    
+
     Note: The task name can be updated, but it cannot duplicate an existing task name in the same collection.
     """
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is not None:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify user has write access
+        if auth_payload.get("access_level").value < AccessLevel.WRITE.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access level WRITE required.",
+            )
+
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:
         raise HTTPException(
@@ -381,7 +479,7 @@ async def delete_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth_with_write_access),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Delete a task by its collection name and task name.
@@ -389,6 +487,26 @@ async def delete_task_by_name(
     - **collection_name**: Name of the collection the task belongs to.
     - **task_name**: Name of the task to delete.
     """
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is not None:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify user has write access
+        if auth_payload.get("access_level").value < AccessLevel.WRITE.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access level WRITE required.",
+            )
+
     task = await _find_task_by_name(collection_name, task_name, db)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -535,7 +653,7 @@ async def get_task_version_history(
     limit: int = Query(50, ge=1, le=100, description="Max versions to return"),
     include_changeset: bool = Query(False, description="Include field changes in response"),
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Get the version history for a task.
@@ -543,11 +661,29 @@ async def get_task_version_history(
     Returns a list of all versions with their hashes, tags, and timestamps.
     Versions are returned in reverse chronological order (newest first).
     """
-    # Verify collection access
-    stmt_collection = select(Collection).where(Collection.name == collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - verify collection exists
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+        else:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify collection exists and user has access
+        stmt_collection = select(Collection).where(Collection.name == collection_name)
+        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+        result_collection = await db.execute(stmt_collection)
+        collection = result_collection.scalar_one_or_none()
 
     if not collection:
         raise HTTPException(
@@ -701,7 +837,7 @@ async def get_task_version(
     task_name: str,
     version_ref: str,
     db: AsyncSession = Depends(get_async_db),
-    auth = Depends(verify_auth),
+    auth_data = Depends(get_flexible_auth),
 ):
     """
     Get the full task data at a specific version.
@@ -713,11 +849,29 @@ async def get_task_version(
     """
     from sqlalchemy import text
 
-    # Verify collection access
-    stmt_collection = select(Collection).where(Collection.name == collection_name)
-    stmt_collection = apply_auth_to_stmt(stmt_collection, auth)
-    result_collection = await db.execute(stmt_collection)
-    collection = result_collection.scalar_one_or_none()
+    auth_type, auth_payload = auth_data
+
+    # Verify collection access based on auth type
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - verify collection exists
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+        else:
+            # Collection-scoped API key - verify it matches the requested collection
+            collection, api_key = auth_payload
+            if collection.name != collection_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="API key not valid for this collection"
+                )
+    else:
+        # JWT auth - verify collection exists and user has access
+        stmt_collection = select(Collection).where(Collection.name == collection_name)
+        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+        result_collection = await db.execute(stmt_collection)
+        collection = result_collection.scalar_one_or_none()
 
     if not collection:
         raise HTTPException(

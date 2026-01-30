@@ -772,3 +772,397 @@ async def test_search_tasks_missing_query(async_client: AsyncClient, mock_typese
     finally:
         app.dependency_overrides.pop(search.setup_and_get_typesense_client, None)
 
+
+# API Key Authentication Tests for Task Endpoints
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from mlcbakery.models import Collection, Task, ApiKey
+from conftest import TEST_ADMIN_TOKEN
+
+ADMIN_HEADERS = {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
+
+
+async def _create_collection_with_api_key(db_session: AsyncSession, collection_name: str):
+    """Helper to create a collection and API key directly in the database."""
+    collection = Collection(name=collection_name, owner_identifier="test_owner")
+    db_session.add(collection)
+    await db_session.commit()
+    await db_session.refresh(collection)
+
+    plaintext_key = ApiKey.generate_api_key()
+    api_key = ApiKey.create_from_plaintext(
+        api_key=plaintext_key,
+        collection_id=collection.id,
+        name="Test Key"
+    )
+    db_session.add(api_key)
+    await db_session.commit()
+
+    return collection, plaintext_key
+
+
+async def _create_task_in_db(db_session: AsyncSession, collection_id: int, task_name: str):
+    """Helper to create a task directly in the database."""
+    task = Task(
+        name=task_name,
+        collection_id=collection_id,
+        workflow={"steps": ["step1"]},
+        entity_type="task"
+    )
+    db_session.add(task)
+    await db_session.commit()
+    await db_session.refresh(task)
+    return task
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test listing all tasks with API key authentication."""
+    collection_name = f"test-coll-api-key-list-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    # Create tasks
+    await _create_task_in_db(db_session, collection.id, "Task1")
+    await _create_task_in_db(db_session, collection.id, "Task2")
+
+    # Test with API key
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.get("/api/v1/tasks/", headers=api_headers)
+
+    assert response.status_code == 200
+    tasks = response.json()
+    assert isinstance(tasks, list)
+    assert len(tasks) == 2  # Only tasks from this collection
+    task_names = [t["name"] for t in tasks]
+    assert "Task1" in task_names
+    assert "Task2" in task_names
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_by_collection_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test listing tasks by collection with API key authentication."""
+    collection_name = f"test-coll-api-key-list-by-coll-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    # Create tasks
+    await _create_task_in_db(db_session, collection.id, "CollTask1")
+    await _create_task_in_db(db_session, collection.id, "CollTask2")
+
+    # Test with API key
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.get(f"/api/v1/tasks/{collection_name}/", headers=api_headers)
+
+    assert response.status_code == 200
+    tasks = response.json()
+    assert len(tasks) == 2
+    task_names = [t["name"] for t in tasks]
+    assert "CollTask1" in task_names
+    assert "CollTask2" in task_names
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_by_collection_wrong_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key from wrong collection is rejected for list tasks."""
+    # Create two collections
+    collection1_name = f"coll1-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    # Create task in collection1
+    await _create_task_in_db(db_session, collection1.id, "Task1")
+
+    # Try to access collection1 tasks with collection2 API key
+    api_headers = {"Authorization": f"Bearer {api_key2}"}
+    response = await async_client.get(f"/api/v1/tasks/{collection1_name}/", headers=api_headers)
+
+    assert response.status_code == 403
+    assert "API key not valid for this collection" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_task_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting a specific task with API key authentication."""
+    collection_name = f"test-coll-api-key-get-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    task = await _create_task_in_db(db_session, collection.id, "GetMeTask")
+
+    # Test with API key
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.get(f"/api/v1/tasks/{collection_name}/GetMeTask", headers=api_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "GetMeTask"
+    assert data["id"] == task.id
+
+
+@pytest.mark.asyncio
+async def test_get_task_wrong_collection_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key from wrong collection is rejected for get task."""
+    # Create two collections
+    collection1_name = f"coll1-get-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-get-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    # Create task in collection1
+    await _create_task_in_db(db_session, collection1.id, "TestTask")
+
+    # Try to access collection1 task with collection2 API key
+    api_headers = {"Authorization": f"Bearer {api_key2}"}
+    response = await async_client.get(f"/api/v1/tasks/{collection1_name}/TestTask", headers=api_headers)
+
+    assert response.status_code == 403
+    assert "API key not valid for this collection" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_task_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test creating a task with API key authentication."""
+    collection_name = f"test-coll-api-key-create-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    task_data = {
+        "name": "NewAPIKeyTask",
+        "workflow": {"steps": ["step1", "step2"]},
+        "description": "Created with API key"
+    }
+
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.post(
+        f"/api/v1/tasks/{collection_name}",
+        json=task_data,
+        headers=api_headers
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "NewAPIKeyTask"
+    assert data["collection_id"] == collection.id
+    assert data["description"] == "Created with API key"
+
+
+@pytest.mark.asyncio
+async def test_create_task_wrong_collection_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key from wrong collection is rejected for create task."""
+    # Create two collections
+    collection1_name = f"coll1-create-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-create-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    task_data = {
+        "name": "UnauthorizedTask",
+        "workflow": {"steps": ["step1"]}
+    }
+
+    # Try to create task in collection1 with collection2 API key
+    api_headers = {"Authorization": f"Bearer {api_key2}"}
+    response = await async_client.post(
+        f"/api/v1/tasks/{collection1_name}",
+        json=task_data,
+        headers=api_headers
+    )
+
+    assert response.status_code == 403
+    assert "API key not valid for this collection" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_task_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test updating a task with API key authentication."""
+    collection_name = f"test-coll-api-key-update-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    await _create_task_in_db(db_session, collection.id, "UpdateMeTask")
+
+    update_data = {
+        "description": "Updated with API key",
+        "version": "2.0.0"
+    }
+
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.put(
+        f"/api/v1/tasks/{collection_name}/UpdateMeTask",
+        json=update_data,
+        headers=api_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["description"] == "Updated with API key"
+    assert data["version"] == "2.0.0"
+
+
+@pytest.mark.asyncio
+async def test_update_task_wrong_collection_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key from wrong collection is rejected for update task."""
+    # Create two collections
+    collection1_name = f"coll1-update-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-update-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    # Create task in collection1
+    await _create_task_in_db(db_session, collection1.id, "ProtectedTask")
+
+    update_data = {"description": "Should not work"}
+
+    # Try to update collection1 task with collection2 API key
+    api_headers = {"Authorization": f"Bearer {api_key2}"}
+    response = await async_client.put(
+        f"/api/v1/tasks/{collection1_name}/ProtectedTask",
+        json=update_data,
+        headers=api_headers
+    )
+
+    assert response.status_code == 403
+    assert "API key not valid for this collection" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_task_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test deleting a task with API key authentication."""
+    collection_name = f"test-coll-api-key-delete-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    await _create_task_in_db(db_session, collection.id, "DeleteMeTask")
+
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.delete(
+        f"/api/v1/tasks/{collection_name}/DeleteMeTask",
+        headers=api_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Task deleted successfully"
+
+    # Verify task is deleted
+    get_response = await async_client.get(
+        f"/api/v1/tasks/{collection_name}/DeleteMeTask",
+        headers=api_headers
+    )
+    assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_task_wrong_collection_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key from wrong collection is rejected for delete task."""
+    # Create two collections
+    collection1_name = f"coll1-delete-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-delete-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    # Create task in collection1
+    await _create_task_in_db(db_session, collection1.id, "DontDeleteMe")
+
+    # Try to delete collection1 task with collection2 API key
+    api_headers = {"Authorization": f"Bearer {api_key2}"}
+    response = await async_client.delete(
+        f"/api/v1/tasks/{collection1_name}/DontDeleteMe",
+        headers=api_headers
+    )
+
+    assert response.status_code == 403
+    assert "API key not valid for this collection" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_task_version_history_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting task version history with API key authentication."""
+    collection_name = f"test-coll-api-key-history-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    await _create_task_in_db(db_session, collection.id, "HistoryTask")
+
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection_name}/HistoryTask/history",
+        headers=api_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["entity_name"] == "HistoryTask"
+    assert data["entity_type"] == "task"
+
+
+@pytest.mark.asyncio
+async def test_task_version_with_api_key(async_client: AsyncClient, db_session: AsyncSession):
+    """Test getting task at specific version with API key authentication."""
+    collection_name = f"test-coll-api-key-version-{uuid.uuid4().hex[:8]}"
+    collection, api_key = await _create_collection_with_api_key(db_session, collection_name)
+
+    await _create_task_in_db(db_session, collection.id, "VersionTask")
+
+    api_headers = {"Authorization": f"Bearer {api_key}"}
+    response = await async_client.get(
+        f"/api/v1/tasks/{collection_name}/VersionTask/versions/~0",
+        headers=api_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "index" in data
+
+
+@pytest.mark.asyncio
+async def test_invalid_api_key_rejected(async_client: AsyncClient):
+    """Test that invalid API key is rejected."""
+    invalid_headers = {"Authorization": "Bearer mlc_invalid_key_12345678901234567890"}
+
+    response = await async_client.get("/api/v1/tasks/", headers=invalid_headers)
+
+    assert response.status_code == 401
+    assert "Invalid or inactive API key" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_key_only_sees_own_collection_tasks(async_client: AsyncClient, db_session: AsyncSession):
+    """Test that API key only sees tasks from its own collection when listing all tasks."""
+    # Create two collections with tasks
+    collection1_name = f"coll1-isolation-{uuid.uuid4().hex[:8]}"
+    collection2_name = f"coll2-isolation-{uuid.uuid4().hex[:8]}"
+
+    collection1, api_key1 = await _create_collection_with_api_key(db_session, collection1_name)
+    collection2, api_key2 = await _create_collection_with_api_key(db_session, collection2_name)
+
+    # Create tasks in both collections
+    await _create_task_in_db(db_session, collection1.id, "Coll1Task1")
+    await _create_task_in_db(db_session, collection1.id, "Coll1Task2")
+    await _create_task_in_db(db_session, collection2.id, "Coll2Task1")
+    await _create_task_in_db(db_session, collection2.id, "Coll2Task2")
+
+    # List tasks with collection1 API key
+    api_headers1 = {"Authorization": f"Bearer {api_key1}"}
+    response1 = await async_client.get("/api/v1/tasks/", headers=api_headers1)
+
+    assert response1.status_code == 200
+    tasks1 = response1.json()
+    task_names1 = [t["name"] for t in tasks1]
+    assert "Coll1Task1" in task_names1
+    assert "Coll1Task2" in task_names1
+    assert "Coll2Task1" not in task_names1
+    assert "Coll2Task2" not in task_names1
+
+    # List tasks with collection2 API key
+    api_headers2 = {"Authorization": f"Bearer {api_key2}"}
+    response2 = await async_client.get("/api/v1/tasks/", headers=api_headers2)
+
+    assert response2.status_code == 200
+    tasks2 = response2.json()
+    task_names2 = [t["name"] for t in tasks2]
+    assert "Coll2Task1" in task_names2
+    assert "Coll2Task2" in task_names2
+    assert "Coll1Task1" not in task_names2
+    assert "Coll1Task2" not in task_names2
+
