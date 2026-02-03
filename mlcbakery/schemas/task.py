@@ -26,6 +26,7 @@ class TaskCreate(BaseModel):
     has_file_uploads: bool = False
     entity_type: str = "task"
     croissant_metadata: Optional[dict] = None
+    is_private: bool = True  # Private by default
 
 
 class TaskUpdate(BaseModel):
