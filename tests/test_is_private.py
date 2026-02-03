@@ -258,3 +258,81 @@ async def test_invalid_is_private_type_rejected():
         )
         # Pydantic should reject this with 422 Unprocessable Entity
         assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_public_task_accessible_without_auth():
+    """Test that public tasks (is_private=False) can be accessed without authentication."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection (requires auth)
+        collection_data = {"name": "Public Task Test Collection", "description": "Test collection"}
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create public task (requires auth)
+        task_data = {
+            "name": "Public Task",
+            "workflow": {"steps": ["step1"]},
+            "entity_type": "task",
+            "is_private": False,
+        }
+        create_resp = await ac.post(
+            f"/api/v1/tasks/{collection_name}",
+            json=task_data,
+            headers=authorization_headers(sample_org_token())
+        )
+        assert create_resp.status_code == 201
+        task_name = create_resp.json()["name"]
+
+        # Access public task WITHOUT authentication
+        get_resp = await ac.get(f"/api/v1/tasks/{collection_name}/{task_name}")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["name"] == task_name
+        assert data["is_private"] is False
+
+
+@pytest.mark.asyncio
+async def test_private_task_requires_auth():
+    """Test that private tasks (is_private=True) require authentication."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Create collection (requires auth)
+        collection_data = {"name": "Private Task Test Collection", "description": "Test collection"}
+        coll_resp = await ac.post(
+            "/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token())
+        )
+        assert coll_resp.status_code == 200
+        collection_name = coll_resp.json()["name"]
+
+        # Create private task (requires auth)
+        task_data = {
+            "name": "Private Task Auth Test",
+            "workflow": {"steps": ["step1"]},
+            "entity_type": "task",
+            "is_private": True,
+        }
+        create_resp = await ac.post(
+            f"/api/v1/tasks/{collection_name}",
+            json=task_data,
+            headers=authorization_headers(sample_org_token())
+        )
+        assert create_resp.status_code == 201
+        task_name = create_resp.json()["name"]
+
+        # Try to access private task WITHOUT authentication - should fail
+        get_resp = await ac.get(f"/api/v1/tasks/{collection_name}/{task_name}")
+        assert get_resp.status_code == 401
+        assert get_resp.json()["detail"] == "Not authenticated"
+
+        # Access private task WITH authentication - should succeed
+        get_resp_auth = await ac.get(
+            f"/api/v1/tasks/{collection_name}/{task_name}",
+            headers=authorization_headers(sample_org_token())
+        )
+        assert get_resp_auth.status_code == 200
+        assert get_resp_auth.json()["name"] == task_name

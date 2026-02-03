@@ -25,6 +25,7 @@ from mlcbakery.api.dependencies import (
     apply_auth_to_stmt,
     verify_auth_with_write_access,
     get_flexible_auth,
+    get_optional_flexible_auth,
     verify_collection_access_for_api_key,
     get_auth_for_stmt,
 )
@@ -240,50 +241,67 @@ async def get_task_by_name(
     collection_name: str,
     task_name: str,
     db: AsyncSession = Depends(get_async_db),
-    auth_data = Depends(get_flexible_auth),
+    auth_data = Depends(get_optional_flexible_auth),
 ):
     """
     Get a specific task by its collection name and task name.
 
+    Public tasks (is_private=False) can be accessed without authentication.
+    Private tasks require authentication with appropriate collection access.
+
     - **collection_name**: Name of the collection the task belongs to.
     - **task_name**: Name of the task.
     """
-    auth_type, auth_payload = auth_data
-
-    # Verify collection access based on auth type
-    if auth_type == 'api_key':
-        if auth_payload is None:
-            # Admin API key - verify collection exists
-            stmt_collection = select(Collection).where(Collection.name == collection_name)
-            result_collection = await db.execute(stmt_collection)
-            collection = result_collection.scalar_one_or_none()
-        else:
-            # Collection-scoped API key - verify it matches the requested collection
-            collection, api_key = auth_payload
-            if collection.name != collection_name:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="API key not valid for this collection"
-                )
-    else:
-        # JWT auth - verify collection exists and user has access
-        stmt_collection = select(Collection).where(Collection.name == collection_name)
-        stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
-        result_collection = await db.execute(stmt_collection)
-        collection = result_collection.scalar_one_or_none()
-
-    if not collection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Collection with name '{collection_name}' not found",
-        )
-
+    # First, try to find the task to check if it's public
     db_task = await _find_task_by_name(collection_name, task_name, db)
     if not db_task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task '{task_name}' in collection '{collection_name}' not found",
         )
+
+    # If task is public (is_private=False), allow access without auth
+    if db_task.is_private is False:
+        # Public task - no auth required
+        pass
+    elif auth_data is None:
+        # Private task but no auth provided
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    else:
+        # Private task with auth - verify access
+        auth_type, auth_payload = auth_data
+
+        # Verify collection access based on auth type
+        if auth_type == 'api_key':
+            if auth_payload is None:
+                # Admin API key - verify collection exists
+                stmt_collection = select(Collection).where(Collection.name == collection_name)
+                result_collection = await db.execute(stmt_collection)
+                collection = result_collection.scalar_one_or_none()
+            else:
+                # Collection-scoped API key - verify it matches the requested collection
+                collection, api_key = auth_payload
+                if collection.name != collection_name:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="API key not valid for this collection"
+                    )
+        else:
+            # JWT auth - verify collection exists and user has access
+            stmt_collection = select(Collection).where(Collection.name == collection_name)
+            stmt_collection = apply_auth_to_stmt(stmt_collection, auth_payload)
+            result_collection = await db.execute(stmt_collection)
+            collection = result_collection.scalar_one_or_none()
+
+        if not collection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Collection with name '{collection_name}' not found",
+            )
 
     # Get updated_at from latest version transaction
     updated_at = await _get_entity_updated_at(db_task.id, db)

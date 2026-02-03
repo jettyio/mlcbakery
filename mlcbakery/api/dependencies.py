@@ -194,6 +194,27 @@ async def get_user_collection_id(
         return [c.id for c in collections]
 
 
+async def get_optional_flexible_auth(
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
+    db: AsyncSession = Depends(get_async_db),
+    auth_strategies_instance = Depends(auth_strategies)
+) -> tuple[str, Any] | None:
+    """
+    Optional flexible authentication - returns None if no credentials provided.
+    Used for endpoints that allow public access to certain resources.
+    Returns either:
+    - ('api_key', (Collection, ApiKey)) for API key auth
+    - ('api_key', None) for admin API key
+    - ('jwt', auth_payload) for JWT auth
+    - None if no credentials provided
+    """
+    if credentials is None:
+        return None
+
+    # Delegate to regular flexible auth
+    return await get_flexible_auth(credentials, db, auth_strategies_instance)
+
+
 async def get_flexible_auth(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_async_db),
