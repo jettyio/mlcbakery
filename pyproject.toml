@@ -22,10 +22,10 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.33.1",
     "opentelemetry-instrumentation-fastapi>=0.54b1",
     "pandas>=2.2.3",
-    "protobuf>=5.29.5",
+    "protobuf>=5.29.6,!=6.30.0,!=6.30.1,!=6.30.2,!=6.31.0,!=6.31.1,!=6.32.0,!=6.32.1,!=6.33.0,!=6.33.1,!=6.33.2,!=6.33.3,!=6.33.4",
     "pyasn1>=0.6.2",
     "pyarrow>=19.0.1",
-    "python-multipart>=0.0.20",
+    "python-multipart>=0.0.22",
     "requests>=2.32.4",
     "sqlalchemy>=2.0.40",
     "sqlalchemy-continuum>=1.4.2",
@@ -78,7 +78,7 @@ asyncpg = ">=0.29.0"
 pydantic = "^2.6.1"
 python-dotenv = "^1.0.0"
 alembic = "^1.15.1"
-python-multipart = "^0.0.20"
+python-multipart = ">=0.0.22"
 fastmcp = {version = "^2.14.0"}
 google-cloud-storage = "^3.1.0"
 opentelemetry-api = "~=1.24.0"
@@ -87,7 +87,7 @@ opentelemetry-exporter-gcp-monitoring = "==1.9.0a0"
 opentelemetry-exporter-gcp-trace = "==1.9.0"
 opentelemetry-exporter-otlp = ">=1.33.1"
 opentelemetry-instrumentation-fastapi = ">=0.46b0"
-protobuf = ">=5.29.5"
+protobuf = ">=5.29.6,!=6.30.0,!=6.30.1,!=6.30.2,!=6.31.0,!=6.31.1,!=6.32.0,!=6.32.1,!=6.33.0,!=6.33.1,!=6.33.2,!=6.33.3,!=6.33.4"
 pyasn1 = ">=0.6.2"
 urllib3 = ">=2.6.3"
 virtualenv = ">=20.36.1"
