@@ -14,6 +14,7 @@ from mlcbakery.storage.gcp import (
     create_gcs_client,
     get_next_file_number,
     upload_file_to_gcs,
+    upload_file_with_unique_number,
     generate_download_signed_url,
     extract_bucket_info,
 )
@@ -144,21 +145,14 @@ async def upload_dataset_data(
             path_prefix, _BASE_DIR, collection_name, dataset_name
         ).strip("/")
 
-        # 7. Determine the next file number
-        file_number = get_next_file_number(bucket_name, base_path, gcs_client)
-
-        # 8. Format the file name with leading zeros
-        file_name = f"data.{file_number:06d}.tar.gz"
-        destination_path = f"{base_path}/{file_name}"
-
-        # 9. Read and upload the file
+        # 7. Read the file content
         file_content = await data_file.read()
         if not file_content:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-        # 10. Upload the file to GCS
-        uploaded_path = upload_file_to_gcs(
-            bucket_name, file_content, destination_path, gcs_client
+        # 8. Upload with race-safe unique numbering
+        uploaded_path, file_number = upload_file_with_unique_number(
+            bucket_name, file_content, base_path, gcs_client
         )
 
         # 11. Update the dataset's data_path if it's not already set

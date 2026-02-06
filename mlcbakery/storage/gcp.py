@@ -1,9 +1,11 @@
 import json
 import logging
 import os
+import time
 from typing import Dict, Any, Optional, Tuple
 from tempfile import NamedTemporaryFile
 from google.cloud import storage
+from google.api_core.exceptions import PreconditionFailed
 from google.oauth2 import service_account
 
 _LOGGER = logging.getLogger(__name__)
@@ -123,6 +125,51 @@ def upload_file_to_gcs(
     except Exception as e:
         _LOGGER.error(f"Failed to upload file to GCS: {e}")
         raise
+
+
+def upload_file_with_unique_number(
+    bucket_name: str,
+    data: bytes,
+    base_path: str,
+    client: storage.Client,
+    max_retries: int = 5,
+) -> Tuple[str, int]:
+    """Upload a file with a unique sequential number, safe against concurrent uploads.
+
+    Uses GCS if_generation_match=0 precondition to ensure the blob doesn't already
+    exist. On conflict, re-queries the next number and retries.
+
+    Args:
+        bucket_name: Name of the GCS bucket
+        data: Binary data to upload
+        base_path: Base path prefix (e.g., 'mlcbakery/collection/dataset')
+        client: GCS client instance
+        max_retries: Maximum number of retry attempts on conflict
+
+    Returns:
+        Tuple of (uploaded_path, file_number)
+
+    Raises:
+        RuntimeError: If max retries exhausted due to concurrent conflicts
+    """
+    bucket = client.bucket(bucket_name)
+    for attempt in range(max_retries):
+        file_number = get_next_file_number(bucket_name, base_path, client)
+        file_name = f"data.{file_number:06d}.tar.gz"
+        destination_path = f"{base_path}/{file_name}"
+        blob = bucket.blob(destination_path)
+        try:
+            blob.upload_from_string(data, if_generation_match=0)
+            return blob.name, file_number
+        except PreconditionFailed:
+            _LOGGER.warning(
+                f"Conflict on {destination_path} (attempt {attempt + 1}/{max_retries}), retrying"
+            )
+            time.sleep(0.1 * (attempt + 1))
+    raise RuntimeError(
+        f"Failed to upload with unique number after {max_retries} attempts "
+        f"due to concurrent conflicts on {base_path}"
+    )
 
 
 def generate_download_signed_url(

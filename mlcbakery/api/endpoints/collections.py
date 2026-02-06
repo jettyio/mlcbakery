@@ -59,19 +59,18 @@ async def create_collection(
     )
 
     db.add(db_collection)
-    await db.commit()
-    await db.refresh(db_collection)
-    
+    await db.flush()  # Assigns db_collection.id without committing
+
     # Create a default agent for the collection
     default_agent = Agent(
         name=f"{collection.name} Owner",
         type="owner",
-        collection_id=db_collection.id  # Associate the agent with this collection
+        collection_id=db_collection.id
     )
     db.add(default_agent)
-    await db.commit()
-    await db.refresh(default_agent)
-    
+    await db.commit()  # Single atomic commit for both
+    await db.refresh(db_collection)
+
     return db_collection
 
 
