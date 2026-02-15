@@ -1373,15 +1373,13 @@ class Client:
         self, collection_name: str, model_name: str, params: dict = dict()
     ) -> BakeryModel:
         """Create a model in a collection."""
-        endpoint = "/models"  # As per API: POST /models
-        # Ensure collection_name is in params for the API, even if collection_id is also used internally
+        endpoint = f"/models/{collection_name}"
         payload = {
             "name": model_name,
-            "collection_name": collection_name, # API expects collection_name for creation
-            "entity_type": "trained_model", # Default entity type
-            **params, # params should include model_path and other metadata
+            "entity_type": "trained_model",
+            **params,
         }
-        
+
         # Ensure model_path is present, as it's required by the schema
         if "model_path" not in payload or not payload["model_path"]:
             raise ValueError("model_path is required to create a model.")
@@ -1409,9 +1407,15 @@ class Client:
                 f"Failed to create model {model_name} in collection {collection_name}: {e}"
             ) from e
 
-    def update_model(self, model_id: str, params: dict) -> BakeryModel:
-        """Update a model."""
-        endpoint = f"/models/{model_id}" # As per API: PUT /models/{model_id}
+    def update_model(self, model_id: str, params: dict, collection_name: str = None, model_name: str = None) -> BakeryModel:
+        """Update a model.
+
+        Uses collection_name/model_name path if provided, otherwise falls back to model_id.
+        """
+        if collection_name and model_name:
+            endpoint = f"/models/{collection_name}/{model_name}"
+        else:
+            endpoint = f"/models/{model_id}"
         try:
             response = self._request("PUT", endpoint, json_data=params)
             json_response = response.json()
@@ -1495,7 +1499,7 @@ class Client:
                 f"Updating model {model_name} in collection {collection_name}"
             )
             # The update payload should not contain 'name' or 'collection_id' as they are immutable or set via URL
-            pushed_model = self.update_model(existing_model.id, entity_payload_for_update)
+            pushed_model = self.update_model(existing_model.id, entity_payload_for_update, collection_name=collection_name, model_name=model_name)
         else:
             # Create new model
             _LOGGER.info(
