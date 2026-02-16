@@ -374,6 +374,9 @@ class Client:
 
         collection = self.find_or_create_by_collection_name(collection_name)
 
+        # Use the canonical collection name from the API (preserves proper casing)
+        collection_name = collection.name
+
         dataset = self.get_dataset_by_name(collection_name, dataset_name)
 
         entity_payload = {
