@@ -158,6 +158,9 @@ class Client:
         """
         self.bakery_url = bakery_url.rstrip("/") + "/api/v1"
         self.token = token  # Store the token
+        self._collection_cache: dict[str, "BakeryCollection"] = {}  # name -> collection
+        import threading
+        self._collection_lock = threading.Lock()
 
     def _request(
         self,
@@ -254,20 +257,32 @@ class Client:
         self, collection_name: str
     ) -> BakeryCollection:
         """Get a collection by collection name and create it if it doesn't exist."""
-        # TODO: check if the collection already exists
-        try:
-            return self.get_collection_by_name(collection_name)
-        except Exception as e:
-            # If GET fails (e.g., 404 if no collections yet), proceed to create
-            _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
+        # Check cache first (no lock needed for read)
+        if collection_name in self._collection_cache:
+            return self._collection_cache[collection_name]
 
-        # If collection doesn't exist, create it
-        try:
-            return self.create_collection(collection_name)
-        except Exception as e:
-            raise Exception(
-                f"Failed to create collection {collection_name}: {e}"
-            ) from e
+        with self._collection_lock:
+            # Double-check after acquiring lock
+            if collection_name in self._collection_cache:
+                return self._collection_cache[collection_name]
+
+            try:
+                coll = self.get_collection_by_name(collection_name)
+                if coll:
+                    self._collection_cache[collection_name] = coll
+                    return coll
+            except Exception as e:
+                _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
+
+            # If collection doesn't exist, create it
+            try:
+                coll = self.create_collection(collection_name)
+                self._collection_cache[collection_name] = coll
+                return coll
+            except Exception as e:
+                raise Exception(
+                    f"Failed to create collection {collection_name}: {e}"
+                ) from e
     
     def get_collection_by_name(self, collection_name: str) -> BakeryCollection | None:
         """Get a collection by name."""
