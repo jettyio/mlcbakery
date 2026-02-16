@@ -1472,6 +1472,8 @@ class Client:
         if not collection: # Should not happen if find_or_create is correct
              raise Exception(f"Failed to find or create collection {collection_name}")
 
+        # Use the canonical collection name from the API (preserves proper casing)
+        collection_name = collection.name
 
         existing_model = self.get_model_by_name(collection_name, model_name)
 
