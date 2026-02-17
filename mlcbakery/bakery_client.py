@@ -183,6 +183,7 @@ class Client:
         files: dict[str, Any] | None = None,
         headers: dict[str, Any] | None = None,  # Defaulting to None, will be set below
         stream: bool = False,
+        timeout: float = 30.0,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
         url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
@@ -201,6 +202,7 @@ class Client:
                 headers=headers,
                 verify=True,  # Keep verify=True for HTTPS
                 stream=stream,
+                timeout=timeout,
             )
             response.raise_for_status()  # Let this raise HTTPError for bad responses
             return response
