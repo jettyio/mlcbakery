@@ -161,6 +161,18 @@ class Client:
         self._collection_cache: dict[str, "BakeryCollection"] = {}  # name -> collection
         import threading
         self._collection_lock = threading.Lock()
+        self._thread_local = threading.local()
+
+    def _get_session(self) -> requests.Session:
+        """Get a thread-local requests session for connection reuse."""
+        if not hasattr(self._thread_local, 'session'):
+            session = requests.Session()
+            if self.token:
+                session.headers["Authorization"] = f"Bearer {self.token}"
+            session.headers["Content-Type"] = "application/json"
+            session.headers["Accept"] = "application/json"
+            self._thread_local.session = session
+        return self._thread_local.session
 
     def _request(
         self,
@@ -173,19 +185,14 @@ class Client:
         stream: bool = False,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
-        # Initialize headers if None or provide default
-        if headers is None:
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-
         url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        # Session already has default headers (auth, content-type, accept)
+        # Only pass extra headers if caller provided them
+        if headers is None:
+            headers = {}
 
         try:
-            response = requests.request(
+            response = self._get_session().request(
                 method=method,
                 url=url,
                 params=params,
@@ -375,11 +382,13 @@ class Client:
         asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
-        data_file_path: str | None = None
+        data_file_path: str | None = None,
+        create_only: bool = False,
     ) -> BakeryDataset:
         """Push a dataset to the bakery.
 
         If data_file_path is provided, the file will be uploaded to storage after dataset creation/update.
+        If create_only is True, skip existence check and final fetch (faster for bulk creates).
         """
         if "/" not in dataset_path:
             raise ValueError(
@@ -391,8 +400,6 @@ class Client:
 
         # Use the canonical collection name from the API (preserves proper casing)
         collection_name = collection.name
-
-        dataset = self.get_dataset_by_name(collection_name, dataset_name)
 
         entity_payload = {
             "name": dataset_name,
@@ -406,9 +413,25 @@ class Client:
             "long_description": str(long_description),
             "metadata_version": metadata_version,
         }
-        
+
         # Filter out None values from payload to avoid overwriting existing fields with null
         entity_payload = {k: v for k, v in entity_payload.items() if v is not None}
+
+        if create_only:
+            # Fast path: just create, no existence check or final fetch
+            _LOGGER.info(
+                f"Creating dataset {dataset_name} in collection {collection_name} with collection_id {collection.id}"
+            )
+            try:
+                return self.create_dataset(collection.name, dataset_name, entity_payload.copy())
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code in (400, 409):
+                    # Already exists — fall through to update
+                    _LOGGER.info(f"Dataset {dataset_name} already exists, updating")
+                    return self.update_dataset(collection_name, dataset_name, entity_payload)
+                raise
+
+        dataset = self.get_dataset_by_name(collection_name, dataset_name)
 
         if dataset:
             # Update existing dataset
@@ -571,6 +594,8 @@ class Client:
                 data_path=json_response.get("data_path"),
                 long_description=json_response.get("long_description"),
             )
+        except requests.exceptions.HTTPError:
+            raise  # Let HTTP errors propagate directly for callers to handle
         except Exception as e:
             raise Exception(
                 f"Failed to create dataset {dataset_name} in collection {collection_name}: {e}"
