@@ -21,8 +21,16 @@ else:
         )
 
 
-    # Create async engine
-    engine = create_async_engine(DATABASE_URL, echo=True)  # Add echo=True for debugging
+    # Create async engine with pool settings tuned for Cloud Run / Cloud SQL
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=True,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800,  # Recycle connections every 30 min to avoid Cloud SQL proxy stale conns
+        pool_pre_ping=True,  # Verify connections are alive before using them
+    )
 
     # Create async session factory
     AsyncSessionFactory = sessionmaker(
