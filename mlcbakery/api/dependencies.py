@@ -238,6 +238,13 @@ async def get_flexible_auth(
         except HTTPException:
             # For API key format tokens, preserve specific error messages
             raise
+        except Exception as e:
+            # Database errors (e.g., connection lost) should not masquerade as auth failures
+            logging.getLogger(__name__).error(f"Database error during API key validation: {type(e).__name__}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            )
     else:
         # This doesn't look like an API key - try JWT authentication first
         try:
