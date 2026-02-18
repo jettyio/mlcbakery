@@ -1,8 +1,11 @@
+import logging
 import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
 from fastapi import HTTPException, status
 from mlcbakery.auth.jwt_strategy import JWTStrategy
+
+logger = logging.getLogger(__name__)
 
 class JWKSStrategy(JWTStrategy):
     """
@@ -32,5 +35,7 @@ class JWKSStrategy(JWTStrategy):
               algorithms=["RS256"],
               options={"verify_aud": False}  # Adjust as needed
           )
-        except PyJWTError as e:
+        except Exception as e:
+          if not isinstance(e, PyJWTError):
+              logger.error(f"JWKS token validation error: {type(e).__name__}: {e}")
           return None
