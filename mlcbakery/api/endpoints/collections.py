@@ -133,22 +133,39 @@ async def get_collection(
 @router.get("/collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth),
+    auth_data: tuple[str, Any] = fastapi.Depends(get_flexible_auth),
 ):
     """
     Get collections from the database with pagination (async).
+    API key tokens return only their associated collection.
     """
     if skip < 0 or limit < 0:
         raise fastapi.HTTPException(
             status_code=422, detail="Invalid pagination parameters"
         )
-    
-    stmt = select(Collection).offset(skip).limit(limit)
-    stmt = apply_auth_to_stmt(stmt, auth)
-    
-    result = await db.execute(stmt)
-    collections = result.scalars().all()
-    return collections
+
+    auth_type, auth_payload = auth_data
+
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - return all collections
+            stmt = select(Collection).offset(skip).limit(limit)
+            result = await db.execute(stmt)
+            return result.scalars().all()
+        else:
+            # Scoped API key - return only the associated collection
+            collection_obj, _ = auth_payload
+            return [collection_obj]
+
+    elif auth_type == 'jwt':
+        stmt = select(Collection).offset(skip).limit(limit)
+        if auth_payload.get("access_type") != AccessType.ADMIN:
+            stmt = apply_auth_to_stmt(stmt, auth_payload)
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    else:
+        raise fastapi.HTTPException(status_code=500, detail="Invalid authentication type")
 
 
 @router.get(

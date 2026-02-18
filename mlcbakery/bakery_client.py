@@ -161,18 +161,6 @@ class Client:
         self._collection_cache: dict[str, "BakeryCollection"] = {}  # name -> collection
         import threading
         self._collection_lock = threading.Lock()
-        self._thread_local = threading.local()
-
-    def _get_session(self) -> requests.Session:
-        """Get a thread-local requests session for connection reuse."""
-        if not hasattr(self._thread_local, 'session'):
-            session = requests.Session()
-            if self.token:
-                session.headers["Authorization"] = f"Bearer {self.token}"
-            session.headers["Content-Type"] = "application/json"
-            session.headers["Accept"] = "application/json"
-            self._thread_local.session = session
-        return self._thread_local.session
 
     def _request(
         self,
@@ -186,14 +174,19 @@ class Client:
         timeout: float = 30.0,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
-        url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
-        # Session already has default headers (auth, content-type, accept)
-        # Only pass extra headers if caller provided them
+        # Initialize headers if None or provide default
         if headers is None:
-            headers = {}
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+        url = f"{self.bakery_url}/{endpoint.lstrip('/')}"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
 
         try:
-            response = self._get_session().request(
+            response = requests.request(
                 method=method,
                 url=url,
                 params=params,
