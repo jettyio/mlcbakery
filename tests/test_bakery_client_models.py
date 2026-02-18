@@ -94,13 +94,12 @@ class TestPushModel(unittest.TestCase):
         self.assertEqual(args[0], "GET")
         self.assertEqual(args[1], f"/models/{self.collection_name}/{self.model_name}")
 
-        # Call 2: create_model
+        # Call 2: create_model (POST /models/{collection_name})
         args, kwargs = mock_request.call_args_list[1]
         self.assertEqual(args[0], "POST")
-        self.assertEqual(args[1], "/models")
+        self.assertEqual(args[1], f"/models/{self.collection_name}")
         expected_payload_create = {
             "name": self.model_name,
-            "collection_name": self.collection_name,
             "entity_type": "trained_model",
             **self.base_model_data
         }
@@ -197,10 +196,10 @@ class TestPushModel(unittest.TestCase):
         self.assertEqual(args[0], "GET")
         self.assertEqual(args[1], f"/models/{self.collection_name}/{self.model_name}")
         
-        # Call 2: update_model
+        # Call 2: update_model (PUT /models/{collection_name}/{model_name})
         args, kwargs = mock_request.call_args_list[1]
         self.assertEqual(args[0], "PUT")
-        self.assertEqual(args[1], f"/models/{existing_model_id}")
+        self.assertEqual(args[1], f"/models/{self.collection_name}/{self.model_name}")
         # For update, only non-None values are sent
         expected_payload_update = {
             "model_path": updated_model_data_from_payload["model_path"],

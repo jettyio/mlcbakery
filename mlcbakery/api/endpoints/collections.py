@@ -1,9 +1,12 @@
+import logging
 import fastapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload  # For eager loading entities
 from sqlalchemy import func # Added for func.lower
 from typing import List, Any
+
+logger = logging.getLogger(__name__)
 
 from mlcbakery.models import Collection, Dataset, Agent
 from mlcbakery.schemas.collection import (
@@ -76,70 +79,93 @@ async def create_collection(
 
 @router.get("/collections/{collection_name}", response_model=CollectionResponse)
 async def get_collection(
-    collection_name: str, 
+    collection_name: str,
     db: AsyncSession = fastapi.Depends(get_async_db),
     auth_data: tuple[str, Any] = fastapi.Depends(get_flexible_auth)
 ):
     """Get a collection by name (async)."""
-    auth_type, auth_payload = auth_data
+    try:
+        auth_type, auth_payload = auth_data
 
-    if auth_type == 'api_key':
-        # API key authentication
-        if auth_payload is None:
-            # Admin API key - search across all collections
+        if auth_type == 'api_key':
+            # API key authentication
+            if auth_payload is None:
+                # Admin API key - search across all collections
+                stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
+                result_coll = await db.execute(stmt_coll)
+                collection = result_coll.scalar_one_or_none()
+                if not collection:
+                    raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+                return collection
+            else:
+                # Regular API key - verify collection access
+                collection_obj, _ = auth_payload
+                if collection_obj.name.lower() != collection_name.lower():
+                    raise fastapi.HTTPException(
+                        status_code=403,
+                        detail="API key not valid for this collection"
+                    )
+                return collection_obj
+
+        elif auth_type == 'jwt':
+            # JWT authentication
             stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
+            if auth_payload.get("access_type") == AccessType.ADMIN:
+                pass
+            else:
+                stmt_coll = apply_auth_to_stmt(stmt_coll, auth_payload)
+
             result_coll = await db.execute(stmt_coll)
             collection = result_coll.scalar_one_or_none()
             if not collection:
                 raise fastapi.HTTPException(status_code=404, detail="Collection not found")
             return collection
+
         else:
-            # Regular API key - verify collection access
-            collection_obj, _ = auth_payload
-            if collection_obj.name.lower() != collection_name.lower():
-                raise fastapi.HTTPException(
-                    status_code=403,
-                    detail="API key not valid for this collection"
-                )
-            return collection_obj
-
-    elif auth_type == 'jwt':
-        # JWT authentication
-        stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
-        if auth_payload.get("access_type") == AccessType.ADMIN:
-            pass
-        else:
-            stmt_coll = apply_auth_to_stmt(stmt_coll, auth_payload)
-
-        result_coll = await db.execute(stmt_coll)
-        collection = result_coll.scalar_one_or_none()
-        if not collection:
-            raise fastapi.HTTPException(status_code=404, detail="Collection not found")
-        return collection
-
-    else:
-        raise fastapi.HTTPException(status_code=500, detail="Invalid authentication type")
+            raise fastapi.HTTPException(status_code=500, detail="Invalid authentication type")
+    except fastapi.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching collection {collection_name}: {type(e).__name__}: {e}", exc_info=True)
+        raise fastapi.HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {str(e)[:200]}")
 
 
 @router.get("/collections/", response_model=List[CollectionResponse])
 async def list_collections(
     skip: int = 0, limit: int = 100, db: AsyncSession = fastapi.Depends(get_async_db),
-    auth = fastapi.Depends(verify_auth),
+    auth_data: tuple[str, Any] = fastapi.Depends(get_flexible_auth),
 ):
     """
     Get collections from the database with pagination (async).
+    API key tokens return only their associated collection.
     """
     if skip < 0 or limit < 0:
         raise fastapi.HTTPException(
             status_code=422, detail="Invalid pagination parameters"
         )
-    
-    stmt = select(Collection).offset(skip).limit(limit)
-    stmt = apply_auth_to_stmt(stmt, auth)
-    
-    result = await db.execute(stmt)
-    collections = result.scalars().all()
-    return collections
+
+    auth_type, auth_payload = auth_data
+
+    if auth_type == 'api_key':
+        if auth_payload is None:
+            # Admin API key - return all collections
+            stmt = select(Collection).offset(skip).limit(limit)
+            result = await db.execute(stmt)
+            return result.scalars().all()
+        else:
+            # Scoped API key - return only the associated collection
+            collection_obj, _ = auth_payload
+            return [collection_obj]
+
+    elif auth_type == 'jwt':
+        stmt = select(Collection).offset(skip).limit(limit)
+        if auth_payload.get("access_type") != AccessType.ADMIN:
+            stmt = apply_auth_to_stmt(stmt, auth_payload)
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    else:
+        raise fastapi.HTTPException(status_code=500, detail="Invalid authentication type")
 
 
 @router.get(
@@ -331,6 +357,30 @@ async def update_collection_owner(
     await db.refresh(collection)
 
     return collection
+
+
+@router.delete("/collections/{collection_name}", status_code=204)
+async def delete_collection(
+    collection_name: str,
+    db: AsyncSession = fastapi.Depends(get_async_db),
+    auth=fastapi.Depends(verify_auth_with_write_access),
+):
+    """Delete a collection and all its entities. Requires admin access."""
+    if auth.get("access_type") != AccessType.ADMIN:
+        raise fastapi.HTTPException(status_code=403, detail="Admin access required")
+
+    stmt_coll = select(Collection).where(
+        func.lower(Collection.name) == func.lower(collection_name)
+    )
+    result_coll = await db.execute(stmt_coll)
+    collection = result_coll.scalar_one_or_none()
+
+    if not collection:
+        raise fastapi.HTTPException(status_code=404, detail="Collection not found")
+
+    await db.delete(collection)
+    await db.commit()
+    return fastapi.Response(status_code=204)
 
 
 @router.get(

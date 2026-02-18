@@ -158,6 +158,9 @@ class Client:
         """
         self.bakery_url = bakery_url.rstrip("/") + "/api/v1"
         self.token = token  # Store the token
+        self._collection_cache: dict[str, "BakeryCollection"] = {}  # name -> collection
+        import threading
+        self._collection_lock = threading.Lock()
 
     def _request(
         self,
@@ -168,6 +171,7 @@ class Client:
         files: dict[str, Any] | None = None,
         headers: dict[str, Any] | None = None,  # Defaulting to None, will be set below
         stream: bool = False,
+        timeout: float = 30.0,
     ) -> requests.Response:
         """Helper method to make requests to the Bakery API."""
         # Initialize headers if None or provide default
@@ -191,6 +195,7 @@ class Client:
                 headers=headers,
                 verify=True,  # Keep verify=True for HTTPS
                 stream=stream,
+                timeout=timeout,
             )
             response.raise_for_status()  # Let this raise HTTPError for bad responses
             return response
@@ -254,20 +259,32 @@ class Client:
         self, collection_name: str
     ) -> BakeryCollection:
         """Get a collection by collection name and create it if it doesn't exist."""
-        # TODO: check if the collection already exists
-        try:
-            return self.get_collection_by_name(collection_name)
-        except Exception as e:
-            # If GET fails (e.g., 404 if no collections yet), proceed to create
-            _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
+        # Check cache first (no lock needed for read)
+        if collection_name in self._collection_cache:
+            return self._collection_cache[collection_name]
 
-        # If collection doesn't exist, create it
-        try:
-            return self.create_collection(collection_name)
-        except Exception as e:
-            raise Exception(
-                f"Failed to create collection {collection_name}: {e}"
-            ) from e
+        with self._collection_lock:
+            # Double-check after acquiring lock
+            if collection_name in self._collection_cache:
+                return self._collection_cache[collection_name]
+
+            try:
+                coll = self.get_collection_by_name(collection_name)
+                if coll:
+                    self._collection_cache[collection_name] = coll
+                    return coll
+            except Exception as e:
+                _LOGGER.warning(f"Could not list collections, attempting to create: {e}")
+
+            # If collection doesn't exist, create it
+            try:
+                coll = self.create_collection(collection_name)
+                self._collection_cache[collection_name] = coll
+                return coll
+            except Exception as e:
+                raise Exception(
+                    f"Failed to create collection {collection_name}: {e}"
+                ) from e
     
     def get_collection_by_name(self, collection_name: str) -> BakeryCollection | None:
         """Get a collection by name."""
@@ -360,11 +377,13 @@ class Client:
         asset_origin: str | None = None,
         long_description: str | None = None,
         metadata_version: str = "1.0.0",
-        data_file_path: str | None = None
+        data_file_path: str | None = None,
+        create_only: bool = False,
     ) -> BakeryDataset:
         """Push a dataset to the bakery.
 
         If data_file_path is provided, the file will be uploaded to storage after dataset creation/update.
+        If create_only is True, skip existence check and final fetch (faster for bulk creates).
         """
         if "/" not in dataset_path:
             raise ValueError(
@@ -374,7 +393,8 @@ class Client:
 
         collection = self.find_or_create_by_collection_name(collection_name)
 
-        dataset = self.get_dataset_by_name(collection_name, dataset_name)
+        # Use the canonical collection name from the API (preserves proper casing)
+        collection_name = collection.name
 
         entity_payload = {
             "name": dataset_name,
@@ -388,9 +408,25 @@ class Client:
             "long_description": str(long_description),
             "metadata_version": metadata_version,
         }
-        
+
         # Filter out None values from payload to avoid overwriting existing fields with null
         entity_payload = {k: v for k, v in entity_payload.items() if v is not None}
+
+        if create_only:
+            # Fast path: just create, no existence check or final fetch
+            _LOGGER.info(
+                f"Creating dataset {dataset_name} in collection {collection_name} with collection_id {collection.id}"
+            )
+            try:
+                return self.create_dataset(collection.name, dataset_name, entity_payload.copy())
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code in (400, 409):
+                    # Already exists — fall through to update
+                    _LOGGER.info(f"Dataset {dataset_name} already exists, updating")
+                    return self.update_dataset(collection_name, dataset_name, entity_payload)
+                raise
+
+        dataset = self.get_dataset_by_name(collection_name, dataset_name)
 
         if dataset:
             # Update existing dataset
@@ -553,6 +589,8 @@ class Client:
                 data_path=json_response.get("data_path"),
                 long_description=json_response.get("long_description"),
             )
+        except requests.exceptions.HTTPError:
+            raise  # Let HTTP errors propagate directly for callers to handle
         except Exception as e:
             raise Exception(
                 f"Failed to create dataset {dataset_name} in collection {collection_name}: {e}"
@@ -1373,15 +1411,13 @@ class Client:
         self, collection_name: str, model_name: str, params: dict = dict()
     ) -> BakeryModel:
         """Create a model in a collection."""
-        endpoint = "/models"  # As per API: POST /models
-        # Ensure collection_name is in params for the API, even if collection_id is also used internally
+        endpoint = f"/models/{collection_name}"
         payload = {
             "name": model_name,
-            "collection_name": collection_name, # API expects collection_name for creation
-            "entity_type": "trained_model", # Default entity type
-            **params, # params should include model_path and other metadata
+            "entity_type": "trained_model",
+            **params,
         }
-        
+
         # Ensure model_path is present, as it's required by the schema
         if "model_path" not in payload or not payload["model_path"]:
             raise ValueError("model_path is required to create a model.")
@@ -1409,9 +1445,15 @@ class Client:
                 f"Failed to create model {model_name} in collection {collection_name}: {e}"
             ) from e
 
-    def update_model(self, model_id: str, params: dict) -> BakeryModel:
-        """Update a model."""
-        endpoint = f"/models/{model_id}" # As per API: PUT /models/{model_id}
+    def update_model(self, model_id: str, params: dict, collection_name: str = None, model_name: str = None) -> BakeryModel:
+        """Update a model.
+
+        Uses collection_name/model_name path if provided, otherwise falls back to model_id.
+        """
+        if collection_name and model_name:
+            endpoint = f"/models/{collection_name}/{model_name}"
+        else:
+            endpoint = f"/models/{model_id}"
         try:
             response = self._request("PUT", endpoint, json_data=params)
             json_response = response.json()
@@ -1468,6 +1510,8 @@ class Client:
         if not collection: # Should not happen if find_or_create is correct
              raise Exception(f"Failed to find or create collection {collection_name}")
 
+        # Use the canonical collection name from the API (preserves proper casing)
+        collection_name = collection.name
 
         existing_model = self.get_model_by_name(collection_name, model_name)
 
@@ -1495,7 +1539,7 @@ class Client:
                 f"Updating model {model_name} in collection {collection_name}"
             )
             # The update payload should not contain 'name' or 'collection_id' as they are immutable or set via URL
-            pushed_model = self.update_model(existing_model.id, entity_payload_for_update)
+            pushed_model = self.update_model(existing_model.id, entity_payload_for_update, collection_name=collection_name, model_name=model_name)
         else:
             # Create new model
             _LOGGER.info(
