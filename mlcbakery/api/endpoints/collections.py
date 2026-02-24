@@ -228,10 +228,20 @@ async def update_collection_storage_info(
 ):
     """Update storage information for a specific collection.
     This endpoint requires write access to the collection.
+
+    Permission Model:
+    - API keys: Implicit write access to their scoped collection. Collection-scoped
+      API keys are designed for programmatic access and have full CRUD permissions
+      on their associated collection without requiring explicit access level checks.
+    - JWT tokens: Explicit AccessLevel.WRITE check required. User access is governed
+      by role-based permissions and must be explicitly verified.
     """
     auth_type, auth_payload = auth_data
 
     if auth_type == 'api_key':
+        # API keys have implicit write access to their scoped collection.
+        # No explicit access level check is needed - if the API key is valid
+        # for this collection, it has permission to modify storage information.
         if auth_payload is None:
             # Admin API key - search across all collections
             stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
@@ -249,7 +259,9 @@ async def update_collection_storage_info(
             collection = collection_obj
 
     elif auth_type == 'jwt':
-        # Require WRITE access level for JWT
+        # JWT tokens require explicit AccessLevel.WRITE verification.
+        # Unlike API keys which have implicit write access to their scoped collection,
+        # JWT user permissions must be explicitly checked.
         if auth_payload.get("access_level").value < AccessLevel.WRITE.value:
             raise fastapi.HTTPException(status_code=403, detail="Access level WRITE required.")
 
@@ -337,10 +349,20 @@ async def update_collection_environment_variables(
 ):
     """Update environment variables for a specific collection.
     This endpoint requires write access to the collection.
+
+    Permission Model:
+    - API keys: Implicit write access to their scoped collection. Collection-scoped
+      API keys are designed for programmatic access and have full CRUD permissions
+      on their associated collection without requiring explicit access level checks.
+    - JWT tokens: Explicit AccessLevel.WRITE check required. User access is governed
+      by role-based permissions and must be explicitly verified.
     """
     auth_type, auth_payload = auth_data
 
     if auth_type == 'api_key':
+        # API keys have implicit write access to their scoped collection.
+        # No explicit access level check is needed - if the API key is valid
+        # for this collection, it has permission to modify environment variables.
         if auth_payload is None:
             # Admin API key - search across all collections
             stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
@@ -358,7 +380,9 @@ async def update_collection_environment_variables(
             collection = collection_obj
 
     elif auth_type == 'jwt':
-        # Require WRITE access level for JWT
+        # JWT tokens require explicit AccessLevel.WRITE verification.
+        # Unlike API keys which have implicit write access to their scoped collection,
+        # JWT user permissions must be explicitly checked.
         if auth_payload.get("access_level").value < AccessLevel.WRITE.value:
             raise fastapi.HTTPException(status_code=403, detail="Access level WRITE required.")
 
