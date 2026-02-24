@@ -178,10 +178,22 @@ async def get_collection_storage_info(
 ):
     """Get storage information for a specific collection.
     This endpoint requires authentication with collection access.
+
+    Permission Model:
+    - API keys: Implicit read access to their scoped collection. Collection-scoped
+      API keys are designed for programmatic access and have full CRUD permissions
+      on their associated collection without requiring explicit access level checks.
+    - JWT tokens: Authentication required but no explicit AccessLevel.READ check.
+      Unlike write operations which require explicit AccessLevel.WRITE verification,
+      read operations allow any authenticated user with collection access to view
+      storage information.
     """
     auth_type, auth_payload = auth_data
 
     if auth_type == 'api_key':
+        # API keys have implicit read access to their scoped collection.
+        # No explicit access level check is needed - if the API key is valid
+        # for this collection, it has permission to read storage information.
         if auth_payload is None:
             # Admin API key - search across all collections
             stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
@@ -200,6 +212,10 @@ async def get_collection_storage_info(
             return collection_obj
 
     elif auth_type == 'jwt':
+        # JWT tokens do not require explicit AccessLevel.READ verification for read operations.
+        # Authentication is enforced (via get_flexible_auth), but unlike write operations
+        # which check AccessLevel.WRITE, read operations allow any authenticated user with
+        # collection access (via apply_auth_to_stmt) to view storage information.
         stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
         if auth_payload.get("access_type") == AccessType.ADMIN:
             pass
@@ -288,10 +304,22 @@ async def get_collection_environment_variables(
 ):
     """Get environment variables for a specific collection.
     This endpoint requires authentication with collection access.
+
+    Permission Model:
+    - API keys: Implicit read access to their scoped collection. Collection-scoped
+      API keys are designed for programmatic access and have full CRUD permissions
+      on their associated collection without requiring explicit access level checks.
+    - JWT tokens: Authentication required but no explicit AccessLevel.READ check.
+      Unlike write operations which require explicit AccessLevel.WRITE verification,
+      read operations allow any authenticated user with collection access to view
+      environment variables.
     """
     auth_type, auth_payload = auth_data
 
     if auth_type == 'api_key':
+        # API keys have implicit read access to their scoped collection.
+        # No explicit access level check is needed - if the API key is valid
+        # for this collection, it has permission to read environment variables.
         if auth_payload is None:
             # Admin API key - search across all collections
             stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
@@ -311,6 +339,10 @@ async def get_collection_environment_variables(
             return collection_obj
 
     elif auth_type == 'jwt':
+        # JWT tokens do not require explicit AccessLevel.READ verification for read operations.
+        # Authentication is enforced (via get_flexible_auth), but unlike write operations
+        # which check AccessLevel.WRITE, read operations allow any authenticated user with
+        # collection access (via apply_auth_to_stmt) to view environment variables.
         stmt_coll = select(Collection).where(func.lower(Collection.name) == func.lower(collection_name))
         if auth_payload.get("access_type") == AccessType.ADMIN:
             pass
