@@ -377,7 +377,15 @@ async def update_collection_environment_variables(
         raise fastapi.HTTPException(status_code=500, detail="Invalid authentication type")
 
     if "environment_variables" in environment_data:
-        collection.environment_variables = environment_data["environment_variables"]
+        new_vars = environment_data["environment_variables"]
+        if new_vars is None:
+            # Explicitly setting to None clears all env vars
+            collection.environment_variables = None
+        else:
+            # Merge new vars into existing ones (additive update)
+            existing = dict(collection.environment_variables or {})
+            existing.update(new_vars)
+            collection.environment_variables = existing
 
     await db.commit()
     await db.refresh(collection)

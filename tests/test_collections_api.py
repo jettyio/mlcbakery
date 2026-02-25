@@ -524,6 +524,57 @@ async def test_update_collection_environment_success(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_update_collection_environment_is_additive(async_client: AsyncClient):
+    """Test that updating environment variables merges with existing ones instead of replacing."""
+    unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
+    collection_data = {
+        "name": unique_name,
+        "description": "A test collection for environment merge testing."
+    }
+
+    # Create the collection first
+    create_response = await async_client.post("/api/v1/collections/", json=collection_data, headers=authorization_headers(sample_org_token()))
+    assert create_response.status_code == 200
+    created_collection = create_response.json()
+
+    # Set initial environment variables
+    env_data_1 = {
+        "environment_variables": {
+            "API_KEY": "secret-key-123",
+            "DATABASE_URL": "postgresql://localhost:5432/test",
+        }
+    }
+    resp1 = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data_1,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert resp1.status_code == 200
+
+    # Update with a new var and an overwritten var
+    env_data_2 = {
+        "environment_variables": {
+            "DATABASE_URL": "postgresql://localhost:5432/prod",
+            "NEW_VAR": "hello",
+        }
+    }
+    resp2 = await async_client.patch(
+        f"/api/v1/collections/{created_collection['name']}/environment",
+        json=env_data_2,
+        headers=authorization_headers(sample_org_token())
+    )
+    assert resp2.status_code == 200
+    result = resp2.json()
+
+    # Should have all three vars: original API_KEY preserved, DATABASE_URL overwritten, NEW_VAR added
+    assert result["environment_variables"] == {
+        "API_KEY": "secret-key-123",
+        "DATABASE_URL": "postgresql://localhost:5432/prod",
+        "NEW_VAR": "hello",
+    }
+
+
+@pytest.mark.asyncio
 async def test_update_collection_environment_mismatched_owner_fails_with_404(async_client: AsyncClient):
     """Test that updating environment variables for a collection with a mismatched owner returns 404."""
     unique_name = f"test-collection-{uuid.uuid4().hex[:8]}"
