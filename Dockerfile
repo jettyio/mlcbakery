@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install poetry and uvicorn
-RUN pip install poetry uvicorn
+RUN pip install poetry==2.3.2 uvicorn
 
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
