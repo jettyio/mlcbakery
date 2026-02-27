@@ -15,6 +15,7 @@ dependencies = [
     "google-cloud-storage>=3.1.0",
     "greenlet>=3.2.1",
     "httpx>=0.28.1",
+    "cryptography>=46.0.5",
     "pyjwt[crypto]>=2.10.1",
     "mlcroissant>=1.0.17",
     "opentelemetry-exporter-gcp-monitoring>=1.9.0a0",
