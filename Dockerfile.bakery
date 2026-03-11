@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install poetry
-RUN pip install poetry
+RUN pip install poetry==2.3.2
 
 # Copy poetry files
 COPY pyproject.toml poetry.lock* ./
