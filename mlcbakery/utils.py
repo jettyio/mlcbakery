@@ -44,9 +44,20 @@ async def delete_entity_with_versions(entity: Entity, db: AsyncSession) -> None:
     if entity_type not in ENTITY_VERSION_TABLES:
         raise ValueError(f"Unsupported entity type for deletion: {entity_type}")
     
-    # First, delete all versioned records to avoid foreign key constraints
+    # Delete version tags first (entity_version_tags.version_hash_id FK has no CASCADE)
     await db.execute(
-        text("DELETE FROM entity_version_hashes WHERE entity_id = :entity_id"), 
+        text("""
+            DELETE FROM entity_version_tags
+            WHERE version_hash_id IN (
+                SELECT id FROM entity_version_hashes WHERE entity_id = :entity_id
+            )
+        """),
+        {"entity_id": entity_id}
+    )
+
+    # Delete version hashes
+    await db.execute(
+        text("DELETE FROM entity_version_hashes WHERE entity_id = :entity_id"),
         {"entity_id": entity_id}
     )
     
@@ -70,8 +81,14 @@ async def delete_entity_with_versions(entity: Entity, db: AsyncSession) -> None:
         {"entity_id": entity_id}
     )
     
+    # Delete entity relationships referencing this entity
+    await db.execute(
+        text("DELETE FROM entity_relationships WHERE source_entity_id = :entity_id OR target_entity_id = :entity_id"),
+        {"entity_id": entity_id}
+    )
+
     # Finally, delete from the main entities table
     await db.execute(
-        text("DELETE FROM entities WHERE id = :entity_id"), 
+        text("DELETE FROM entities WHERE id = :entity_id"),
         {"entity_id": entity_id}
     )

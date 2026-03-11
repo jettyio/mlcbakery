@@ -465,7 +465,7 @@ class EntityVersionTag(Base):
     __tablename__ = "entity_version_tags"
     
     id = Column(Integer, primary_key=True)
-    version_hash_id = Column(Integer, ForeignKey("entity_version_hashes.id"))
+    version_hash_id = Column(Integer, ForeignKey("entity_version_hashes.id", ondelete="CASCADE"))
     tag_name = Column(String, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
